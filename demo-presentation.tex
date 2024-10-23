@@ -1,0 +1,137 @@
+\documentclass[aspectratio=169]{beamer}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{animate}
+\usepackage{multimedia}
+% Set the logo to appear on all slides
+\logo{\includegraphics[width=1cm]{logo.png}}
+\usepackage{url}
+\usepackage[export]{adjustbox}
+% Add these to your preamble if not already present
+\usetikzlibrary{shapes.geometric, positioning, arrows.meta, backgrounds, fit}
+% Redefine the frame to have smaller margins
+\setbeamersize{text margin left=5pt,text margin right=5pt}
+% Centering frame titles
+\setbeamertemplate{frametitle}[default][center]
+% Set up a dark theme
+\usetheme{Madrid}
+\usecolortheme{owl}
+% Custom colors
+\definecolor{myyellow}{RGB}{255,210,0}
+\definecolor{myorange}{RGB}{255,130,0}
+\definecolor{mygreen}{RGB}{0,200,100}
+\definecolor{myblue}{RGB}{0,130,255}
+\definecolor{mypink}{RGB}{255,105,180}
+% Define new commands for highlighting
+\newcommand{\hlbias}[1]{\textcolor{myblue}{\textbf{#1}}}
+\newcommand{\hlvariance}[1]{\textcolor{mypink}{\textbf{#1}}}
+\newcommand{\hltotal}[1]{\textcolor{myyellow}{\textbf{#1}}}
+% Customize beamer colors
+\setbeamercolor{normal text}{fg=white}
+\setbeamercolor{structure}{fg=myyellow}
+\setbeamercolor{alerted text}{fg=myorange}
+\setbeamercolor{example text}{fg=mygreen}
+\setbeamercolor{background canvas}{bg=black}
+\setbeamercolor{frametitle}{fg=white,bg=black}
+
+% Setup short institution name for footline if provided
+\makeatletter
+\def\insertshortinstitute{airis4D}
+\makeatother
+
+% Modify footline template to use short institution
+\makeatletter
+\setbeamertemplate{footline}{%
+  \leavevmode%
+  \hbox{%
+    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
+      \usebeamerfont{author in head/foot}\insertshortauthor~~(\insertshortinstitute)%
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{title in head/foot}%
+      \usebeamerfont{title in head/foot}\insertshorttitle%
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,right]{date in head/foot}%
+      \usebeamerfont{date in head/foot}\insertshortdate{}\hspace*{2em}%
+      \insertframenumber{} / \inserttotalframenumber\hspace*{2ex}%
+    \end{beamercolorbox}}%
+  \vskip0pt%
+}
+\makeatother
+
+\title{What Can Be Done with \textcolor{green}{Beamer Slide Generator}?}
+\subtitle{Demo}
+\author{Ninan Sajeeth Philip}
+\institute{\textcolor{mygreen}{Artificial Intelligence Research and Intelligent Systems (airis4D),\\Thelliyoor 689544, Kerala, India.\\\url{http:///airis4d.com}}}
+\date{\today}
+
+\begin{document}
+\begin{frame}
+\titlepage
+\end{frame}
+
+
+\begin{frame}{\Large\textbf{An Introduction To Overleaf}}
+    \begin{columns}[T]
+        \column{0.5\textwidth}
+        \centering
+        \fbox{\includegraphics[width=0.95\textwidth,height=0.6\textheight,keepaspectratio]{media_files/How_to_Write_a_Scientific_Journal_Article_Using_Ov_preview.png}}
+
+        \vspace{0.5em}
+        \footnotesize{Click to play}
+        \movie[externalviewer]{\textcolor{blue}{\underline{Play}}}{./media_files/How_to_Write_a_Scientific_Journal_Article_Using_Ov.mp4}
+
+        \column{0.5\textwidth}
+        \begin{itemize}
+            \item Overleaf is a complete DTP platform in LaTeX widely used by the academic community
+            \item The standalone platform allows users to develop and keep their ideas available online.
+            \item It generates the PDF file and can also provide a Rich text-like platform for those who are not very familiar with LaTeX
+            \item It is Free.
+        \end{itemize}
+        \vfill  % Push the rule and source to the bottom of the content
+        \hspace{1em}\rule{0.4\textwidth}{0.4pt}\newline\hspace{1em}{\tiny Source: https://www.youtube.com/watch?v=58CoXgze71Y} 
+    \end{columns}
+\end{frame}
+
+
+\begin{frame}{\Large\textbf{Google Colab}}
+    \begin{columns}[T]
+        \column{0.5\textwidth}
+        \centering
+        \fbox{\includegraphics[width=0.95\textwidth,height=0.6\textheight,keepaspectratio]{media_files/Practical_Introduction_to_Google_Colab_for_Data_Sc_preview.png}}
+
+        \vspace{0.5em}
+        \footnotesize{Click to play}
+        \movie[externalviewer]{\textcolor{blue}{\underline{Play}}}{./media_files/Practical_Introduction_to_Google_Colab_for_Data_Sc.mp4}
+
+        \column{0.5\textwidth}
+        \begin{itemize}
+            \item It has everything that is needed to learn and get introduced to AI and Data Science
+            \item It is Free
+        \end{itemize}
+        \vfill  % Push the rule and source to the bottom of the content
+        \hspace{1em}\rule{0.4\textwidth}{0.4pt}\newline\hspace{1em}{\tiny Source: https://www.youtube.com/watch?v=oCngVVBSsmA} 
+    \end{columns}
+\end{frame}
+
+
+\begin{frame}{\Large\textbf{How Did I Generate This Slide?}}
+    \begin{columns}[T]
+        \column{0.5\textwidth}
+        \centering
+        \fbox{\includegraphics[width=0.95\textwidth,height=0.6\textheight,keepaspectratio]{BSG_live.png}}
+        \column{0.5\textwidth}
+        \begin{itemize}
+            \item I just called \textcolor[RGB]{255,165,0}{python BeamerSlideGenerator.py}
+            \item Selected option 2 and entered the text file:  demo-presentation.txt
+            \item Press enter, and everything is ready. Finally you only need to run \textcolor[RGB]{255,165,0}{pdflatex demo-presentation.tex}
+            \item The text file remains unchanged, and I often spell check and grammar check it after typing. Rerun it, and the new presentation will be ready!
+        \end{itemize}
+    \end{columns}
+\end{frame}
+
+
+\end{document}

@@ -1,0 +1,701 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{geometry}
+\usepackage[breakable, skins, listings]{tcolorbox}  % Added necessary options
+
+\geometry{margin=1in}
+
+\title{Beamer Slide Generator: User Manual}
+\author{Ninan Sajeeth Philip\\\href{https://airis4d.com}{Artificial Intelligence Research and Intelligent Systems (airis4D)}\\Thelliyoor 689544, India.}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+BeamerSlideGenerator is a Python tool designed to simplify the creation of Beamer presentations with multimedia content. It automates the process of downloading media files and generating LaTeX code for slides with proper formatting and structure.
+
+\section{Installation}
+\begin{enumerate}
+    \item Ensure Python 3.x is installed on your system
+    \item Required Python packages:
+    \begin{itemize}
+        \item requests
+        \item Pillow (PIL)
+    \end{itemize}
+    \item Place BeamerSlideGenerator.py in your working directory
+\end{enumerate}
+
+\section{Usage Modes}
+
+\subsection{Single Media Mode (Option 1)}
+This mode allows you to add individual slides to a cumulative presentation file (movie.tex).
+\begin{tcolorbox}[title=Example]
+\begin{verbatim}
+Enter the media URL: https://example.com/image.jpg
+Enter content for the right column (optional):
+- Point 1
+- Point 2
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Batch Processing Mode (Option 2)}
+This mode processes a text file containing multiple slide definitions and creates a new .tex file named after the input file.
+
+\section{Input File Format}
+The input file supports several commands and structures:
+
+\begin{tcolorbox}[title=Commands]
+\begin{itemize}
+    \item \texttt{\textbackslash title <content>} - Sets the slide title
+    \item \texttt{\textbackslash play <URL>} - Indicates media should be playable
+    \item \texttt{\textbackslash begin\{Content\}} - Starts a content block
+    \item \texttt{\textbackslash end\{Content\}} - Ends a content block
+\end{itemize}
+\end{tcolorbox}
+
+\section{Example Input File}
+\begin{tcolorbox}[enhanced]  % Changed from breakable to enhanced
+\begin{verbatim}
+\title My First Slide
+\begin{Content} https://example.com/image1.jpg
+- Bullet point 1
+- Bullet point 2
+\end{Content}
+
+\title Interactive Media
+\play https://example.com/animation.gif
+\end{verbatim}
+\end{tcolorbox}
+
+\section{Output Structure}
+The generator creates:
+\begin{itemize}
+    \item A .tex file with Beamer slides
+    \item A media\_files directory containing downloaded media
+\end{itemize}
+
+\section{Key Features}
+\begin{itemize}
+    \item Automatic media downloading and organization
+    \item Enhanced support for playable media with preview frames
+    \item Automatic preview generation for videos and animations
+    \item Smart handling of different media types (video, audio, images)
+    \item Two-column layout with customizable content
+    \item Automatic bullet point formatting
+    \item Custom slide titles
+    \item Batch processing capability
+\end{itemize}
+
+\section{Media Handling Features}
+\subsection{Enhanced Play Directive}
+The generator now supports an enhanced \texttt{\textbackslash play} directive that works with both URLs and local files:
+
+\begin{tcolorbox}[title=Play Directive Examples]
+\begin{verbatim}
+% For URLs:
+\begin{Content} \play https://example.com/video.mp4
+
+% For local files:
+\begin{Content} \play \file media_files/video.mp4
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Preview Frame Generation}
+The system automatically generates appropriate previews for different media types:
+\begin{itemize}
+    \item Videos: First frame extracted as preview
+    \item Animated GIFs: First frame saved as static image
+    \item Audio files: Placeholder icon generated
+    \item Static images: Used as-is
+\end{itemize}
+
+\subsection{Media Type Support}
+Supported media formats:
+\begin{tcolorbox}[title=Supported Formats]
+\begin{itemize}
+    \item Videos: .mp4, .avi, .mov, .mkv
+    \item Images: .png, .jpg, .jpeg, .gif
+    \item Audio: .mp3, .wav, .ogg
+\end{itemize}
+\end{tcolorbox}
+
+\section{Example Input File with New Features}
+\begin{tcolorbox}[enhanced]
+\begin{verbatim}
+\title Video Demonstration
+\begin{Content} \play \file media_files/demo.mp4
+- This slide includes a video with preview frame
+- Click play to start the video
+\end{Content}
+
+\title Audio Example
+\begin{Content} \play \file media_files/audio.mp3
+- Audio file with auto-generated icon
+- Supports various audio formats
+\end{Content}
+
+\title Animation Demo
+\begin{Content} \play https://example.com/animation.gif
+- Animated GIF with first frame preview
+- Auto-downloaded and processed
+\end{Content}
+\end{verbatim}
+\end{tcolorbox}
+
+\section{Media Processing Features}
+\subsection{Automatic Preview Generation}
+The system now includes:
+\begin{itemize}
+    \item Automatic extraction of video first frames
+    \item GIF animation first frame capture
+    \item Audio file icon generation
+    \item Preview frame caching for better performance
+\end{itemize}
+
+\subsection{Media File Management}
+Enhanced media handling includes:
+\begin{itemize}
+    \item Automatic media directory creation
+    \item Smart file naming and organization
+    \item Preview file management
+    \item Format-specific processing
+\end{itemize}
+
+\section{Best Practices for Media Integration}
+\begin{enumerate}
+    \item Use \texttt{\textbackslash play} directive for all playable media
+    \item Keep video files reasonably sized for smooth playback
+    \item Test media playback after presentation generation
+    \item Use appropriate media formats for different content types
+    \item Consider preview image quality for videos
+\end{enumerate}
+
+\section{New Troubleshooting Guide}
+Additional troubleshooting scenarios:
+\begin{itemize}
+    \item Preview Generation Issues:
+        \begin{itemize}
+            \item Ensure required libraries (opencv-python) are installed
+            \item Check media file integrity
+            \item Verify file permissions in media\_files directory
+        \end{itemize}
+    \item Playback Problems:
+        \begin{itemize}
+            \item Confirm media player compatibility
+            \item Check codec availability
+            \item Verify file path accuracy
+        \end{itemize}
+    \item Media Update Issues:
+        \begin{itemize}
+            \item Check file permissions
+            \item Verify media file existence
+            \item Ensure correct file paths in directives
+        \end{itemize}
+\end{itemize}
+
+\section{Advanced Usage Examples}
+\subsection{Video Presentation with Previews}
+\begin{tcolorbox}[title=Example: Video Slides]
+\begin{verbatim}
+\title Introduction
+\begin{Content} \play \file media_files/intro.mp4
+- Welcome to the presentation
+- Click play to start the introduction video
+\end{Content}
+
+\title Key Points
+\begin{Content} \play \file media_files/demo.mp4
+- Demonstration of main features
+- Interactive video content
+\end{Content}
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Mixed Media Presentation}
+\begin{tcolorbox}[title=Example: Mixed Media]
+\begin{verbatim}
+\title Overview
+\begin{Content} \file media_files/static.png
+- Static image for overview
+- No play button needed
+\end{Content}
+
+\title Interactive Demo
+\begin{Content} \play \file media_files/demo.gif
+- Animated demonstration
+- With preview frame
+\end{Content}
+\end{verbatim}
+\end{tcolorbox}
+\section{Creating New Presentations}
+
+\subsection{Starting the Creation Process}
+First, launch the generator and select the creation mode:
+
+\begin{tcolorbox}[title=Initial Launch]
+\begin{verbatim}
+$ python BeamerSlideGenerator.py
+
+BeamerSlideGenerator: Creating slides for presentations
+Choose an option:
+1. Process a single media URL (appends to movie.tex)
+2. Process multiple media files from an input file (creates new .tex file)
+Enter your choice (1 or 2): 2
+
+Enter the path to the input file: neural_networks.txt
+
+File neural_networks.txt does not exist.
+Would you like to create a new presentation? (y/n): y
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Initial Setup Configuration}
+Next, configure the basic presentation details:
+
+\begin{tcolorbox}[title=Presentation Setup]
+\begin{verbatim}
+Presentation Setup:
+-----------------
+Title: Advanced Neural Networks
+Subtitle (press Enter to skip): A Comprehensive Guide
+Author Name: John Smith
+Institution: Neural Computing Research Lab
+Short Institution Name (optional, press Enter to skip): NCRL
+Date (press Enter for today): [Enter]
+
+Creating new input file: neural_networks.txt
+Enter empty line at Title prompt to finish.
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Creating the First Slide}
+Here's the process for creating the first slide:
+
+\begin{tcolorbox}[title=First Slide Creation]
+\begin{verbatim}
+[Slide1] Title: Introduction to Neural Networks
+
+[Slide1] Media selection:
+Opening Google Image search for: Introduction to Neural Networks scientific diagram
+Please choose one of the following options:
+1. Enter a URL
+2. Use an existing file from media_files folder
+3. Create slide without media
+Your choice (1/2/3): 1
+Enter URL: https://example.com/neural_network.png
+
+[Slide1] Content (enter empty line to finish):
+- Understanding the basics of neural networks
+- Key components and architecture
+- Historical development
+- Modern applications
+[Enter blank line]
+
+[Slide1] Footnote (press Enter to skip): Based on "Deep Learning" by Goodfellow et al.
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Creating the Second Slide}
+Process for the second slide:
+
+\begin{tcolorbox}[title=Second Slide Creation]
+\begin{verbatim}
+[Slide2] Title: Network Architecture
+
+[Slide2] Media selection:
+Opening Google Image search for: Network Architecture scientific diagram
+Please choose one of the following options:
+1. Enter a URL
+2. Use an existing file from media_files folder
+3. Create slide without media
+Your choice (1/2/3): 2
+
+Available files in media_files folder:
+1. architecture.png
+2. layers.gif
+Enter file number or name: 2
+
+[Slide2] Content (enter empty line to finish):
+- Layer types and functions
+- Connection patterns
+- Information flow
+[Enter blank line]
+
+[Slide2] Footnote (press Enter to skip): \url{http://neuralnetworks.com}
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Creating the Final Slide}
+Process for the third slide and finishing:
+
+\begin{tcolorbox}[title=Third Slide and Completion]
+\begin{verbatim}
+[Slide3] Title: Training Process
+
+[Slide3] Media selection:
+Opening Google Image search for: Training Process scientific diagram
+Please choose one of the following options:
+1. Enter a URL
+2. Use an existing file from media_files folder
+3. Create slide without media
+Your choice (1/2/3): 1
+Enter URL: https://example.com/training_video.mp4
+
+[Slide3] Content (enter empty line to finish):
+- Backpropagation explained
+- Gradient descent optimization
+- Training parameters
+[Enter blank line]
+
+[Slide3] Footnote (press Enter to skip): Click play to see animation
+
+[Slide4] Title: [Enter blank line to finish]
+
+Successfully created neural_networks.txt with 3 slides.
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Generated Text File Structure}
+The above process generates a structured text file:
+
+\begin{tcolorbox}[title=Beginning of neural\_networks.txt]
+\begin{verbatim}
+\documentclass[aspectratio=169]{beamer}
+\usepackage{hyperref}
+\usepackage{graphicx}
+[... preamble ...]
+
+\title{Advanced Neural Networks}
+\subtitle{A Comprehensive Guide}
+\author{John Smith}
+\institute{\textcolor{mygreen}{Neural Computing Research Lab}}
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+\end{verbatim}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=First Slide in Generated File]
+\begin{verbatim}
+\title Introduction to Neural Networks
+\begin{Content} \file media_files/neural_network.png
+- Understanding the basics of neural networks
+- Key components and architecture
+- Historical development
+- Modern applications
+\footnote{\tiny Based on "Deep Learning" by Goodfellow et al.}
+\end{Content}
+\end{verbatim}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Second Slide in Generated File]
+\begin{verbatim}
+\title Network Architecture
+\begin{Content} \play \file media_files/layers.gif
+- Layer types and functions
+- Connection patterns
+- Information flow
+\footnote{\tiny \url{http://neuralnetworks.com}}
+\end{Content}
+\end{verbatim}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Final Slide and Document End]
+\begin{verbatim}
+\title Training Process
+\begin{Content} \play \file media_files/training_video.mp4
+- Backpropagation explained
+- Gradient descent optimization
+- Training parameters
+\footnote{\tiny Click play to see animation}
+\end{Content}
+
+\end{document}
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Key Points About the Creation Process}
+\begin{itemize}
+    \item Each slide creation follows a consistent four-step process:
+        \begin{enumerate}
+            \item Enter slide title
+            \item Select media source
+            \item Add content bullet points
+            \item Optionally add footnote
+        \end{enumerate}
+    \item Enter an empty line for the title to finish the creation process
+    \item Media can be selected from URLs or existing files
+    \item The system automatically handles media downloads
+    \item Playable media gets appropriate preview frames
+    \item Content is automatically formatted with bullet points
+\end{itemize}
+
+\subsection{Tips for Interactive Creation}
+\begin{enumerate}
+    \item Prepare your media files or URLs beforehand
+    \item Use descriptive slide titles for better organization
+    \item Keep bullet points concise and clear
+    \item Use footnotes for attributions and additional information
+    \item Consider using short institution names for better footer display
+    \item Test media playback after creating the presentation
+\end{enumerate}
+
+\subsection{Editing the Generated File}
+After creation, you can:
+\begin{itemize}
+    \item Manually edit the text file to make changes
+    \item Add or modify content and media
+    \item Adjust formatting and layout
+    \item Run the generator again to update the presentation
+\end{itemize}
+
+\section{Configuration Examples}
+
+\subsection{Title and Institution Configurations}
+Here are examples of different title and institution configurations:
+
+\begin{tcolorbox}[title=Long Institution Name Example]
+\begin{verbatim}
+Presentation Setup:
+-----------------
+Title: Quantum Computing Advances
+Subtitle (press Enter to skip): Recent Developments
+Author Name: Dr. Sarah Johnson
+Institution: International Center for Quantum Information Science and Technology
+Your institution name is quite long and might get trimmed in slides.
+It's recommended to provide a shorter version for the slide footers.
+Short Institution Name: ICQIST
+Date (press Enter for today): [Enter]
+\end{verbatim}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Multi-line Institution Example]
+\begin{verbatim}
+Title: Advanced Materials Research
+Subtitle (press Enter to skip): Nanomaterials and Applications
+Author Name: Prof. Robert Chen
+Institution: Department of Materials Science\\Faculty of Engineering\\University of Technology
+Short Institution Name: MatSci-UoT
+Date (press Enter for today): March 2024
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Media Selection Examples}
+
+\subsubsection{URL-based Media}
+\begin{tcolorbox}[title=Different URL Types]
+\begin{verbatim}
+[Slide1] Media selection:
+1. Enter a URL
+2. Use an existing file from media_files folder
+3. Create slide without media
+Your choice (1/2/3): 1
+
+Example URLs:
+1. Static Image:
+Enter URL: https://example.com/quantum_diagram.png
+
+2. Animated GIF:
+Enter URL: https://example.com/quantum_animation.gif
+
+3. YouTube Video:
+Enter URL: https://youtube.com/watch?v=quantum_explanation
+
+4. Direct Video:
+Enter URL: https://example.com/quantum_demo.mp4
+\end{verbatim}
+\end{tcolorbox}
+
+\subsubsection{Local File Examples}
+\begin{tcolorbox}[title=Local File Selection]
+\begin{verbatim}
+[Slide2] Media selection:
+1. Enter a URL
+2. Use an existing file from media_files folder
+3. Create slide without media
+Your choice (1/2/3): 2
+
+Available files in media_files folder:
+1. quantum_states.png
+2. superposition_demo.mp4
+3. entanglement.gif
+4. measurement_results.jpg
+Enter file number or name: 2
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Content Formatting Examples}
+
+\subsubsection{Basic Content}
+\begin{tcolorbox}[title=Simple Bullet Points]
+\begin{verbatim}
+[Slide1] Content (enter empty line to finish):
+- Introduction to quantum states
+- Superposition principle
+- Quantum measurement
+[Enter blank line]
+\end{verbatim}
+\end{tcolorbox}
+
+\subsubsection{Content with Special Characters}
+\begin{tcolorbox}[title=Content with Special Characters and Math]
+\begin{verbatim}
+[Slide2] Content (enter empty line to finish):
+- Schrödinger's equation: $i\hbar\frac{\partial}{\partial t}\Psi = \hat{H}\Psi$
+- Measurement probability: $\psi^2$
+- Temperature range: -273.15°C to 100°C
+[Enter blank line]
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Footnote Examples}
+
+\subsubsection{Simple Attribution}
+\begin{tcolorbox}[title=Basic Footnote]
+\begin{verbatim}
+[Slide1] Footnote (press Enter to skip): Data from NIST 2024
+\end{verbatim}
+\end{tcolorbox}
+
+\subsubsection{URL Footnote}
+\begin{tcolorbox}[title=URL in Footnote]
+\begin{verbatim}
+[Slide2] Footnote (press Enter to skip): https://quantum.example.com/data
+\end{verbatim}
+\end{tcolorbox}
+
+\subsubsection{Complex Footnote}
+\begin{tcolorbox}[title=Complex Footnote]
+\begin{verbatim}
+[Slide3] Footnote (press Enter to skip): Adapted from Smith et al. (2024) and \url{http://example.com}
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Complete Slide Examples}
+
+\subsubsection{Static Image Slide}
+\begin{tcolorbox}[title=Complete Static Slide Example]
+\begin{verbatim}
+\title Quantum States Overview
+\begin{Content} \file media_files/quantum_states.png
+- Understanding quantum superposition
+- Properties of quantum states
+- Measurement effects
+\footnote{\tiny Based on "Quantum Mechanics" by Nielsen & Chuang}
+\end{Content}
+\end{verbatim}
+\end{tcolorbox}
+
+\subsubsection{Playable Media Slide}
+\begin{tcolorbox}[title=Complete Video Slide Example]
+\begin{verbatim}
+\title Quantum Evolution
+\begin{Content} \play \file media_files/evolution_demo.mp4
+- Time evolution of quantum states
+- Interference patterns
+- Decoherence effects
+\footnote{\tiny Click play to see quantum evolution simulation}
+\end{Content}
+\end{verbatim}
+\end{tcolorbox}
+
+\subsubsection{Text-Only Slide}
+\begin{tcolorbox}[title=Slide Without Media]
+\begin{verbatim}
+\title Key Conclusions
+\begin{Content} \None
+- Quantum advantage demonstrated
+- Practical applications identified
+- Future research directions
+\footnote{\tiny Research supported by ICQIST grant #2024-01}
+\end{Content}
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Generated File Structure}
+Here's how a complete file looks with various configurations:
+
+\begin{tcolorbox}[title=Complete Example File]
+\begin{verbatim}
+\documentclass[aspectratio=169]{beamer}
+[... preamble ...]
+
+\title{Quantum Computing Advances}
+\subtitle{Recent Developments}
+\author{Dr. Sarah Johnson}
+\institute{\textcolor{mygreen}{International Center for Quantum Information
+Science and Technology}}
+\makeatletter
+\def\insertshortinstitute{ICQIST}
+\makeatother
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\title Introduction
+\begin{Content} \file media_files/quantum_basics.png
+- Quantum computing fundamentals
+- Current state of the field
+- Recent breakthroughs
+\footnote{\tiny Based on arXiv:2024.01234}
+\end{Content}
+
+\title Quantum Circuits
+\begin{Content} \play \file media_files/circuit_simulation.mp4
+- Gate operations
+- Circuit design principles
+- Measurement techniques
+\footnote{\tiny Click to play simulation}
+\end{Content}
+
+\title Future Directions
+\begin{Content} \None
+- Scaling challenges
+- Error correction
+- Commercial applications
+\footnote{\tiny ICQIST Research Roadmap 2024}
+\end{Content}
+
+\end{document}
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Tips for Configuration}
+\begin{itemize}
+    \item Use short institute names for better footer readability
+    \item Consider line breaks in institution names for better formatting
+    \item Test media playback with different viewers
+    \item Use descriptive filenames for media
+    \item Include attribution in footnotes where appropriate
+    \item Balance text content with visual elements
+\end{itemize}
+
+
+\section{Future Enhancements}
+Planned features for future releases:
+\begin{itemize}
+    \item Advanced preview frame customization
+    \item Additional media format support
+    \item Enhanced audio visualization
+    \item Automated media optimization
+    \item Custom preview frame selection
+    \item Batch media processing tools
+    \item Theme customization options
+    \item Direct PDF compilation
+    \item Template management
+\end{itemize}
+
+\end{document}
