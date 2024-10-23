@@ -632,7 +632,7 @@ def update_input_file(file_path, url_updates, is_tex_file=False):
 
 def generate_latex_code(base_name, filename, first_frame_path, content=None, title=None, playable=False, source_url=None):
     """
-    Fixed version with proper YouTube source citation.
+    Fixed version with proper column and list handling.
     """
     escaped_base_name = base_name.replace("_", "\\_") if base_name else "Media"
     media_folder = "media_files"
@@ -646,38 +646,63 @@ def generate_latex_code(base_name, filename, first_frame_path, content=None, tit
     else:
         frame_title = f"Media: {escaped_base_name}"
 
-    # Start frame
+    # Handle no-media case (when \None is specified)
+    if not filename or filename == "\\None":
+        latex_code = f"""
+\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
+"""
+        if content:
+            latex_code += """    \\vspace{0.5em}
+    \\begin{itemize}
+"""
+            for item in content:
+                item = item.strip()
+                if item.startswith('-'):
+                    item = item[1:].strip()
+                if not item.lower().startswith(title.lower() if title else ''):
+                    item = item.replace("_", "\\_").replace("&", "\\&").replace("#", "\\#")
+                    latex_code += f"        \\item {item}\n"
+            latex_code += """    \\end{itemize}"""
+
+        latex_code += """
+\\end{frame}
+
+"""
+        return latex_code
+
+    # Regular media case with two columns
     latex_code = f"""
 \\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-    \\begin{{columns}}[T]
-        \\column{{0.5\\textwidth}}
-        \\centering
+    \\vspace{{0.5em}}
+    \\begin{{columns}}
+        \\begin{{column}}{{0.48\\textwidth}}
+            \\centering
 """
 
     # Add preview image or media
     if playable:
         if first_frame_path and os.path.exists(first_frame_path):
-            latex_code += f"""        \\fbox{{\\includegraphics[width=0.95\\textwidth,height=0.6\\textheight,keepaspectratio]{{{first_frame_path}}}}}
+            latex_code += f"""            \\fbox{{\\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{first_frame_path}}}}}
 """
         else:
-            latex_code += "        \\textbf{[Media Preview Not Available]}\n"
+            latex_code += "            \\textbf{[Media Preview Not Available]}\n"
 
-        # Add play button
         latex_code += f"""
-        \\vspace{{0.5em}}
-        \\footnotesize{{Click to play}}
-        \\movie[externalviewer]{{\\textcolor{{blue}}{{\\underline{{Play}}}}}}{{./{media_folder}/{filename}}}
+            \\vspace{{0.5em}}
+            \\footnotesize{{Click to play}}
+            \\movie[externalviewer]{{\\textcolor{{blue}}{{\\underline{{Play}}}}}}{{./{media_folder}/{filename}}}
 """
 
     else:
         # Non-playable media with frame
         image_path = first_frame_path if first_frame_path else f'{media_folder}/{filename}'
-        latex_code += f"""        \\fbox{{\\includegraphics[width=0.95\\textwidth,height=0.6\\textheight,keepaspectratio]{{{image_path}}}}}"""
+        latex_code += f"""            \\fbox{{\\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{image_path}}}}}
+"""
 
     # Add content column
-    latex_code += """
-        \\column{0.5\\textwidth}
-        \\begin{itemize}
+    latex_code += """        \\end{column}%
+        \\begin{column}{0.48\\textwidth}
+            \\begin{itemize}
 """
     if content:
         for item in content:
@@ -686,23 +711,24 @@ def generate_latex_code(base_name, filename, first_frame_path, content=None, tit
                 item = item[1:].strip()
             if not item.lower().startswith(title.lower() if title else ''):
                 item = item.replace("_", "\\_").replace("&", "\\&").replace("#", "\\#")
-                latex_code += f"            \\item {item}\n"
-    latex_code += """        \\end{itemize}"""
+                latex_code += f"                \\item {item}\n"
+    latex_code += """            \\end{itemize}"""
 
     # Add source citation if URL exists
     if source_url:
-        latex_code += """
-        \\vfill  % Push the rule and source to the bottom of the content
-"""
-        if "youtube.com" in source_url or "youtu.be" in source_url:
-            latex_code += f"""        \\hspace{{1em}}\\rule{{0.4\\textwidth}}{{0.4pt}}\\newline\\hspace{{1em}}{{\\tiny Source: {source_url}}} """
+        latex_code += f"""
+            \\vspace{{0.5em}}
+            \\rule{{0.9\\textwidth}}{{0.4pt}}
+            {{\\tiny Source: {source_url}}}"""
 
     latex_code += """
+        \\end{column}
     \\end{columns}
 \\end{frame}
 
 """
     return latex_code
+
 
 def process_media(url, content=None, title=None, playable=False):
     """

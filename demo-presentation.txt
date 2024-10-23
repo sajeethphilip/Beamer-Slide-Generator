@@ -93,4 +93,13 @@
 - The text file remains unchanged, and I often spell check and grammar check it after typing. Rerun it, and the new presentation will be ready!
 \end{Content}
 
+\title How did I generate this Slide?
+\begin{Content} \None
+You need not worry about creating the text file. That is the good news. You give a new file name, say \textcolor[RGB]{255,165,0}{some_filename.txt},after selecting the option 2.
+It will guide you through even suggestive pages on your browser related to the topic of your slide.
+You can follow the instructions. Copy and paste  and play (use play  command) YouTube video links by selecting option 1 in the submenu, or add your own files by selecting option 2.
+No worries, the links will be automatically cited so that you won't be blamed for IP violation.
+Try it and let me know
+\end{Content}
+
 \end{document}
