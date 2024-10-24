@@ -552,6 +552,7 @@ Created by {self.__author__}
         # Slide control buttons
         button_data = [
             ("New Slide", self.new_slide),
+            ("Duplicate Slide", self.duplicate_slide),  # Added new button
             ("Delete Slide", self.delete_slide),
             ("Move Up", lambda: self.move_slide(-1)),
             ("Move Down", lambda: self.move_slide(1))
@@ -560,6 +561,36 @@ Created by {self.__author__}
         for i, (text, command) in enumerate(button_data, start=2):
             ctk.CTkButton(self.sidebar, text=text,
                          command=command).grid(row=i, column=0, padx=5, pady=5)
+
+    def duplicate_slide(self) -> None:
+        """Duplicate the current slide"""
+        if self.current_slide_index >= 0:
+            # Save the current slide first to ensure we have the latest changes
+            self.save_current_slide()
+
+            # Create a deep copy of the current slide
+            current_slide = self.slides[self.current_slide_index]
+            new_slide = {
+                'title': f"{current_slide['title']} (Copy)",
+                'media': current_slide['media'],
+                'content': current_slide['content'].copy()  # Create a new list with the same content
+            }
+
+            # Insert the new slide after the current slide
+            insert_position = self.current_slide_index + 1
+            self.slides.insert(insert_position, new_slide)
+
+            # Update the current slide index to point to the new slide
+            self.current_slide_index = insert_position
+
+            # Update the UI
+            self.update_slide_list()
+            self.load_slide(self.current_slide_index)
+
+            # Show confirmation message
+            messagebox.showinfo("Success", "Slide duplicated successfully!")
+        else:
+            messagebox.showwarning("Warning", "No slide to duplicate!")
 
     def create_main_editor(self) -> None:
         """Create main editor area"""
@@ -722,7 +753,7 @@ Created by {self.__author__}
             self.load_file(filename)
 
     def save_file(self) -> None:
-        """Save presentation"""
+        """Save presentation in BeamerSlideGenerator-compatible format"""
         if not self.current_file:
             filename = filedialog.asksaveasfilename(
                 defaultextension=".txt",
@@ -730,47 +761,113 @@ Created by {self.__author__}
             )
             if filename:
                 self.current_file = filename
+            else:
+                return
 
-        if self.current_file:
-            self.save_current_slide()
-            content = self.generate_tex_content()
+        # Save current slide before generating content
+        self.save_current_slide()
 
-            # Save text file
+        try:
+            # Get preamble from BeamerSlideGenerator
+            from BeamerSlideGenerator import get_beamer_preamble
+            content = get_beamer_preamble(
+                self.presentation_info['title'],
+                self.presentation_info['subtitle'],
+                self.presentation_info['author'],
+                self.presentation_info['institution'],
+                self.presentation_info['short_institute'],
+                self.presentation_info['date']
+            )
+
+            # Add slides in BeamerSlideGenerator's expected format
+            for slide in self.slides:
+                content += f"\\title {slide['title']}\n"
+                content += "\\begin{Content}"
+                if slide['media']:
+                    content += f" {slide['media']}"
+                content += "\n"
+
+                # Format content items
+                for item in slide['content']:
+                    if item.strip():
+                        # Ensure proper bullet point format
+                        if not item.startswith('-'):
+                            item = f"- {item}"
+                        content += f"{item}\n"
+
+                content += "\\end{Content}\n\n"
+
+            content += "\\end{document}"
+
+            # Save to text file
             with open(self.current_file, 'w') as f:
                 f.write(content)
 
-            # Generate tex file
-            tex_file = os.path.splitext(self.current_file)[0] + '.tex'
-            with open(tex_file, 'w') as f:
-                f.write(content)
+            print(f"File saved successfully: {self.current_file}")
 
-            messagebox.showinfo("Success", "Files saved successfully!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error saving file:\n{str(e)}")
+            print(f"Error details: {str(e)}")
 
     def generate_pdf(self) -> None:
-        """Generate PDF from presentation"""
+        """Generate PDF from presentation using BeamerSlideGenerator library"""
         if not self.current_file:
             messagebox.showwarning("Warning", "Please save your file first!")
             return
 
+        # Save current state to ensure all changes are written
         self.save_file()
-        tex_file = os.path.splitext(self.current_file)[0] + '.tex'
 
-        # Run pdflatex twice to ensure all references are resolved
-        os.system(f"pdflatex {tex_file}")
-        os.system(f"pdflatex {tex_file}")
+        try:
+            # Get base filename for the tex file
+            base_filename = os.path.splitext(self.current_file)[0]
+            tex_file = base_filename + '.tex'
 
-        messagebox.showinfo("Success", "PDF generated successfully!")
+            # Use BeamerSlideGenerator's process_input_file to handle media and generate tex
+            from BeamerSlideGenerator import process_input_file
+            process_input_file(self.current_file, tex_file)
+
+            # Run pdflatex twice for proper reference resolution
+            success = True
+            for _ in range(2):
+                process = subprocess.Popen(
+                    ['pdflatex', tex_file],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=os.path.dirname(tex_file) or '.'  # Use file's directory or current dir
+                )
+                stdout, stderr = process.communicate()
+
+                if process.returncode != 0:
+                    success = False
+                    error_msg = stderr.decode() if stderr else stdout.decode()
+                    raise Exception(f"PDFLaTeX Error: {error_msg}")
+
+            if success:
+                messagebox.showinfo("Success", "PDF generated successfully!")
+
+                # Offer to preview the PDF
+                if messagebox.askyesno("Open PDF", "Would you like to view the generated PDF?"):
+                    self.preview_pdf()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Error generating PDF:\n{str(e)}")
+            print(f"Error details: {str(e)}")
 
     def preview_pdf(self) -> None:
-        """Preview generated PDF"""
+        """Preview generated PDF using system default PDF viewer"""
         if not self.current_file:
             messagebox.showwarning("Warning", "Please save and generate PDF first!")
             return
 
         pdf_file = os.path.splitext(self.current_file)[0] + '.pdf'
         if os.path.exists(pdf_file):
-            os.system(f"xdg-open {pdf_file}")  # Linux
-            # For Windows, use: os.startfile(pdf_file)
+            if sys.platform.startswith('win'):
+                os.startfile(pdf_file)
+            elif sys.platform.startswith('darwin'):
+                subprocess.run(['open', pdf_file])
+            else:
+                subprocess.run(['xdg-open', pdf_file])
         else:
             messagebox.showwarning("Warning", "PDF file not found. Generate it first!")
     # Slide Management
