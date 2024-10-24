@@ -5,6 +5,8 @@ An integrated development environment for BeamerSlideGenerator
 Combines GUI editing, syntax highlighting, and presentation generation.
 """
 import tkinter as tk
+from PIL import Image
+from tkinter import ttk
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import os
@@ -12,6 +14,8 @@ from pathlib import Path
 import webbrowser
 import re
 from typing import Optional, Dict, List, Tuple
+from PIL import Image, ImageDraw
+
 import sys
 #---------------------------------------------------------------------------------------------------------
 
@@ -299,6 +303,321 @@ class BeamerSyntaxHighlighter:
     def after_paste(self) -> None:
         """Handle highlighting after paste operation"""
         self.text.after(10, self.highlight)
+#------------------------------------------------------------------------------------------
+class FileThumbnailBrowser(ctk.CTkToplevel):
+    def __init__(self, parent, media_folder="media_files", callback=None):
+        super().__init__(parent)
+        self.title("Media Browser")
+        self.geometry("800x600")
+
+        # Import required modules
+        from PIL import Image, ImageDraw, ImageFont
+        import mimetypes
+
+        self.media_folder = media_folder
+        self.callback = callback
+        self.thumbnails = []
+        self.current_row = 0
+        self.current_col = 0
+        self.max_cols = 4
+
+        # Define file type categories
+        self.file_categories = {
+            'image': ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp'),
+            'video': ('.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv'),
+            'audio': ('.mp3', '.wav', '.ogg', '.m4a', '.flac'),
+            'document': ('.pdf', '.doc', '.docx', '.txt', '.tex'),
+            'data': ('.csv', '.xlsx', '.json', '.xml')
+        }
+
+        self.create_toolbar()
+        self.create_content_area()
+        self.load_files()
+
+
+    def create_toolbar(self) -> None:
+        """Create toolbar with additional separate conversion button"""
+        self.toolbar = ctk.CTkFrame(self)
+        self.toolbar.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
+
+        # File operations
+        file_buttons = [
+            ("New", self.new_file),
+            ("Open", self.open_file),
+            ("Save", self.save_file),
+            ("Convert to TeX", self.convert_to_tex),  # Optional separate conversion button
+            ("Generate PDF", self.generate_pdf),
+            ("Preview PDF", self.preview_pdf)
+        ]
+
+        for text, command in file_buttons:
+            ctk.CTkButton(self.toolbar, text=text,
+                         command=command).pack(side="left", padx=5)
+    def convert_to_tex(self) -> None:
+        """Separate function to convert text to TeX"""
+        if not self.current_file:
+            messagebox.showwarning("Warning", "Please save your file first!")
+            return
+
+        try:
+            self.save_file()  # Save current state
+
+            # Get base filename without extension
+            base_filename = os.path.splitext(self.current_file)[0]
+            tex_file = base_filename + '.tex'
+
+            # Clear terminal
+            self.clear_terminal()
+            self.write_to_terminal("Converting text to TeX...\n")
+
+            # Convert using BeamerSlideGenerator
+            from BeamerSlideGenerator import process_input_file
+            process_input_file(self.current_file, tex_file)
+
+            self.write_to_terminal("✓ Text to TeX conversion successful\n", "green")
+            messagebox.showinfo("Success", "TeX file generated successfully!")
+
+        except Exception as e:
+            self.write_to_terminal(f"✗ Error in conversion: {str(e)}\n", "red")
+            messagebox.showerror("Error", f"Error converting to TeX:\n{str(e)}")
+
+
+    def create_content_area(self):
+        """Create scrollable content area"""
+        self.main_frame = ctk.CTkFrame(self)
+        self.main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self.canvas = tk.Canvas(self.main_frame, bg='black')
+        self.scrollbar = ttk.Scrollbar(self.main_frame, orient="vertical", command=self.canvas.yview)
+        self.scrollable_frame = ctk.CTkFrame(self.canvas)
+
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+
+        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        self.scrollbar.pack(side="right", fill="y")
+        self.canvas.pack(side="left", fill="both", expand=True)
+
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _on_mousewheel(self, event):
+        self.canvas.yview_scroll(-1 * (event.delta // 120), "units")
+
+    def create_generic_thumbnail(self, text, color="gray"):
+        """Create a generic thumbnail with text"""
+        thumb_size = (150, 150)
+        img = Image.new('RGB', thumb_size, 'black')
+        draw = ImageDraw.Draw(img)
+
+        # Draw colored rectangle
+        margin = 20
+        draw.rectangle(
+            [margin, margin, thumb_size[0]-margin, thumb_size[1]-margin],
+            fill=color
+        )
+
+        # Add text
+        text_bbox = draw.textbbox((0, 0), text)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+
+        text_x = (thumb_size[0] - text_width) // 2
+        text_y = (thumb_size[1] - text_height) // 2
+
+        draw.text((text_x, text_y), text, fill="white")
+
+        return ctk.CTkImage(light_image=img, dark_image=img, size=thumb_size)
+
+    def get_file_category(self, filename):
+        """Determine file category and appropriate thumbnail style"""
+        ext = os.path.splitext(filename)[1].lower()
+
+        for category, extensions in self.file_categories.items():
+            if ext in extensions:
+                return category
+
+        return 'other'
+
+    def create_thumbnail(self, file_path):
+        """Create thumbnail based on file type"""
+        try:
+            category = self.get_file_category(file_path)
+            ext = os.path.splitext(file_path)[1].lower()
+            thumb_size = (150, 150)
+
+            if category == 'image':
+                try:
+                    with Image.open(file_path) as img:
+                        # Convert to RGB if necessary
+                        if img.mode in ('RGBA', 'P'):
+                            img = img.convert('RGB')
+
+                        # Create thumbnail
+                        img.thumbnail(thumb_size, Image.Resampling.LANCZOS)
+
+                        # Create background
+                        thumb_bg = Image.new('RGB', thumb_size, 'black')
+
+                        # Center image on background
+                        offset = ((thumb_size[0] - img.size[0]) // 2,
+                                (thumb_size[1] - img.size[1]) // 2)
+                        thumb_bg.paste(img, offset)
+
+                        return ctk.CTkImage(light_image=thumb_bg,
+                                          dark_image=thumb_bg,
+                                          size=thumb_size)
+                except Exception as e:
+                    print(f"Error creating image thumbnail: {e}")
+                    return self.create_generic_thumbnail("Image\nError", "darkred")
+
+            elif category == 'video':
+                return self.create_generic_thumbnail("Video", "#4a90e2")
+
+            elif category == 'audio':
+                return self.create_generic_thumbnail("Audio", "#e24a90")
+
+            elif category == 'document':
+                return self.create_generic_thumbnail("Doc", "#90e24a")
+
+            elif category == 'data':
+                return self.create_generic_thumbnail("Data", "#4ae290")
+
+            else:
+                return self.create_generic_thumbnail(ext[1:].upper() if ext else "File", "#808080")
+
+        except Exception as e:
+            print(f"Error creating thumbnail for {file_path}: {str(e)}")
+            return self.create_generic_thumbnail("Error", "darkred")
+
+
+    def get_file_info(self, file_path):
+        """Get file information for sorting"""
+        stat = os.stat(file_path)
+        return {
+            'name': os.path.basename(file_path).lower(),
+            'date': stat.st_mtime,
+            'size': stat.st_size,
+            'type': os.path.splitext(file_path)[1].lower()
+        }
+
+    def sort_files(self, files):
+        """Sort files based on current criteria"""
+        sort_key = self.sort_var.get()
+        reverse = self.reverse_var.get()
+
+        return sorted(
+            files,
+            key=lambda f: self.get_file_info(os.path.join(self.media_folder, f))[sort_key],
+            reverse=reverse
+        )
+
+    def refresh_files(self):
+        """Refresh file display with current sort settings"""
+        # Clear current display
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+        self.thumbnails.clear()
+        self.current_row = 0
+        self.current_col = 0
+
+        # Reload files
+        self.load_files()
+
+    def load_files(self):
+        """Load and display all files"""
+        if not os.path.exists(self.media_folder):
+            os.makedirs(self.media_folder)
+
+        # Get all files
+        files = []
+        for f in os.listdir(self.media_folder):
+            full_path = os.path.join(self.media_folder, f)
+            if os.path.isfile(full_path):  # Ensure it's a file
+                files.append(f)
+
+        # Sort files
+        sorted_files = self.sort_files(files)
+
+        # Clear existing grid
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+
+        # Create grid of files
+        for file in sorted_files:
+            file_path = os.path.join(self.media_folder, file)
+
+            # Create frame for thumbnail and label
+            thumb_frame = ctk.CTkFrame(self.scrollable_frame)
+            thumb_frame.grid(row=self.current_row, column=self.current_col,
+                           padx=10, pady=10, sticky="nsew")
+
+            # Create and add thumbnail
+            thumbnail = self.create_thumbnail(file_path)
+            if thumbnail:
+                # Create thumbnail button
+                thumb_button = ctk.CTkButton(
+                    thumb_frame,
+                    image=thumbnail,
+                    text="",
+                    command=lambda path=file_path: self.on_file_click(path),
+                    width=150,
+                    height=150
+                )
+                thumb_button.pack(pady=(5, 0))
+
+                # Add filename label
+                label = ctk.CTkLabel(
+                    thumb_frame,
+                    text=file,
+                    wraplength=140
+                )
+                label.pack(pady=(5, 5))
+
+                # Add file size label
+                size = os.path.getsize(file_path)
+                size_text = self.format_file_size(size)
+                size_label = ctk.CTkLabel(
+                    thumb_frame,
+                    text=size_text,
+                    font=("Arial", 10)
+                )
+                size_label.pack(pady=(0, 5))
+
+                # Store reference to thumbnail
+                self.thumbnails.append(thumbnail)
+
+                # Update grid position
+                self.current_col += 1
+                if self.current_col >= self.max_cols:
+                    self.current_col = 0
+                    self.current_row += 1
+
+    def format_file_size(self, size):
+        """Format file size in human-readable format"""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024:
+                return f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} TB"
+
+    def on_file_click(self, file_path):
+        """Handle file click with proper path formatting"""
+        if self.callback:
+            # Ensure proper path formatting
+            relative_path = os.path.join('media_files', os.path.basename(file_path))
+
+            # Determine if it's a video file (for play directive)
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext in self.file_categories['video']:
+                self.callback(f"\\play {relative_path}")
+            else:
+                self.callback(f"\\file {relative_path}")
+        self.destroy()
+
 #------------------------------------------------------------------------------------------
 class BeamerSlideEditor(ctk.CTk):
     def __init__(self):
@@ -1083,44 +1402,56 @@ Created by {self.__author__}
             print(f"Error details: {str(e)}")
 
     def generate_pdf(self) -> None:
-        """Generate PDF with terminal output and error handling"""
+        """Generate PDF with text to TeX conversion and compilation"""
         if not self.current_file:
             messagebox.showwarning("Warning", "Please save your file first!")
             return
 
-        self.save_file()  # Save current state
-
         try:
+            self.save_file()  # Save current state to text file
+
             # Get base filename without extension
             base_filename = os.path.splitext(self.current_file)[0]
             tex_file = base_filename + '.tex'
 
             # Clear terminal
             self.clear_terminal()
-            self.write_to_terminal("Starting PDF generation...\n")
 
-            # First run pdflatex
-            self.write_to_terminal("\nFirst pdflatex pass...\n")
+            # Step 1: Convert text to TeX
+            self.write_to_terminal("Step 1: Converting text to TeX...\n")
+            from BeamerSlideGenerator import process_input_file
+
+            try:
+                process_input_file(self.current_file, tex_file)
+                self.write_to_terminal("✓ Text to TeX conversion successful\n", "green")
+            except Exception as e:
+                self.write_to_terminal(f"✗ Error in text to TeX conversion: {str(e)}\n", "red")
+                raise
+
+            # Step 2: First pdflatex pass
+            self.write_to_terminal("\nStep 2: First pdflatex pass...\n")
             success = self.run_pdflatex(tex_file)
 
             if success:
-                # Second run for references
-                self.write_to_terminal("\nSecond pdflatex pass...\n")
+                # Step 3: Second pdflatex pass for references
+                self.write_to_terminal("\nStep 3: Second pdflatex pass...\n")
                 success = self.run_pdflatex(tex_file)
 
                 if success:
-                    self.write_to_terminal("\nPDF generated successfully!\n", "green")
+                    self.write_to_terminal("\n✓ PDF generated successfully!\n", "green")
 
                     # Ask if user wants to view the PDF
                     if messagebox.askyesno("Open PDF", "Would you like to view the generated PDF?"):
                         self.preview_pdf()
                 else:
-                    self.write_to_terminal("\nError in second pdflatex pass\n", "red")
+                    self.write_to_terminal("\n✗ Error in second pdflatex pass\n", "red")
             else:
-                self.write_to_terminal("\nError in first pdflatex pass\n", "red")
+                self.write_to_terminal("\n✗ Error in first pdflatex pass\n", "red")
 
         except Exception as e:
-            self.write_to_terminal(f"\nError: {str(e)}\n", "red")
+            self.write_to_terminal(f"\n✗ Error: {str(e)}\n", "red")
+            messagebox.showerror("Error", f"Error generating PDF:\n{str(e)}")
+
 
     def run_pdflatex(self, tex_file: str) -> bool:
         """Run pdflatex process with interactive output"""
@@ -1279,27 +1610,15 @@ Created by {self.__author__}
 
     # Media Handling
     def browse_media(self) -> None:
-        """Browse for local media file"""
-        filename = filedialog.askopenfilename(
-            filetypes=[
-                ("Media files", "*.png *.jpg *.gif *.mp4 *.avi *.mov"),
-                ("All files", "*.*")
-            ]
-        )
-        if filename:
-            # Copy file to media_files directory if it's not already there
-            media_dir = "media_files"
-            os.makedirs(media_dir, exist_ok=True)
-
-            base_name = os.path.basename(filename)
-            new_path = os.path.join(media_dir, base_name)
-
-            if filename != new_path:
-                import shutil
-                shutil.copy2(filename, new_path)
-
+        """Browse media files with thumbnail preview"""
+        def on_file_selected(media_path):
             self.media_entry.delete(0, 'end')
-            self.media_entry.insert(0, f"\\file media_files/{base_name}")
+            self.media_entry.insert(0, media_path)
+
+        browser = FileThumbnailBrowser(self, callback=on_file_selected)
+        browser.transient(self)
+        browser.grab_set()
+        self.wait_window(browser)
 
     def youtube_dialog(self) -> None:
         """Handle YouTube video insertion"""
