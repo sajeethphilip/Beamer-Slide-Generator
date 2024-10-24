@@ -334,54 +334,37 @@ class FileThumbnailBrowser(ctk.CTkToplevel):
         self.create_content_area()
         self.load_files()
 
+    def create_toolbar(self):
+        """Create toolbar with sorting and view options"""
+        toolbar = ctk.CTkFrame(self)
+        toolbar.pack(fill="x", padx=5, pady=5)
 
-    def create_toolbar(self) -> None:
-        """Create toolbar with additional separate conversion button"""
-        self.toolbar = ctk.CTkFrame(self)
-        self.toolbar.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
+        # Sorting options
+        sort_label = ctk.CTkLabel(toolbar, text="Sort by:")
+        sort_label.pack(side="left", padx=5)
 
-        # File operations
-        file_buttons = [
-            ("New", self.new_file),
-            ("Open", self.open_file),
-            ("Save", self.save_file),
-            ("Convert to TeX", self.convert_to_tex),  # Optional separate conversion button
-            ("Generate PDF", self.generate_pdf),
-            ("Preview PDF", self.preview_pdf)
-        ]
+        self.sort_var = tk.StringVar(value="name")
+        sort_options = ["name", "date", "size", "type"]
 
-        for text, command in file_buttons:
-            ctk.CTkButton(self.toolbar, text=text,
-                         command=command).pack(side="left", padx=5)
-    def convert_to_tex(self) -> None:
-        """Separate function to convert text to TeX"""
-        if not self.current_file:
-            messagebox.showwarning("Warning", "Please save your file first!")
-            return
+        for option in sort_options:
+            rb = ctk.CTkRadioButton(
+                toolbar,
+                text=option.capitalize(),
+                variable=self.sort_var,
+                value=option,
+                command=self.refresh_files
+            )
+            rb.pack(side="left", padx=10)
 
-        try:
-            self.save_file()  # Save current state
-
-            # Get base filename without extension
-            base_filename = os.path.splitext(self.current_file)[0]
-            tex_file = base_filename + '.tex'
-
-            # Clear terminal
-            self.clear_terminal()
-            self.write_to_terminal("Converting text to TeX...\n")
-
-            # Convert using BeamerSlideGenerator
-            from BeamerSlideGenerator import process_input_file
-            process_input_file(self.current_file, tex_file)
-
-            self.write_to_terminal("✓ Text to TeX conversion successful\n", "green")
-            messagebox.showinfo("Success", "TeX file generated successfully!")
-
-        except Exception as e:
-            self.write_to_terminal(f"✗ Error in conversion: {str(e)}\n", "red")
-            messagebox.showerror("Error", f"Error converting to TeX:\n{str(e)}")
-
-
+        # Sort direction
+        self.reverse_var = tk.BooleanVar(value=False)
+        reverse_cb = ctk.CTkCheckBox(
+            toolbar,
+                text="Reverse",
+                variable=self.reverse_var,
+                command=self.refresh_files
+            )
+        reverse_cb.pack(side="left", padx=10)
     def create_content_area(self):
         """Create scrollable content area"""
         self.main_frame = ctk.CTkFrame(self)
@@ -1232,7 +1215,7 @@ Created by {self.__author__}
         self.syntax_highlighter = BeamerSyntaxHighlighter(self.content_editor)
 
     def create_toolbar(self) -> None:
-
+        """Create main editor toolbar with file operations"""
         self.toolbar = ctk.CTkFrame(self)
         self.toolbar.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
 
@@ -1241,13 +1224,43 @@ Created by {self.__author__}
             ("New", self.new_file),
             ("Open", self.open_file),
             ("Save", self.save_file),
-            ("Preview PDF", self.preview_pdf),
-            ("Generate PDF", self.generate_pdf)
+            ("Convert to TeX", self.convert_to_tex),
+            ("Generate PDF", self.generate_pdf),
+            ("Preview PDF", self.preview_pdf)
         ]
 
         for text, command in file_buttons:
             ctk.CTkButton(self.toolbar, text=text,
                          command=command).pack(side="left", padx=5)
+
+    def convert_to_tex(self) -> None:
+            """Separate function to convert text to TeX"""
+            if not self.current_file:
+                messagebox.showwarning("Warning", "Please save your file first!")
+                return
+
+            try:
+                self.save_file()  # Save current state
+
+                # Get base filename without extension
+                base_filename = os.path.splitext(self.current_file)[0]
+                tex_file = base_filename + '.tex'
+
+                # Clear terminal
+                self.clear_terminal()
+                self.write_to_terminal("Converting text to TeX...\n")
+
+                # Convert using BeamerSlideGenerator
+                from BeamerSlideGenerator import process_input_file
+                process_input_file(self.current_file, tex_file)
+
+                self.write_to_terminal("✓ Text to TeX conversion successful\n", "green")
+                messagebox.showinfo("Success", "TeX file generated successfully!")
+
+            except Exception as e:
+                self.write_to_terminal(f"✗ Error in conversion: {str(e)}\n", "red")
+                messagebox.showerror("Error", f"Error converting to TeX:\n{str(e)}")
+
 
     def create_context_menu(self) -> None:
         """Create right-click context menu"""
