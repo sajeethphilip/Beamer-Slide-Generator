@@ -365,6 +365,79 @@ class BeamerSlideEditor(ctk.CTk):
         self.slides: List[Dict] = []
         self.current_slide_index: int = -1
 
+        # Add terminal after other UI elements
+        self.create_terminal()
+
+        # Adjust grid weights to accommodate terminal
+        self.grid_rowconfigure(1, weight=3)  # Main editor
+        self.grid_rowconfigure(4, weight=1)  # Terminal
+#--------------------------------------------------------------------------------------------------------------------
+    def create_terminal(self) -> None:
+        """Create a terminal/console widget"""
+        self.terminal_frame = ctk.CTkFrame(self)
+        self.terminal_frame.grid(row=4, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+        self.grid_rowconfigure(4, weight=1)  # Make terminal expandable
+
+        # Terminal header with controls
+        header_frame = ctk.CTkFrame(self.terminal_frame)
+        header_frame.pack(fill="x", padx=2, pady=2)
+
+        ctk.CTkLabel(header_frame, text="Compilation Output", font=("Arial", 12, "bold")).pack(side="left", padx=5)
+
+        # Control buttons
+        self.auto_scroll_var = ctk.BooleanVar(value=True)
+        ctk.CTkCheckBox(header_frame, text="Auto-scroll", variable=self.auto_scroll_var).pack(side="right", padx=5)
+
+        ctk.CTkButton(header_frame, text="Clear",
+                     command=self.clear_terminal).pack(side="right", padx=5)
+
+        ctk.CTkButton(header_frame, text="Stop Compilation",
+                     command=self.stop_compilation,
+                     fg_color="red").pack(side="right", padx=5)
+
+        # Terminal output text widget
+        self.terminal = ctk.CTkTextbox(self.terminal_frame, height=150)
+        self.terminal.pack(fill="both", expand=True, padx=2, pady=2)
+
+        # Configure terminal appearance
+        self.terminal._text_color = "white"
+        self.terminal._fg_color = "black"
+        self.terminal.configure(font=("Courier", 10))
+
+        # Store process reference
+        self.current_process = None
+
+    def clear_terminal(self) -> None:
+        """Clear terminal content"""
+        self.terminal.delete('1.0', 'end')
+
+    def stop_compilation(self) -> None:
+        """Stop the current compilation process"""
+        if self.current_process:
+            try:
+                self.current_process.terminate()
+                self.write_to_terminal("\n[Compilation process terminated by user]\n", "red")
+            except Exception as e:
+                self.write_to_terminal(f"\n[Error terminating process: {str(e)}]\n", "red")
+            finally:
+                self.current_process = None
+
+    def write_to_terminal(self, text: str, color: str = "white") -> None:
+        """Write text to terminal with color"""
+        self.terminal.insert('end', text)
+        if color != "white":
+            # Color the last inserted line
+            last_line_start = self.terminal.index("end-1c linestart")
+            last_line_end = self.terminal.index("end-1c")
+            self.terminal.tag_add(color, last_line_start, last_line_end)
+            self.terminal.tag_config(color, foreground=color)
+
+        if self.auto_scroll_var.get():
+            self.terminal.see('end')
+
+        # Update the GUI
+        self.update_idletasks()
+#--------------------------------------------------------------------------------------------------------------------
     def create_footer(self) -> None:
         """Create footer with institution info, logo, and links"""
         # Main footer frame with dark theme
@@ -511,7 +584,7 @@ Created by {self.__author__}
 
 
     def create_menu(self) -> None:
-        """Create top menu bar"""
+        """Create top menu bar with added Get Source option"""
         self.menu_frame = ctk.CTkFrame(self)
         self.menu_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
 
@@ -522,7 +595,11 @@ Created by {self.__author__}
         ctk.CTkButton(left_buttons, text="Presentation Settings",
                      command=self.show_settings_dialog).pack(side="left", padx=5)
 
-        # Right side buttons
+        # Add Get Source button
+        ctk.CTkButton(left_buttons, text="Get Source",
+                     command=self.get_source_from_tex).pack(side="left", padx=5)
+
+        # Right side buttons (existing code)
         right_buttons = ctk.CTkFrame(self.menu_frame)
         right_buttons.pack(side="right", padx=5)
 
@@ -534,6 +611,202 @@ Created by {self.__author__}
             command=self.toggle_highlighting
         )
         self.highlight_switch.pack(side="right", padx=5)
+
+    def get_source_from_tex(self) -> None:
+        """Convert a tex file back to source text format"""
+        tex_file = filedialog.askopenfilename(
+            filetypes=[("TeX files", "*.tex"), ("All files", "*.*")],
+            title="Select TeX File to Convert"
+        )
+
+        if not tex_file:
+            return
+
+        try:
+            with open(tex_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # Extract slides
+            slides = self.extract_slides_from_tex(content)
+
+            if not slides:
+                messagebox.showwarning("Warning", "No slides found in the TeX file!")
+                return
+
+            # Create output text file
+            output_file = os.path.splitext(tex_file)[0] + '_source.txt'
+
+            with open(output_file, 'w', encoding='utf-8') as f:
+                # Extract and write presentation info
+                title_match = re.search(r'\\title{([^}]*)}', content)
+                subtitle_match = re.search(r'\\subtitle{([^}]*)}', content)
+                author_match = re.search(r'\\author{([^}]*)}', content)
+                institute_match = re.search(r'\\institute{\\textcolor{[^}]*}{([^}]*)}', content)
+
+                if title_match:
+                    f.write(f"\\title{{{title_match.group(1)}}}\n")
+                if subtitle_match:
+                    f.write(f"\\subtitle{{{subtitle_match.group(1)}}}\n")
+                if author_match:
+                    f.write(f"\\author{{{author_match.group(1)}}}\n")
+                if institute_match:
+                    f.write(f"\\institute{{{institute_match.group(1)}}}\n")
+
+                f.write("\\date{\\today}\n\n")
+
+                # Write slides
+                for slide in slides:
+                    f.write(f"\\title {slide['title']}\n")
+                    f.write("\\begin{Content}")
+                    if slide['media']:
+                        f.write(f" {slide['media']}")
+                    f.write("\n")
+
+                    for item in slide['content']:
+                        f.write(f"{item}\n")
+
+                    f.write("\\end{Content}\n\n")
+
+                f.write("\\end{document}")
+
+            messagebox.showinfo("Success", f"Source file created: {output_file}")
+
+            # Ask if user wants to load the generated source file
+            if messagebox.askyesno("Load File", "Would you like to load the generated source file?"):
+                self.load_file(output_file)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Error converting TeX file:\n{str(e)}")
+            print(f"Error details: {str(e)}")
+
+
+    def extract_presentation_info(self, content: str) -> dict:
+        """Extract presentation information from document body only"""
+        info = {
+            'title': '',
+            'subtitle': '',
+            'author': '',
+            'institution': '',
+            'short_institute': '',
+            'date': '\\today'
+        }
+
+        import re
+
+        # First isolate the document body
+        doc_match = re.search(r'\\begin{document}(.*?)\\end{document}', content, re.DOTALL)
+        if doc_match:
+            document_content = doc_match.group(1).strip()
+
+            # Look for title frame content
+            title_frame = re.search(r'\\begin{frame}.*?\\titlepage.*?\\end{frame}',
+                                  document_content,
+                                  re.DOTALL)
+            if title_frame:
+                # Extract information from the title frame
+                for key in info.keys():
+                    pattern = f"\\\\{key}{{(.*?)}}"
+                    match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
+                    if match:
+                        # Clean up LaTeX formatting
+                        value = match.group(1).strip()
+                        value = re.sub(r'\\textcolor{[^}]*}{([^}]*)}', r'\1', value)
+                        value = re.sub(r'\\[a-zA-Z]+{([^}]*)}', r'\1', value)
+                        info[key] = value
+
+        return info
+
+    def extract_slides_from_tex(self, content: str) -> list:
+        """Extract slides from TeX content, with correct titles and media paths"""
+        slides = []
+        import re
+
+        # First isolate the document body
+        doc_match = re.search(r'\\begin{document}(.*?)\\end{document}', content, re.DOTALL)
+        if not doc_match:
+            print("Could not find document body")
+            return slides
+
+        document_content = doc_match.group(1).strip()
+
+        # Find all frame blocks in the document body
+        frame_blocks = re.finditer(
+            r'\\begin{frame}\s*(?:\{\\Large\\textbf{([^}]*?)}\}|\{([^}]*)\})?(.*?)\\end{frame}',
+            document_content,
+            re.DOTALL
+        )
+
+        for block in frame_blocks:
+            # Extract title from different possible patterns
+            title = block.group(1) if block.group(1) else block.group(2) if block.group(2) else ""
+            frame_content = block.group(3).strip() if block.group(3) else ""
+
+            # If no title found in frame declaration, look for frametitle
+            if not title:
+                title_match = re.search(r'\\frametitle{([^}]*)}', frame_content)
+                if title_match:
+                    title = title_match.group(1)
+
+            # Clean up title - remove \Large, \textbf, etc.
+            if title:
+                title = re.sub(r'\\[a-zA-Z]+{([^}]*)}', r'\1', title)
+            else:
+                title = "Untitled Slide"
+
+            # Skip title frame
+            if "\\titlepage" in frame_content:
+                continue
+
+            # Extract content and media
+            content_lines = []
+            media = ""
+
+            # Look for media in columns environment
+            media_match = re.search(r'\\includegraphics\[.*?\]{([^}]*)}', frame_content)
+            if media_match:
+                # Extract filename and ensure it has media_files prefix
+                filename = media_match.group(1)
+                if not filename.startswith('media_files/'):
+                    filename = os.path.basename(filename)  # Remove any existing path
+                    filename = f"media_files/{filename}"  # Add media_files prefix
+                media = f"\\file {filename}"
+
+            # Look for movie elements
+            movie_match = re.search(r'\\movie(?:\[[^\]]*\])?{[^}]*}{([^}]*)}', frame_content)
+            if movie_match:
+                filename = movie_match.group(1)
+                if not filename.startswith('media_files/'):
+                    filename = os.path.basename(filename)
+                    filename = f"media_files/{filename}"
+                media = f"\\play {filename}"
+
+            # Extract itemize content
+            itemize_blocks = re.finditer(r'\\begin{itemize}(.*?)\\end{itemize}', frame_content, re.DOTALL)
+            for itemize in itemize_blocks:
+                items = re.finditer(r'\\item\s*(.*?)(?=\\item|\s*\\end{itemize}|$)',
+                                  itemize.group(1),
+                                  re.DOTALL)
+                for item in items:
+                    content_line = item.group(1).strip()
+                    if content_line:
+                        # Clean up the content line
+                        content_line = content_line.replace('\\&', '&')
+                        content_line = re.sub(r'\\textcolor{[^}]*}{([^}]*)}', r'\1', content_line)
+                        content_line = re.sub(r'\\[a-zA-Z]+{([^}]*)}', r'\1', content_line)
+                        if not content_line.startswith('-'):
+                            content_line = f"- {content_line}"
+                        content_lines.append(content_line)
+
+            # Only add non-empty slides
+            if content_lines or media:
+                slides.append({
+                    'title': title.strip(),
+                    'media': media,
+                    'content': content_lines
+                })
+
+        return slides
+#------------------------------------------------------------------------------------
 
     def create_sidebar(self) -> None:
         """Create sidebar with slide list and controls"""
@@ -810,49 +1083,89 @@ Created by {self.__author__}
             print(f"Error details: {str(e)}")
 
     def generate_pdf(self) -> None:
-        """Generate PDF from presentation using BeamerSlideGenerator library"""
+        """Generate PDF with terminal output and error handling"""
         if not self.current_file:
             messagebox.showwarning("Warning", "Please save your file first!")
             return
 
-        # Save current state to ensure all changes are written
-        self.save_file()
+        self.save_file()  # Save current state
 
         try:
-            # Get base filename for the tex file
+            # Get base filename without extension
             base_filename = os.path.splitext(self.current_file)[0]
             tex_file = base_filename + '.tex'
 
-            # Use BeamerSlideGenerator's process_input_file to handle media and generate tex
-            from BeamerSlideGenerator import process_input_file
-            process_input_file(self.current_file, tex_file)
+            # Clear terminal
+            self.clear_terminal()
+            self.write_to_terminal("Starting PDF generation...\n")
 
-            # Run pdflatex twice for proper reference resolution
-            success = True
-            for _ in range(2):
-                process = subprocess.Popen(
-                    ['pdflatex', tex_file],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    cwd=os.path.dirname(tex_file) or '.'  # Use file's directory or current dir
-                )
-                stdout, stderr = process.communicate()
-
-                if process.returncode != 0:
-                    success = False
-                    error_msg = stderr.decode() if stderr else stdout.decode()
-                    raise Exception(f"PDFLaTeX Error: {error_msg}")
+            # First run pdflatex
+            self.write_to_terminal("\nFirst pdflatex pass...\n")
+            success = self.run_pdflatex(tex_file)
 
             if success:
-                messagebox.showinfo("Success", "PDF generated successfully!")
+                # Second run for references
+                self.write_to_terminal("\nSecond pdflatex pass...\n")
+                success = self.run_pdflatex(tex_file)
 
-                # Offer to preview the PDF
-                if messagebox.askyesno("Open PDF", "Would you like to view the generated PDF?"):
-                    self.preview_pdf()
+                if success:
+                    self.write_to_terminal("\nPDF generated successfully!\n", "green")
+
+                    # Ask if user wants to view the PDF
+                    if messagebox.askyesno("Open PDF", "Would you like to view the generated PDF?"):
+                        self.preview_pdf()
+                else:
+                    self.write_to_terminal("\nError in second pdflatex pass\n", "red")
+            else:
+                self.write_to_terminal("\nError in first pdflatex pass\n", "red")
 
         except Exception as e:
-            messagebox.showerror("Error", f"Error generating PDF:\n{str(e)}")
-            print(f"Error details: {str(e)}")
+            self.write_to_terminal(f"\nError: {str(e)}\n", "red")
+
+    def run_pdflatex(self, tex_file: str) -> bool:
+        """Run pdflatex process with interactive output"""
+        try:
+            # Prepare command
+            cmd = ['pdflatex', '-interaction=nonstopmode', tex_file]
+
+            # Start process with pipe for output
+            self.current_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
+                cwd=os.path.dirname(tex_file) or '.'
+            )
+
+            # Read output in real-time
+            while True:
+                line = self.current_process.stdout.readline()
+                if not line and self.current_process.poll() is not None:
+                    break
+
+                if line:
+                    # Color error messages in red
+                    if any(err in line for err in ['Error:', '!', 'Fatal error']):
+                        self.write_to_terminal(line, "red")
+                    # Color warnings in yellow
+                    elif 'Warning' in line:
+                        self.write_to_terminal(line, "yellow")
+                    else:
+                        self.write_to_terminal(line)
+
+            # Get return code and cleanup
+            return_code = self.current_process.wait()
+            self.current_process = None
+
+            return return_code == 0
+
+        except Exception as e:
+            self.write_to_terminal(f"\nProcess error: {str(e)}\n", "red")
+            if self.current_process:
+                self.current_process = None
+            return False
 
     def preview_pdf(self) -> None:
         """Preview generated PDF using system default PDF viewer"""
