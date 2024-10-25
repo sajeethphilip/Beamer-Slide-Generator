@@ -305,7 +305,7 @@ class BeamerSyntaxHighlighter:
         self.text.after(10, self.highlight)
 #------------------------------------------------------------------------------------------
 class FileThumbnailBrowser(ctk.CTkToplevel):
-    def __init__(self, parent, media_folder="media_files", callback=None):
+    def __init__(self, parent, initial_dir="media_files", callback=None):
         super().__init__(parent)
         self.title("Media Browser")
         self.geometry("800x600")
@@ -314,25 +314,55 @@ class FileThumbnailBrowser(ctk.CTkToplevel):
         from PIL import Image, ImageDraw, ImageFont
         import mimetypes
 
-        self.media_folder = media_folder
+        # Store initial directory and callback
+        self.current_dir = os.path.abspath(initial_dir)
         self.callback = callback
         self.thumbnails = []
         self.current_row = 0
         self.current_col = 0
         self.max_cols = 4
 
-        # Define file type categories
+        # File categories with extended video types
         self.file_categories = {
             'image': ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp'),
-            'video': ('.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv'),
+            'video': ('.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv', '.gif'),
             'audio': ('.mp3', '.wav', '.ogg', '.m4a', '.flac'),
             'document': ('.pdf', '.doc', '.docx', '.txt', '.tex'),
             'data': ('.csv', '.xlsx', '.json', '.xml')
         }
 
+        # Create UI components with navigation
+        self.create_navigation_bar()
         self.create_toolbar()
         self.create_content_area()
         self.load_files()
+
+    def create_navigation_bar(self):
+        """Create navigation bar with path and controls"""
+        nav_frame = ctk.CTkFrame(self)
+        nav_frame.pack(fill="x", padx=5, pady=5)
+
+        # Back button
+        self.back_button = ctk.CTkButton(
+            nav_frame,
+            text="⬅ Back",
+            command=self.navigate_up,
+            width=60
+        )
+        self.back_button.pack(side="left", padx=5)
+
+        # Path display and navigation
+        self.path_var = tk.StringVar()
+        self.path_entry = ctk.CTkEntry(
+            nav_frame,
+            textvariable=self.path_var,
+            width=400
+        )
+        self.path_entry.pack(side="left", fill="x", expand=True, padx=5)
+        self.path_entry.bind('<Return>', self.navigate_to_path)
+
+        # Update current path
+        self.update_path_display()
 
     def create_toolbar(self):
         """Create toolbar with sorting and view options"""
@@ -360,60 +390,98 @@ class FileThumbnailBrowser(ctk.CTkToplevel):
         self.reverse_var = tk.BooleanVar(value=False)
         reverse_cb = ctk.CTkCheckBox(
             toolbar,
-                text="Reverse",
-                variable=self.reverse_var,
-                command=self.refresh_files
-            )
+            text="Reverse",
+            variable=self.reverse_var,
+            command=self.refresh_files
+        )
         reverse_cb.pack(side="left", padx=10)
+
     def create_content_area(self):
-        """Create scrollable content area"""
+        """Create scrollable content area with enhanced navigation"""
         self.main_frame = ctk.CTkFrame(self)
         self.main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
+        # Create canvas with scrollbars
         self.canvas = tk.Canvas(self.main_frame, bg='black')
-        self.scrollbar = ttk.Scrollbar(self.main_frame, orient="vertical", command=self.canvas.yview)
-        self.scrollable_frame = ctk.CTkFrame(self.canvas)
+        self.v_scrollbar = ttk.Scrollbar(self.main_frame, orient="vertical")
+        self.h_scrollbar = ttk.Scrollbar(self.main_frame, orient="horizontal")
 
+        # Configure scrollbars
+        self.v_scrollbar.config(command=self.canvas.yview)
+        self.h_scrollbar.config(command=self.canvas.xview)
+        self.canvas.config(
+            yscrollcommand=self.v_scrollbar.set,
+            xscrollcommand=self.h_scrollbar.set
+        )
+
+        # Pack scrollbars
+        self.v_scrollbar.pack(side="right", fill="y")
+        self.h_scrollbar.pack(side="bottom", fill="x")
+        self.canvas.pack(side="left", fill="both", expand=True)
+
+        # Create frame for content
+        self.scrollable_frame = ctk.CTkFrame(self.canvas)
+        self.canvas.create_window(
+            (0, 0),
+            window=self.scrollable_frame,
+            anchor="nw",
+            tags="self.scrollable_frame"
+        )
+
+        # Configure scroll bindings
         self.scrollable_frame.bind(
             "<Configure>",
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
 
-        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-
-        self.scrollbar.pack(side="right", fill="y")
-        self.canvas.pack(side="left", fill="both", expand=True)
-
+        # Bind scroll events
         self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        self.canvas.bind_all("<Button-4>", self._on_mousewheel)
+        self.canvas.bind_all("<Button-5>", self._on_mousewheel)
+        self.canvas.bind("<Enter>", self._bind_mousewheel)
+        self.canvas.bind("<Leave>", self._unbind_mousewheel)
+
+        # Touch pad/track pad scrolling
+        if sys.platform == 'darwin':
+            self.canvas.bind("<TouchpadScroll>", self._on_touchpad_scroll)
+        else:
+            self.canvas.bind("<Shift-MouseWheel>", self._on_touchpad_scroll)
 
     def _on_mousewheel(self, event):
-        self.canvas.yview_scroll(-1 * (event.delta // 120), "units")
+        """Handle mouse wheel and touchpad scrolling"""
+        if event.num == 4:  # Linux up
+            delta = 120
+        elif event.num == 5:  # Linux down
+            delta = -120
+        else:  # Windows/MacOS
+            delta = event.delta
 
-    def create_generic_thumbnail(self, text, color="gray"):
-        """Create a generic thumbnail with text"""
-        thumb_size = (150, 150)
-        img = Image.new('RGB', thumb_size, 'black')
-        draw = ImageDraw.Draw(img)
+        shift_pressed = event.state & 0x1  # Check if Shift is pressed
+        if shift_pressed:
+            self.canvas.xview_scroll(int(-1 * delta/120), "units")
+        else:
+            self.canvas.yview_scroll(int(-1 * delta/120), "units")
 
-        # Draw colored rectangle
-        margin = 20
-        draw.rectangle(
-            [margin, margin, thumb_size[0]-margin, thumb_size[1]-margin],
-            fill=color
-        )
+    def _on_touchpad_scroll(self, event):
+        """Handle touchpad scrolling"""
+        if event.state & 0x1:  # Shift pressed - horizontal scroll
+            self.canvas.xview_scroll(int(-1 * event.delta/30), "units")
+        else:  # Vertical scroll
+            self.canvas.yview_scroll(int(-1 * event.delta/30), "units")
 
-        # Add text
-        text_bbox = draw.textbbox((0, 0), text)
-        text_width = text_bbox[2] - text_bbox[0]
-        text_height = text_bbox[3] - text_bbox[1]
+    def _bind_mousewheel(self, event):
+        """Bind mousewheel when mouse enters canvas"""
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        if sys.platform.startswith('linux'):
+            self.canvas.bind_all("<Button-4>", self._on_mousewheel)
+            self.canvas.bind_all("<Button-5>", self._on_mousewheel)
 
-        text_x = (thumb_size[0] - text_width) // 2
-        text_y = (thumb_size[1] - text_height) // 2
-
-        draw.text((text_x, text_y), text, fill="white")
-
-        return ctk.CTkImage(light_image=img, dark_image=img, size=thumb_size)
+    def _unbind_mousewheel(self, event):
+        """Unbind mousewheel when mouse leaves canvas"""
+        self.canvas.unbind_all("<MouseWheel>")
+        if sys.platform.startswith('linux'):
+            self.canvas.unbind_all("<Button-4>")
+            self.canvas.unbind_all("<Button-5>")
 
     def get_file_category(self, filename):
         """Determine file category and appropriate thumbnail style"""
@@ -476,6 +544,209 @@ class FileThumbnailBrowser(ctk.CTkToplevel):
             print(f"Error creating thumbnail for {file_path}: {str(e)}")
             return self.create_generic_thumbnail("Error", "darkred")
 
+    def create_generic_thumbnail(self, text, color="gray"):
+        """Create a generic thumbnail with text"""
+        thumb_size = (150, 150)
+        img = Image.new('RGB', thumb_size, 'black')
+        draw = ImageDraw.Draw(img)
+
+        # Draw colored rectangle
+        margin = 20
+        draw.rectangle(
+            [margin, margin, thumb_size[0]-margin, thumb_size[1]-margin],
+            fill=color
+        )
+
+        # Add text
+        text_bbox = draw.textbbox((0, 0), text)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+
+        text_x = (thumb_size[0] - text_width) // 2
+        text_y = (thumb_size[1] - text_height) // 2
+
+        draw.text((text_x, text_y), text, fill="white")
+
+        return ctk.CTkImage(light_image=img, dark_image=img, size=thumb_size)
+
+    def navigate_up(self):
+        """Navigate to parent directory"""
+        parent = os.path.dirname(self.current_dir)
+        if os.path.exists(parent):
+            self.current_dir = parent
+            self.update_path_display()
+            self.load_files()
+
+    def navigate_to_path(self, event=None):
+        """Navigate to entered path"""
+        new_path = self.path_var.get()
+        if os.path.exists(new_path):
+            self.current_dir = os.path.abspath(new_path)
+            self.update_path_display()
+            self.load_files()
+        else:
+            messagebox.showerror("Error", "Invalid path")
+            self.update_path_display()
+
+    def update_path_display(self):
+        """Update path display"""
+        self.path_var.set(self.current_dir)
+
+    def load_files(self):
+        """Load files and folders with enhanced display"""
+        # Clear existing display
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+        self.thumbnails.clear()
+        self.current_row = 0
+        self.current_col = 0
+
+        try:
+            # Get directories and files
+            entries = os.listdir(self.current_dir)
+            folders = []
+            files = []
+
+            for entry in entries:
+                full_path = os.path.join(self.current_dir, entry)
+                if os.path.isdir(full_path):
+                    folders.append(entry)
+                else:
+                    files.append(entry)
+
+            # Sort folders and files separately
+            folders.sort()
+            files = self.sort_files(files)
+
+            # Display folders first
+            for folder in folders:
+                self.create_folder_item(folder)
+
+            # Then display files
+            for file in files:
+                self.create_file_item(file)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Error loading directory: {str(e)}")
+
+    def create_folder_item(self, folder_name):
+        """Create folder display item"""
+        frame = ctk.CTkFrame(self.scrollable_frame)
+        frame.grid(row=self.current_row, column=self.current_col,
+                  padx=10, pady=10, sticky="nsew")
+
+        # Create folder button with icon
+        folder_button = ctk.CTkButton(
+            frame,
+            text="📁",
+            command=lambda f=folder_name: self.enter_folder(f),
+            width=150,
+            height=150
+        )
+        folder_button.pack(pady=(5, 0))
+
+        # Add folder name label
+        label = ctk.CTkLabel(
+            frame,
+            text=folder_name,
+            wraplength=140
+        )
+        label.pack(pady=(5, 5))
+
+        # Update grid position
+        self.current_col += 1
+        if self.current_col >= self.max_cols:
+            self.current_col = 0
+            self.current_row += 1
+
+    def create_file_item(self, file_name):
+            """Create file display item with play toggle"""
+            frame = ctk.CTkFrame(self.scrollable_frame)
+            frame.grid(row=self.current_row, column=self.current_col,
+                      padx=10, pady=10, sticky="nsew")
+
+            file_path = os.path.join(self.current_dir, file_name)
+
+            # Create thumbnail
+            thumbnail = self.create_thumbnail(file_path)
+            if thumbnail:
+                # Determine if file is playable
+                ext = os.path.splitext(file_path)[1].lower()
+                is_playable = ext in self.file_categories['video']
+
+                # Create buttons frame
+                buttons_frame = ctk.CTkFrame(frame)
+                buttons_frame.pack(fill="x", pady=(5, 0))
+
+                # Create play toggle if file is playable
+                if is_playable:
+                    self.play_vars = getattr(self, 'play_vars', {})
+                    self.play_vars[file_path] = tk.BooleanVar(value=True)
+
+                    play_toggle = ctk.CTkSwitch(
+                        buttons_frame,
+                        text="Play Mode",
+                        variable=self.play_vars[file_path],
+                        width=60
+                    )
+                    play_toggle.pack(side="top", pady=2)
+
+                # Create thumbnail button
+                thumb_button = ctk.CTkButton(
+                    frame,
+                    image=thumbnail,
+                    text="",
+                    command=lambda path=file_path: self.on_file_click(path),
+                    width=150,
+                    height=150
+                )
+                thumb_button.pack(pady=(5, 0))
+
+                # Add filename label
+                label = ctk.CTkLabel(
+                    frame,
+                    text=file_name,
+                    wraplength=140
+                )
+                label.pack(pady=(5, 5))
+
+                # Add file size label
+                size = os.path.getsize(file_path)
+                size_text = self.format_file_size(size)
+                size_label = ctk.CTkLabel(
+                    frame,
+                    text=size_text,
+                    font=("Arial", 10)
+                )
+                size_label.pack(pady=(0, 5))
+
+                # Store reference to thumbnail
+                self.thumbnails.append(thumbnail)
+
+            # Update grid position
+            self.current_col += 1
+            if self.current_col >= self.max_cols:
+                self.current_col = 0
+                self.current_row += 1
+
+    def enter_folder(self, folder_name):
+        """Enter selected folder"""
+        new_path = os.path.join(self.current_dir, folder_name)
+        if os.path.exists(new_path):
+            self.current_dir = new_path
+            self.update_path_display()
+            self.load_files()
+
+    def sort_files(self, files):
+        """Sort files based on current criteria"""
+        sort_key = self.sort_var.get()
+        reverse = self.reverse_var.get()
+
+        return sorted(
+            files,
+            key=lambda f: self.get_file_info(os.path.join(self.current_dir, f))[sort_key],
+            reverse=reverse
+        )
 
     def get_file_info(self, file_path):
         """Get file information for sorting"""
@@ -487,97 +758,9 @@ class FileThumbnailBrowser(ctk.CTkToplevel):
             'type': os.path.splitext(file_path)[1].lower()
         }
 
-    def sort_files(self, files):
-        """Sort files based on current criteria"""
-        sort_key = self.sort_var.get()
-        reverse = self.reverse_var.get()
-
-        return sorted(
-            files,
-            key=lambda f: self.get_file_info(os.path.join(self.media_folder, f))[sort_key],
-            reverse=reverse
-        )
-
     def refresh_files(self):
         """Refresh file display with current sort settings"""
-        # Clear current display
-        for widget in self.scrollable_frame.winfo_children():
-            widget.destroy()
-        self.thumbnails.clear()
-        self.current_row = 0
-        self.current_col = 0
-
-        # Reload files
         self.load_files()
-
-    def load_files(self):
-        """Load and display all files"""
-        if not os.path.exists(self.media_folder):
-            os.makedirs(self.media_folder)
-
-        # Get all files
-        files = []
-        for f in os.listdir(self.media_folder):
-            full_path = os.path.join(self.media_folder, f)
-            if os.path.isfile(full_path):  # Ensure it's a file
-                files.append(f)
-
-        # Sort files
-        sorted_files = self.sort_files(files)
-
-        # Clear existing grid
-        for widget in self.scrollable_frame.winfo_children():
-            widget.destroy()
-
-        # Create grid of files
-        for file in sorted_files:
-            file_path = os.path.join(self.media_folder, file)
-
-            # Create frame for thumbnail and label
-            thumb_frame = ctk.CTkFrame(self.scrollable_frame)
-            thumb_frame.grid(row=self.current_row, column=self.current_col,
-                           padx=10, pady=10, sticky="nsew")
-
-            # Create and add thumbnail
-            thumbnail = self.create_thumbnail(file_path)
-            if thumbnail:
-                # Create thumbnail button
-                thumb_button = ctk.CTkButton(
-                    thumb_frame,
-                    image=thumbnail,
-                    text="",
-                    command=lambda path=file_path: self.on_file_click(path),
-                    width=150,
-                    height=150
-                )
-                thumb_button.pack(pady=(5, 0))
-
-                # Add filename label
-                label = ctk.CTkLabel(
-                    thumb_frame,
-                    text=file,
-                    wraplength=140
-                )
-                label.pack(pady=(5, 5))
-
-                # Add file size label
-                size = os.path.getsize(file_path)
-                size_text = self.format_file_size(size)
-                size_label = ctk.CTkLabel(
-                    thumb_frame,
-                    text=size_text,
-                    font=("Arial", 10)
-                )
-                size_label.pack(pady=(0, 5))
-
-                # Store reference to thumbnail
-                self.thumbnails.append(thumbnail)
-
-                # Update grid position
-                self.current_col += 1
-                if self.current_col >= self.max_cols:
-                    self.current_col = 0
-                    self.current_row += 1
 
     def format_file_size(self, size):
         """Format file size in human-readable format"""
@@ -588,19 +771,29 @@ class FileThumbnailBrowser(ctk.CTkToplevel):
         return f"{size:.1f} TB"
 
     def on_file_click(self, file_path):
-        """Handle file click with proper path formatting"""
+        """Handle file selection with enhanced path handling and play mode"""
         if self.callback:
-            # Ensure proper path formatting
-            relative_path = os.path.join('media_files', os.path.basename(file_path))
-
-            # Determine if it's a video file (for play directive)
-            ext = os.path.splitext(file_path)[1].lower()
-            if ext in self.file_categories['video']:
-                self.callback(f"\\play {relative_path}")
+            # Create relative or absolute path based on selection
+            relative_to_media = os.path.relpath(file_path, 'media_files')
+            if relative_to_media.startswith('..'):
+                # File is outside media_files - use absolute path
+                final_path = file_path
             else:
-                self.callback(f"\\file {relative_path}")
-        self.destroy()
+                # File is inside media_files - use relative path
+                final_path = os.path.join('media_files', relative_to_media)
 
+            # Check if file is playable and play mode is enabled
+            ext = os.path.splitext(file_path)[1].lower()
+            is_playable = ext in self.file_categories['video']
+            play_mode = is_playable and self.play_vars.get(file_path, tk.BooleanVar(value=True)).get()
+
+            # Create appropriate directive
+            if play_mode:
+                self.callback(f"\\play \\file {final_path}")
+            else:
+                self.callback(f"\\file {final_path}")
+
+        self.destroy()
 #------------------------------------------------------------------------------------------
 class BeamerSlideEditor(ctk.CTk):
     def __init__(self):
@@ -1111,7 +1304,7 @@ Created by {self.__author__}
 #------------------------------------------------------------------------------------
 
     def create_sidebar(self) -> None:
-        """Create sidebar with slide list and controls"""
+        """Create sidebar with slide list and controls with enhanced navigation"""
         self.sidebar = ctk.CTkFrame(self)
         self.sidebar.grid(row=1, column=0, rowspan=2, sticky="nsew", padx=5, pady=5)
 
@@ -1122,12 +1315,24 @@ Created by {self.__author__}
         # Slide list with scroll
         self.slide_list = ctk.CTkTextbox(self.sidebar, width=180, height=400)
         self.slide_list.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
-        self.slide_list.bind('<Button-1>', self.on_slide_select)
 
-        # Slide control buttons
+        # Enhanced bindings for navigation
+        self.slide_list.bind('<Button-1>', self.on_slide_select)
+        self.slide_list.bind('<Up>', self.navigate_slides)
+        self.slide_list.bind('<Down>', self.navigate_slides)
+        self.slide_list.bind('<Left>', self.navigate_slides)
+        self.slide_list.bind('<Right>', self.navigate_slides)
+        self.bind('<Control-Up>', lambda e: self.move_slide(-1))
+        self.bind('<Control-Down>', lambda e: self.move_slide(1))
+
+        # Focus binding to enable keyboard navigation
+        self.slide_list.bind('<FocusIn>', self.on_list_focus)
+        self.slide_list.bind('<FocusOut>', self.on_list_unfocus)
+
+        # Slide control buttons (keeping existing functionality)
         button_data = [
             ("New Slide", self.new_slide),
-            ("Duplicate Slide", self.duplicate_slide),  # Added new button
+            ("Duplicate Slide", self.duplicate_slide),
             ("Delete Slide", self.delete_slide),
             ("Move Up", lambda: self.move_slide(-1)),
             ("Move Down", lambda: self.move_slide(1))
@@ -1137,35 +1342,97 @@ Created by {self.__author__}
             ctk.CTkButton(self.sidebar, text=text,
                          command=command).grid(row=i, column=0, padx=5, pady=5)
 
-    def duplicate_slide(self) -> None:
-        """Duplicate the current slide"""
-        if self.current_slide_index >= 0:
-            # Save the current slide first to ensure we have the latest changes
-            self.save_current_slide()
+    def navigate_slides(self, event) -> None:
+        """Handle keyboard navigation between slides"""
+        if not self.slides:
+            return "break"
 
-            # Create a deep copy of the current slide
-            current_slide = self.slides[self.current_slide_index]
-            new_slide = {
-                'title': f"{current_slide['title']} (Copy)",
-                'media': current_slide['media'],
-                'content': current_slide['content'].copy()  # Create a new list with the same content
-            }
+        # Save current slide
+        self.save_current_slide()
 
-            # Insert the new slide after the current slide
-            insert_position = self.current_slide_index + 1
-            self.slides.insert(insert_position, new_slide)
+        # Calculate new index based on key
+        new_index = self.current_slide_index
+        if event.keysym in ['Up', 'Left']:
+            new_index = max(0, self.current_slide_index - 1)
+        elif event.keysym in ['Down', 'Right']:
+            new_index = min(len(self.slides) - 1, self.current_slide_index + 1)
 
-            # Update the current slide index to point to the new slide
-            self.current_slide_index = insert_position
-
-            # Update the UI
+        # Update if changed
+        if new_index != self.current_slide_index:
+            self.current_slide_index = new_index
+            self.load_slide(new_index)
             self.update_slide_list()
-            self.load_slide(self.current_slide_index)
 
-            # Show confirmation message
-            messagebox.showinfo("Success", "Slide duplicated successfully!")
-        else:
-            messagebox.showwarning("Warning", "No slide to duplicate!")
+            # Ensure selected slide is visible
+            self.slide_list.see(f"{new_index + 1}.0")
+
+            # Highlight current line
+            self.highlight_current_slide()
+
+        return "break"  # Prevent default handling
+
+    def highlight_current_slide(self) -> None:
+        """Highlight the currently selected slide in the list"""
+        # Remove previous highlighting
+        self.slide_list.tag_remove('selected', '1.0', 'end')
+
+        # Add new highlighting
+        if self.current_slide_index >= 0:
+            start = f"{self.current_slide_index + 1}.0"
+            end = f"{self.current_slide_index + 1}.end"
+            self.slide_list.tag_add('selected', start, end)
+            self.slide_list.tag_config('selected', background='#2F3542')
+
+    def on_list_focus(self, event) -> None:
+        """Handle slide list focus"""
+        self.highlight_current_slide()
+        # Visual feedback that list is focused
+        self.slide_list.configure(border_color="#4ECDC4")
+
+    def on_list_unfocus(self, event) -> None:
+        """Handle slide list losing focus"""
+        # Remove focus visual feedback
+        self.slide_list.configure(border_color="")
+
+    def update_slide_list(self) -> None:
+        """Update slide list with improved visual feedback"""
+        self.slide_list.delete('1.0', 'end')
+        for i, slide in enumerate(self.slides):
+            prefix = "→ " if i == self.current_slide_index else "  "
+            self.slide_list.insert('end', f"{prefix}Slide {i+1}: {slide['title']}\n")
+
+        # Refresh highlighting
+        self.highlight_current_slide()
+
+    def duplicate_slide(self) -> None:
+            """Duplicate the current slide"""
+            if self.current_slide_index >= 0:
+                # Save the current slide first to ensure we have the latest changes
+                self.save_current_slide()
+
+                # Create a deep copy of the current slide
+                current_slide = self.slides[self.current_slide_index]
+                new_slide = {
+                    'title': f"{current_slide['title']} (Copy)",
+                    'media': current_slide['media'],
+                    'content': current_slide['content'].copy()  # Create a new list with the same content
+                }
+
+                # Insert the new slide after the current slide
+                insert_position = self.current_slide_index + 1
+                self.slides.insert(insert_position, new_slide)
+
+                # Update the current slide index to point to the new slide
+                self.current_slide_index = insert_position
+
+                # Update the UI
+                self.update_slide_list()
+                self.load_slide(self.current_slide_index)
+
+                # Show confirmation message
+                messagebox.showinfo("Success", "Slide duplicated successfully!")
+            else:
+                messagebox.showwarning("Warning", "No slide to duplicate!")
 
     def create_main_editor(self) -> None:
         """Create main editor area"""
