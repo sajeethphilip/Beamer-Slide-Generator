@@ -8,7 +8,7 @@ import tkinter as tk
 from PIL import Image
 from tkinter import ttk
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 import os
 from pathlib import Path
 import webbrowser
@@ -201,7 +201,7 @@ def create_footer(self) -> None:
         text_color="#6272A4"
     )
     license_label.pack(side="left", padx=5)
-#-------------------------------------------------------------------------------------------------------
+
 # Import BeamerSlideGenerator functions
 try:
     from BeamerSlideGenerator import (
@@ -215,6 +215,198 @@ try:
 except ImportError:
     print("Error: BeamerSlideGenerator.py must be in the same directory.")
     sys.exit(1)
+#------------------------------------------------------------------------------------------
+class NotesToolbar(ctk.CTkFrame):
+    """Toolbar for notes formatting and templates"""
+    def __init__(self, parent, notes_editor, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.notes_editor = notes_editor
+
+        # Templates
+        self.templates = {
+            "Key Points": "• Key points:\n  - \n  - \n  - \n",
+            "Time Markers": "• Timing guide:\n  0:00 - Introduction\n  0:00 - Main points\n  0:00 - Conclusion",
+            "Questions": "• Potential questions:\nQ1: \nA1: \n\nQ2: \nA2: ",
+            "References": "• Additional references:\n  - Title:\n    Author:\n    Page: ",
+            "Technical Details": "• Technical details:\n  - Specifications:\n  - Parameters:\n  - Requirements:",
+        }
+
+        self.create_toolbar()
+
+    def create_toolbar(self):
+        """Create the notes toolbar"""
+        # Template dropdown
+        template_frame = ctk.CTkFrame(self)
+        template_frame.pack(side="left", padx=5, pady=2)
+
+        ctk.CTkLabel(template_frame, text="Template:").pack(side="left", padx=2)
+
+        self.template_var = tk.StringVar(value="Select Template")
+        template_menu = ctk.CTkOptionMenu(
+            template_frame,
+            values=list(self.templates.keys()),
+            variable=self.template_var,
+            command=self.insert_template,
+            width=150
+        )
+        template_menu.pack(side="left", padx=2)
+
+        # Separator
+        ttk.Separator(self, orient="vertical").pack(side="left", padx=5, fill="y", pady=2)
+
+        # Formatting buttons
+        formatting_frame = ctk.CTkFrame(self)
+        formatting_frame.pack(side="left", padx=5, pady=2)
+
+        formatting_buttons = [
+            ("B", self.add_bold, "Bold"),
+            ("I", self.add_italic, "Italic"),
+            ("C", self.add_color, "Color"),
+            ("⚡", self.add_highlight, "Highlight"),
+            ("•", self.add_bullet, "Bullet point"),
+            ("⏱", self.add_timestamp, "Timestamp"),
+            ("⚠", self.add_alert, "Alert"),
+            ("💡", self.add_tip, "Tip")
+        ]
+
+        for text, command, tooltip in formatting_buttons:
+            btn = ctk.CTkButton(
+                formatting_frame,
+                text=text,
+                command=command,
+                width=30,
+                height=30
+            )
+            btn.pack(side="left", padx=2)
+            self.create_tooltip(btn, tooltip)
+
+    def create_tooltip(self, widget, text):
+        """Create tooltip for buttons"""
+        def show_tooltip(event):
+            x, y, _, _ = widget.bbox("insert")
+            x += widget.winfo_rootx() + 25
+            y += widget.winfo_rooty() + 20
+
+            # Create tooltip window
+            self.tooltip = tk.Toplevel(widget)
+            self.tooltip.wm_overrideredirect(True)
+            self.tooltip.wm_geometry(f"+{x}+{y}")
+
+            label = tk.Label(self.tooltip, text=text,
+                           justify='left',
+                           background="#ffffe0", relief='solid', borderwidth=1)
+            label.pack()
+
+        def hide_tooltip(event):
+            if hasattr(self, 'tooltip'):
+                self.tooltip.destroy()
+
+        widget.bind('<Enter>', show_tooltip)
+        widget.bind('<Leave>', hide_tooltip)
+
+    def insert_template(self, choice):
+        """Insert selected template"""
+        if choice in self.templates:
+            self.notes_editor.insert('insert', self.templates[choice])
+            self.template_var.set("Select Template")  # Reset dropdown
+
+    def add_bold(self):
+        """Add bold text"""
+        self.wrap_selection(r'\textbf{', '}')
+
+    def add_italic(self):
+        """Add italic text"""
+        self.wrap_selection(r'\textit{', '}')
+
+    def add_color(self):
+        """Add colored text"""
+        colors = ['red', 'blue', 'green', 'orange', 'purple']
+        color = simpledialog.askstring(
+            "Color",
+            "Enter color name or RGB values:",
+            initialvalue=colors[0]
+        )
+        if color:
+            self.wrap_selection(f'\\textcolor{{{color}}}{{', '}')
+
+    def add_highlight(self):
+        """Add highlighted text"""
+        self.wrap_selection('\\hl{', '}')
+
+    def add_bullet(self):
+        """Add bullet point"""
+        self.notes_editor.insert('insert', '\n• ')
+
+    def add_timestamp(self):
+        """Add timestamp"""
+        timestamp = simpledialog.askstring(
+            "Timestamp",
+            "Enter timestamp (MM:SS):",
+            initialvalue="00:00"
+        )
+        if timestamp:
+            self.notes_editor.insert('insert', f'[{timestamp}] ')
+
+    def add_alert(self):
+        """Add alert note"""
+        self.notes_editor.insert('insert', '⚠ Important: ')
+
+    def add_tip(self):
+        """Add tip"""
+        self.notes_editor.insert('insert', '💡 Tip: ')
+
+    def wrap_selection(self, prefix, suffix):
+        """Wrap selected text with prefix and suffix"""
+        try:
+            selection = self.notes_editor.get('sel.first', 'sel.last')
+            self.notes_editor.delete('sel.first', 'sel.last')
+            self.notes_editor.insert('insert', f'{prefix}{selection}{suffix}')
+        except tk.TclError:  # No selection
+            self.notes_editor.insert('insert', f'{prefix}{suffix}')
+            # Move cursor inside braces
+            current_pos = self.notes_editor.index('insert')
+            self.notes_editor.mark_set('insert', f'{current_pos}-{len(suffix)}c')
+
+class EnhancedNotesEditor(ctk.CTkFrame):
+    """Enhanced notes editor with toolbar and templates"""
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        # Create toolbar
+        self.toolbar = NotesToolbar(self, self.notes_editor)
+        self.toolbar.pack(fill="x", padx=2, pady=2)
+
+        # Create editor
+        self.notes_editor = ctk.CTkTextbox(self)
+        self.notes_editor.pack(fill="both", expand=True, padx=2, pady=2)
+
+        # Enhanced syntax highlighting
+        self.setup_syntax_highlighting()
+
+    def setup_syntax_highlighting(self):
+        """Setup enhanced syntax highlighting for notes"""
+        self.highlighter = BeamerSyntaxHighlighter(self.notes_editor)
+
+        # Add additional patterns for notes
+        additional_patterns = [
+            (r'⚠.*$', 'alert'),
+            (r'💡.*$', 'tip'),
+            (r'\[[\d:]+\]', 'timestamp'),
+            (r'•.*$', 'bullet'),
+            (r'\\hl\{.*?\}', 'highlight'),
+        ]
+
+        # Add additional colors
+        additional_colors = {
+            'alert': '#FF6B6B',
+            'tip': '#4ECDC4',
+            'timestamp': '#FFB86C',
+            'highlight': '#BD93F9',
+        }
+
+        # Update highlighter
+        self.highlighter.patterns.extend(additional_patterns)
+        self.highlighter.colors.update(additional_colors)
 #------------------------------------------------------------------------------------------
 class BeamerSyntaxHighlighter:
     """Syntax highlighting for Beamer/LaTeX content"""
@@ -1426,7 +1618,19 @@ Created by {self.__author__}
             # Skip title frame
             if "\\titlepage" in frame_content:
                 continue
-
+            # Extract note content
+            notes = []
+            note_match = re.search(r'\\note{(.*?)}', frame_content, re.DOTALL)
+            if note_match:
+                note_content = note_match.group(1)
+                # Extract items from note's itemize environment
+                note_items = re.finditer(r'\\item\s*(.*?)(?=\\item|\s*\\end{itemize}|$)',
+                                       note_content,
+                                       re.DOTALL)
+                for item in note_items:
+                    note_text = item.group(1).strip()
+                    if note_text:
+                        notes.append(f"• {note_text}")
             # Extract content and media
             content_lines = []
             media = ""
@@ -1469,11 +1673,13 @@ Created by {self.__author__}
 
             # Only add non-empty slides
             if content_lines or media:
-                slides.append({
-                    'title': title.strip(),
-                    'media': media,
-                    'content': content_lines
-                })
+                     # Add both content and notes to slide data
+                    slides.append({
+                        'title': title.strip(),
+                        'media': media,
+                        'content': content_lines,
+                        'notes': notes
+                    })
 
         return slides
 #------------------------------------------------------------------------------------
@@ -1610,7 +1816,7 @@ Created by {self.__author__}
                 messagebox.showwarning("Warning", "No slide to duplicate!")
 
     def create_main_editor(self) -> None:
-        """Create main editor area"""
+        """Create main editor area with content and notes sections"""
         self.editor_frame = ctk.CTkFrame(self)
         self.editor_frame.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
 
@@ -1645,16 +1851,48 @@ Created by {self.__author__}
             ctk.CTkButton(media_buttons, text=text,
                          command=command).pack(side="left", padx=2)
 
-        # Content editor
-        content_frame = ctk.CTkFrame(self.editor_frame)
+        # Create editors container
+        editors_frame = ctk.CTkFrame(self.editor_frame)
+        editors_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
+        # Content editor section
+        content_frame = ctk.CTkFrame(editors_frame)
         content_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
-        ctk.CTkLabel(content_frame, text="Content:").pack(anchor="w", padx=5)
-        self.content_editor = ctk.CTkTextbox(content_frame, height=400)
+        content_label_frame = ctk.CTkFrame(content_frame)
+        content_label_frame.pack(fill="x", padx=5, pady=2)
+        ctk.CTkLabel(content_label_frame, text="Content:").pack(side="left", padx=5)
+
+        self.content_editor = ctk.CTkTextbox(content_frame, height=200)
         self.content_editor.pack(fill="both", expand=True, padx=5, pady=5)
 
-        # Initialize syntax highlighter
+        # Notes section
+        notes_frame = ctk.CTkFrame(editors_frame)
+        notes_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
+        # Notes header with toggle
+        notes_header = ctk.CTkFrame(notes_frame)
+        notes_header.pack(fill="x", padx=5, pady=2)
+
+        ctk.CTkLabel(notes_header, text="Presentation Notes:").pack(side="left", padx=5)
+        self.notes_var = ctk.BooleanVar(value=True)
+        self.notes_switch = ctk.CTkSwitch(
+            notes_header,
+            text="Include Notes",
+            variable=self.notes_var
+        )
+        self.notes_switch.pack(side="right", padx=5)
+
+        self.notes_editor = ctk.CTkTextbox(notes_frame, height=150)
+        self.notes_editor.pack(fill="both", expand=True, padx=5, pady=5)
+
+        # Initialize syntax highlighters
         self.syntax_highlighter = BeamerSyntaxHighlighter(self.content_editor)
+        self.notes_highlighter = BeamerSyntaxHighlighter(self.notes_editor)
+
+        # Configure weight for editors
+        editors_frame.grid_rowconfigure(0, weight=2)  # Content gets more space
+        editors_frame.grid_rowconfigure(1, weight=1)  # Notes gets less space
 
     def create_toolbar(self) -> None:
         """Create main editor toolbar with file operations"""
@@ -1843,6 +2081,12 @@ Created by {self.__author__}
                         content += f"{item}\n"
 
                 content += "\\end{Content}\n\n"
+                # Add notes if present
+                if 'notes' in slide and slide['notes']:
+                    content += "\\begin{Notes}\n"
+                    for note in slide['notes']:
+                        content += f"{note}\n"
+                    content += "\\end{Notes}\n"
 
             content += "\\end{document}"
 
@@ -2031,7 +2275,7 @@ Created by {self.__author__}
             self.update_slide_list()
 
     def load_slide(self, index: int) -> None:
-        """Load slide data into editor"""
+        """Load slide data including notes"""
         slide = self.slides[index]
         self.title_entry.delete(0, 'end')
         self.title_entry.insert(0, slide['title'])
@@ -2045,16 +2289,23 @@ Created by {self.__author__}
                 item = f"- {item}"
             self.content_editor.insert('end', f"{item}\n")
 
+        self.notes_editor.delete('1.0', 'end')
+        if 'notes' in slide:
+            for note in slide['notes']:
+                self.notes_editor.insert('end', f"{note}\n")
+
         if self.syntax_highlighter.active:
             self.syntax_highlighter.highlight()
+            self.notes_highlighter.highlight()
 
     def save_current_slide(self) -> None:
-        """Save current slide data"""
+        """Save current slide data including notes"""
         if self.current_slide_index >= 0:
             self.slides[self.current_slide_index] = {
                 'title': self.title_entry.get(),
                 'media': self.media_entry.get(),
-                'content': [line for line in self.content_editor.get('1.0', 'end-1c').split('\n') if line.strip()]
+                'content': [line for line in self.content_editor.get('1.0', 'end-1c').split('\n') if line.strip()],
+                'notes': [line for line in self.notes_editor.get('1.0', 'end-1c').split('\n') if line.strip()]
             }
 
     def clear_editor(self) -> None:
@@ -2099,32 +2350,67 @@ Created by {self.__author__}
 
     # Content Generation
     def generate_tex_content(self) -> str:
-        """Generate complete tex file content"""
-        content = get_beamer_preamble(
-            self.presentation_info['title'],
-            self.presentation_info['subtitle'],
-            self.presentation_info['author'],
-            self.presentation_info['institution'],
-            self.presentation_info['short_institute'],
-            self.presentation_info['date']
-        )
+        """Generate complete tex file content with proper notes handling"""
+        include_notes = self.notes_var.get()
 
-        # Add slides
+        # Get base preamble
+        if hasattr(self, 'custom_preamble'):
+            content = self.custom_preamble
+        else:
+            content = get_beamer_preamble(
+                self.presentation_info['title'],
+                self.presentation_info['subtitle'],
+                self.presentation_info['author'],
+                self.presentation_info['institution'],
+                self.presentation_info['short_institute'],
+                self.presentation_info['date']
+            )
+
+        # Add notes configuration if notes are included
+        if include_notes:
+            # Replace documentclass line
+            content = re.sub(
+                r'\\documentclass\[.*?\]{beamer}',
+                r'\\documentclass[aspectratio=169,show notes on second screen=right]{beamer}',
+                content
+            )
+
+            # Add notes package and configuration
+            content = content.replace(
+                '\\begin{document}',
+                '\\usepackage{pgfpages}\n\\setbeameroption{show notes on second screen=right}\n\\begin{document}'
+            )
+
+        # Add slides with notes
         for slide in self.slides:
-            content += f"\\title {slide['title']}\n"
-            content += "\\begin{Content}"
+            # Begin frame
+            content += "\\begin{frame}\n"
+            content += f"\\frametitle{{{slide['title']}}}\n"
+
+            # Add media if present
             if slide['media']:
-                content += f" {slide['media']}"
-            content += "\n"
+                content += f"{slide['media']}\n"
 
             # Add content items
             for item in slide['content']:
                 if item.strip():
                     content += f"{item}\n"
 
-            content += "\\end{Content}\n\n"
+            content += "\\end{frame}\n"
 
-        content += "\\end{document}"
+            # Add notes if enabled
+            if include_notes and 'notes' in slide and slide['notes']:
+                content += "\\note{\n\\begin{itemize}\n"
+                for note in slide['notes']:
+                    if note.strip():
+                        # Clean up any existing itemize markers
+                        note = note.lstrip('•- ').strip()
+                        content += f"\\item {note}\n"
+                content += "\\end{itemize}\n}\n\n"
+            else:
+                content += "\n"
+
+        content += "\\end{document}\n"
         return content
 
     def load_file(self, filename: str) -> None:
@@ -2146,17 +2432,19 @@ Created by {self.__author__}
                 if match:
                     self.presentation_info[key] = match.group(1)
 
-            # Extract slides
-            slide_pattern = r"\\title\s+(.*?)\n\\begin{Content}(.*?)\\end{Content}"
+            # Extract slides with notes
+            slide_pattern = r"\\title\s+(.*?)\n\\begin{Content}(.*?)\\end{Content}(?:\s*\\begin{Notes}(.*?)\\end{Notes})?"
             slide_matches = re.finditer(slide_pattern, content, re.DOTALL)
 
             for match in slide_matches:
                 title = match.group(1).strip()
                 content_block = match.group(2).strip()
+                notes_block = match.group(3).strip() if match.group(3) else ""
 
                 # Extract media directive if present
                 media = ""
                 content_lines = []
+                notes_lines = []
 
                 first_line = content_block.split('\n')[0].strip()
                 if first_line.startswith('\\'):
@@ -2165,10 +2453,15 @@ Created by {self.__author__}
                 else:
                     content_lines = content_block.split('\n')
 
+                # Process notes block if present
+                if notes_block:
+                    notes_lines = [line.strip() for line in notes_block.split('\n') if line.strip()]
+
                 self.slides.append({
                     'title': title,
                     'media': media,
-                    'content': [line for line in content_lines if line.strip()]
+                    'content': [line for line in content_lines if line.strip()],
+                    'notes': notes_lines
                 })
 
             if self.slides:
