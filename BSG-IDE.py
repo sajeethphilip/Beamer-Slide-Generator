@@ -795,6 +795,125 @@ class FileThumbnailBrowser(ctk.CTkToplevel):
 
         self.destroy()
 #------------------------------------------------------------------------------------------
+class PreambleEditor(ctk.CTkToplevel):
+    def __init__(self, parent, current_preamble=None):
+        super().__init__(parent)
+        self.title("Preamble Editor")
+        self.geometry("800x600")
+
+        # Store the default preamble
+        self.default_preamble = get_beamer_preamble(
+            "Title", "Subtitle", "Author", "Institution", "Short Inst", "\\today"
+        )
+
+        # Create UI
+        self.create_editor()
+        self.create_toolbar()
+
+        # Load current preamble if provided, else load default
+        if current_preamble:
+            self.editor.delete('1.0', 'end')
+            self.editor.insert('1.0', current_preamble)
+        else:
+            self.reset_to_default()
+
+    def create_editor(self):
+        """Create the preamble text editor"""
+        # Editor frame
+        editor_frame = ctk.CTkFrame(self)
+        editor_frame.pack(fill="both", expand=True, padx=10, pady=(5, 10))
+
+        # Editor with syntax highlighting
+        self.editor = ctk.CTkTextbox(
+            editor_frame,
+            wrap="none",
+            font=("Courier", 12)
+        )
+        self.editor.pack(fill="both", expand=True, padx=5, pady=5)
+
+        # Add syntax highlighting
+        self.syntax_highlighter = BeamerSyntaxHighlighter(self.editor)
+
+    def create_toolbar(self):
+        """Create toolbar with editor controls"""
+        toolbar = ctk.CTkFrame(self)
+        toolbar.pack(fill="x", padx=10, pady=5)
+
+        # Create buttons
+        buttons = [
+            ("Reset to Default", self.reset_to_default),
+            ("Save Custom", self.save_custom),
+            ("Load Custom", self.load_custom),
+            ("Apply", self.apply_changes),
+            ("Cancel", self.cancel_changes)
+        ]
+
+        for text, command in buttons:
+            ctk.CTkButton(
+                toolbar,
+                text=text,
+                command=command,
+                width=100
+            ).pack(side="left", padx=5)
+
+    def reset_to_default(self):
+        """Reset preamble to default"""
+        if messagebox.askyesno("Reset Preamble",
+                             "Are you sure you want to reset to default preamble?"):
+            self.editor.delete('1.0', 'end')
+            self.editor.insert('1.0', self.default_preamble)
+            self.syntax_highlighter.highlight()
+
+    def save_custom(self):
+        """Save current preamble as custom template"""
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".tex",
+            filetypes=[("TeX files", "*.tex"), ("All files", "*.*")],
+            title="Save Custom Preamble"
+        )
+
+        if file_path:
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(self.editor.get('1.0', 'end-1c'))
+                messagebox.showinfo("Success", "Custom preamble saved successfully!")
+            except Exception as e:
+                messagebox.showerror("Error", f"Error saving preamble: {str(e)}")
+
+    def load_custom(self):
+        """Load custom preamble template"""
+        file_path = filedialog.askopenfilename(
+            filetypes=[("TeX files", "*.tex"), ("All files", "*.*")],
+            title="Load Custom Preamble"
+        )
+
+        if file_path:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    self.editor.delete('1.0', 'end')
+                    self.editor.insert('1.0', content)
+                    self.syntax_highlighter.highlight()
+            except Exception as e:
+                messagebox.showerror("Error", f"Error loading preamble: {str(e)}")
+
+    def apply_changes(self):
+        """Apply preamble changes and close editor"""
+        self.preamble = self.editor.get('1.0', 'end-1c')
+        self.destroy()
+
+    def cancel_changes(self):
+        """Cancel changes and close editor"""
+        self.preamble = None
+        self.destroy()
+
+    @staticmethod
+    def edit_preamble(parent, current_preamble=None):
+        """Static method to handle preamble editing"""
+        editor = PreambleEditor(parent, current_preamble)
+        editor.wait_window()
+        return editor.preamble if hasattr(editor, 'preamble') else None
+#------------------------------------------------------------------------------------------
 class BeamerSlideEditor(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -866,6 +985,58 @@ class BeamerSlideEditor(ctk.CTk):
         # Adjust grid weights to accommodate terminal
         self.grid_rowconfigure(1, weight=3)  # Main editor
         self.grid_rowconfigure(4, weight=1)  # Terminal
+#--------------------------------------------------------------------------------------------------------------------
+    def edit_preamble(self):
+            """Open preamble editor"""
+            # Get current preamble if exists
+            current_preamble = get_beamer_preamble(
+                self.presentation_info['title'],
+                self.presentation_info['subtitle'],
+                self.presentation_info['author'],
+                self.presentation_info['institution'],
+                self.presentation_info['short_institute'],
+                self.presentation_info['date']
+            )
+
+            # Open preamble editor
+            new_preamble = PreambleEditor.edit_preamble(self, current_preamble)
+
+            if new_preamble is not None:
+                # Store the custom preamble
+                self.custom_preamble = new_preamble
+                messagebox.showinfo("Success", "Preamble updated successfully!")
+
+    def generate_tex_content(self) -> str:
+        """Generate complete tex file content with custom preamble if available"""
+        if hasattr(self, 'custom_preamble'):
+            content = self.custom_preamble
+        else:
+            content = get_beamer_preamble(
+                self.presentation_info['title'],
+                self.presentation_info['subtitle'],
+                self.presentation_info['author'],
+                self.presentation_info['institution'],
+                self.presentation_info['short_institute'],
+                self.presentation_info['date']
+            )
+
+        # Add slides
+        for slide in self.slides:
+            content += f"\\title {slide['title']}\n"
+            content += "\\begin{Content}"
+            if slide['media']:
+                content += f" {slide['media']}"
+            content += "\n"
+
+            # Add content items
+            for item in slide['content']:
+                if item.strip():
+                    content += f"{item}\n"
+
+            content += "\\end{Content}\n\n"
+
+        content += "\\end{document}"
+        return content
 #--------------------------------------------------------------------------------------------------------------------
     def create_terminal(self) -> None:
         """Create a terminal/console widget"""
@@ -1086,6 +1257,10 @@ Created by {self.__author__}
         # Left side buttons
         left_buttons = ctk.CTkFrame(self.menu_frame)
         left_buttons.pack(side="left", padx=5)
+
+       # Add Preamble Editor button
+        ctk.CTkButton(left_buttons, text="Edit Preamble",
+                     command=self.edit_preamble).pack(side="left", padx=5)
 
         ctk.CTkButton(left_buttons, text="Presentation Settings",
                      command=self.show_settings_dialog).pack(side="left", padx=5)
