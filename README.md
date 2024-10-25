@@ -1,4 +1,4 @@
-Update: The complete Development IDE is needed to create the text file to generate PDF output.
+Update:  BSG-IDE.py  is a complete Development IDE to create the text file and all intermediate steps to generate PDF presentation output.
 
 Create a presentation slide in no time. That is the goal. Read the manual (RTM!) Contact me (nsp@airis4d.com) for clarifications. Contribute to the manual by adding your observations. AND Enjoy!
 
