@@ -1,4 +1,4 @@
-Update:  BSG-IDE.py  is a complete Development IDE to create the text file and all intermediate steps to generate PDF presentation output.
+Update:  BSG-IDE.py  is a complete development IDE that creates the text file and all intermediate steps to generate PDF presentation output. The IDE also provides a preamble editor that allows you to customise the look and feel of your presentation. I encourage users to upload their contributions to appealing preamble setup files under the creative commons licence to make the product versatile.
 
 Create a presentation slide in no time. That is the goal. Read the manual (RTM!) Contact me (nsp@airis4d.com) for clarifications. Contribute to the manual by adding your observations. AND Enjoy!
 
