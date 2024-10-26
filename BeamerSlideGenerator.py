@@ -5,7 +5,7 @@ A tool for generating Beamer presentation slides with multimedia content.
 Supports local files, URL downloads, and content-only slides.
 """
 
-import os
+import os,re
 import time
 import requests
 import webbrowser
@@ -630,10 +630,9 @@ def update_input_file(file_path, url_updates, is_tex_file=False):
         return False
 
 
-def generate_latex_code(base_name, filename, first_frame_path, content=None, title=None, playable=False, source_url=None):
-    """
-    Fixed version with proper column and list handling.
-    """
+def generate_latex_code(base_name, filename, first_frame_path, content=None, title=None, playable=False, source_url=None, notes=None):
+    """Enhanced version that handles notes properly"""
+
     escaped_base_name = base_name.replace("_", "\\_") if base_name else "Media"
     media_folder = "media_files"
 
@@ -663,6 +662,15 @@ def generate_latex_code(base_name, filename, first_frame_path, content=None, tit
                     item = item.replace("_", "\\_").replace("&", "\\&").replace("#", "\\#")
                     latex_code += f"        \\item {item}\n"
             latex_code += """    \\end{itemize}"""
+            # Add notes if present
+            if notes and notes.strip():
+                latex_code += "\\note{\n\\begin{itemize}\n"
+                for note_line in notes.split('\n'):
+                    if note_line.strip():
+                        # Clean up any existing bullet points
+                        note_text = note_line.lstrip('•- ').strip()
+                        latex_code += f"\\item {note_text}\n"
+                latex_code += "\\end{itemize}\n}\n"
 
         latex_code += """
 \\end{frame}
@@ -1152,9 +1160,7 @@ def parse_media_directive(directive_string):
     return directive_type, media_source, playable, original_directive
 
 def process_input_file(file_path, output_filename='movie.tex'):
-    """
-    Modified to update both .tex and .txt files with new media paths.
-    """
+    """Process input file to convert to TeX format"""
     url_updates = {}
     errors = []
     processed = 0
@@ -1173,15 +1179,34 @@ def process_input_file(file_path, output_filename='movie.tex'):
     try:
         with open(output_filename, 'w') as f:
             if has_preamble:
-                f.writelines(preamble_lines)
+                # Modify preamble for notes support
+                modified_preamble = []
+                for line in preamble_lines:
+                    if line.startswith('\\documentclass'):
+                        modified_preamble.append('\\documentclass[12pt]{beamer}\n')
+                    elif '\\begin{document}' in line:
+                        modified_preamble.extend([
+                            '\\usepackage{pgfpages}\n',
+                            '\\setbeameroption{show notes on second screen=right}\n',
+                            '\\setbeamertemplate{note page}{\\pagecolor{yellow!5}\\insertnote}\n',
+                            line
+                        ])
+                    else:
+                        modified_preamble.append(line)
+
+                f.writelines(modified_preamble)
+
                 if not has_maketitle:
                     f.write("\\maketitle\n")
                 if not has_titlepage:
                     f.write("\\begin{frame}\n\\titlepage\n\\end{frame}\n\n")
             else:
-                f.write("""\\documentclass{beamer}
+                f.write("""\\documentclass[12pt]{beamer}
 \\usepackage{graphicx}
 \\usepackage{multimedia}
+\\usepackage{pgfpages}
+\\setbeameroption{show notes on second screen=right}
+\\setbeamertemplate{note page}{\\pagecolor{yellow!5}\\insertnote}
 
 \\begin{document}
 
@@ -1193,8 +1218,9 @@ def process_input_file(file_path, output_filename='movie.tex'):
     i = 0
     title = None
     content = []
-    in_content_block = False
     current_url = None
+    latex_code = ""
+    current_notes = []
 
     # Process content lines
     while i < len(content_lines):
@@ -1211,9 +1237,8 @@ def process_input_file(file_path, output_filename='movie.tex'):
                 continue
 
             if line.startswith("\\begin{Content}"):
-                in_content_block = True
                 content = []
-
+                current_notes = []  # Reset notes for new slide
                 if len(line) > len("\\begin{Content}"):
                     current_url = line[len("\\begin{Content}"):].strip()
                 else:
@@ -1226,9 +1251,8 @@ def process_input_file(file_path, output_filename='movie.tex'):
                 continue
 
             if line.startswith("\\end{Content}"):
-                in_content_block = False
-
                 if not current_url:
+                    # [URL handling code remains the same]
                     print(f"\nNo URL provided for slide with title: {title}")
                     search_query = construct_search_query(title, content)
                     print(f"Opening Google Image search for: {search_query}")
@@ -1256,19 +1280,49 @@ def process_input_file(file_path, output_filename='movie.tex'):
                     else:
                         current_url = "\\None"
 
+                # Look ahead for Notes block
+                j = i + 1
+                while j < len(content_lines):
+                    next_line = content_lines[j].strip()
+                    if next_line.startswith("\\begin{Notes}"):
+                        j += 1  # Skip the begin Notes line
+                        while j < len(content_lines):
+                            note_line = content_lines[j].strip()
+                            if note_line.startswith("\\end{Notes}"):
+                                break
+                            if note_line:
+                                current_notes.append(note_line)
+                            j += 1
+                    elif next_line.startswith("\\title") or next_line.startswith("\\begin{Content}"):
+                        break
+                    j += 1
+
+                # Generate slide content
                 latex_code, new_directive = process_media(
                     current_url if current_url else "\\None",
                     content,
                     title,
-                    False  # playable flag handled by parse_media_directive
+                    False
                 )
 
                 if latex_code:
+                    # Remove frame end if present
+                    frame_end = latex_code.rfind('\\end{frame}')
+                    if frame_end != -1:
+                        latex_code = latex_code[:frame_end]
+
+                    # Add notes if present
+                    if current_notes:
+                        for note in current_notes:
+                            latex_code += f"\\note[item]{{{note.strip()}}}\n"
+
+                    # Add frame end
+                    latex_code += "\\end{frame}\n\n"
+
                     with open(output_filename, 'a') as f:
                         f.write(latex_code)
                     processed += 1
 
-                    # Store URL updates if there's a new directive
                     if new_directive and current_url and new_directive != current_url:
                         if current_url.startswith("\\play "):
                             url_updates[current_url.replace("\\play ", "").strip()] = new_directive
@@ -1278,12 +1332,13 @@ def process_input_file(file_path, output_filename='movie.tex'):
                     failed += 1
 
                 content = []
+                current_notes = []
                 title = None
                 current_url = None
                 i += 1
                 continue
 
-            if in_content_block:
+            elif not line.startswith(("\\begin{Notes}", "\\end{Notes}")):
                 content.append(line)
 
             i += 1
@@ -1299,15 +1354,13 @@ def process_input_file(file_path, output_filename='movie.tex'):
             print(f"\nWarning: Error in slide processing: {str(e)}")
             i += 1
 
-    # Write document end to .tex file
+    # Write document end
     with open(output_filename, 'a') as f:
-        f.write("\n\\end{document}")
+        f.write("\\end{document}")
 
     # Update both .tex and .txt files if we have URL updates
     if url_updates:
-        # Update the source .txt file with original URLs
         update_input_file(file_path, url_updates, is_tex_file=False)
-        # Update the generated .tex file with local paths
         update_input_file(output_filename, url_updates, is_tex_file=True)
 
     print(f"\nProcessing complete:")
@@ -1324,7 +1377,6 @@ def process_input_file(file_path, output_filename='movie.tex'):
         print(f"\nOutput written to: {output_filename}")
         if url_updates:
             print("Both source file and output file have been updated with new media paths.")
-
 def main():
     """
     Main execution function with enhanced file creation capability.
