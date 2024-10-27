@@ -30,7 +30,6 @@ import shutil
 from pathlib import Path
 import importlib.util
 from typing import List, Tuple
-from Beam2odp import  BeamerToODP
 def check_and_install_dependencies() -> None:
     """
     Check for required dependencies and install if missing.
@@ -134,7 +133,7 @@ def check_bsg_file() -> None:
         try:
             import requests
             # Replace with actual URL to your BeamerSlideGenerator.py
-            url = "https://raw.githubusercontent.com/yourusername/BeamerSlideGenerator/main/BeamerSlideGenerator.py"
+            url = "https://raw.githubusercontent.com/sajeethphilip/BeamerSlideGenerator/main/BeamerSlideGenerator.py"
             response = requests.get(url)
             response.raise_for_status()
 
@@ -2083,7 +2082,7 @@ Created by {self.__author__}
             # Convert TEX to ODP
             self.write_to_terminal("Converting TEX to ODP...\n")
             try:
-                from Beam2odp import BeamerToODP
+                #from Beam2odp import BeamerToODP
                 converter = BeamerToODP(tex_file)
                 self.write_to_terminal("Parsing TEX content...\n")
                 converter.parse_input()
@@ -3076,10 +3075,356 @@ Created by {self.__author__}
             messagebox.showerror("Error", f"Error converting to TeX:\n{str(e)}")
 
 #-----------------------------------------------------------------------------
+
+
+def get_installation_paths():
+    """Get platform-specific installation paths"""
+    import platform
+    import os
+    from pathlib import Path
+    import site
+    import sys
+
+    system = platform.system()
+    paths = {}
+
+    if os.geteuid() == 0:  # Running as root/sudo
+        if system == "Linux":
+            paths.update({
+                'bin': Path('/usr/local/bin'),
+                'share': Path('/usr/local/share'),
+                'icons': Path('/usr/share/icons/hicolor'),
+                'apps': Path('/usr/share/applications')
+            })
+        else:
+            # For other systems when running as root/admin
+            paths.update({
+                'bin': Path(sys.prefix) / 'bin',
+                'share': Path(sys.prefix) / 'share'
+            })
+    else:  # Running as normal user
+        if system == "Linux":
+            # Get user's local bin from PATH or create in ~/.local/bin
+            user_bin = None
+            for path in os.environ.get('PATH', '').split(os.pathsep):
+                if '/.local/bin' in path and os.access(path, os.W_OK):
+                    user_bin = Path(path)
+                    break
+            if not user_bin:
+                user_bin = Path.home() / '.local' / 'bin'
+
+            paths.update({
+                'bin': user_bin,
+                'share': Path.home() / '.local' / 'share',
+                'icons': Path.home() / '.local' / 'share' / 'icons' / 'hicolor',
+                'apps': Path.home() / '.local' / 'share' / 'applications'
+            })
+
+        elif system == "Windows":
+            appdata = Path(os.getenv('APPDATA'))
+            paths.update({
+                'bin': appdata / 'BSG-IDE',
+                'shortcut': appdata / 'Microsoft' / 'Windows' / 'Start Menu' / 'Programs' / 'BSG-IDE'
+            })
+
+        elif system == "Darwin":  # macOS
+            paths.update({
+                'app': Path.home() / 'Applications' / 'BSG-IDE.app',
+                'contents': Path.home() / 'Applications' / 'BSG-IDE.app' / 'Contents',
+                'bin': Path.home() / 'Applications' / 'BSG-IDE.app' / 'Contents' / 'MacOS',
+                'resources': Path.home() / 'Applications' / 'BSG-IDE.app' / 'Contents' / 'Resources'
+            })
+
+    return system, paths
+
+def check_installation():
+    """Check if BSG-IDE is installed in the system"""
+    system, paths = get_installation_paths()
+
+    if system == "Linux":
+        return (paths['bin'] / 'bsg-ide').exists()
+    elif system == "Windows":
+        return (paths['bin'] / 'bsg-ide.pyw').exists()
+    elif system == "Darwin":
+        return paths['app'].exists()
+    return False
+def make_executable(file_path):
+    """Make file executable on Unix systems or create launcher on Windows"""
+    import stat
+    import platform
+
+    system = platform.system()
+    if system != "Windows":
+        # Add executable permission for owner
+        current = stat.S_IMODE(os.lstat(file_path).st_mode)
+        os.chmod(file_path, current | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    else:
+        # For Windows, create a .bat launcher
+        bat_path = file_path.parent / 'bsg-ide.bat'
+        with open(bat_path, 'w') as f:
+            f.write(f'@echo off\n"{sys.executable}" "{file_path}" %*')
+
+def check_bsg_file():
+    """
+    Check for BeamerSlideGenerator.py and install if missing.
+    """
+    # Get the correct installation path based on platform
+    import platform
+    system = platform.system()
+
+    if system == "Linux":
+        install_lib = Path.home() / '.local' / 'lib' / 'bsg-ide'
+    elif system == "Windows":
+        install_lib = Path(os.getenv('APPDATA')) / 'BSG-IDE'
+    else:  # macOS
+        install_lib = Path.home() / 'Library' / 'Application Support' / 'BSG-IDE'
+
+    install_lib.mkdir(parents=True, exist_ok=True)
+    bsg_file = install_lib / 'BeamerSlideGenerator.py'
+
+    if not bsg_file.exists():
+        print("\nBeamerSlideGenerator.py not found in installation directory. Installing...")
+        try:
+            # First check if it exists in current directory
+            current_bsg = Path('BeamerSlideGenerator.py')
+            if current_bsg.exists():
+                # Copy the file to installation directory
+                shutil.copy2(current_bsg, bsg_file)
+                print(f"✓ BeamerSlideGenerator.py installed to {bsg_file}")
+            else:
+                # Look in script's directory
+                script_dir = Path(__file__).parent.resolve()
+                script_bsg = script_dir / 'BeamerSlideGenerator.py'
+                if script_dir.exists():
+                    shutil.copy2(script_bsg, bsg_file)
+                    print(f"✓ BeamerSlideGenerator.py installed to {bsg_file}")
+                else:
+                    print("✗ Error: BeamerSlideGenerator.py not found in current or script directory.")
+                    print("Please ensure BeamerSlideGenerator.py is in the same directory as BSG-IDE.py")
+                    sys.exit(1)
+        except Exception as e:
+            print(f"✗ Error installing BeamerSlideGenerator.py: {str(e)}")
+            print("\nPlease manually copy BeamerSlideGenerator.py to:", bsg_file)
+            sys.exit(1)
+    else:
+        print("✓ BeamerSlideGenerator.py is installed")
+
+    # Also ensure the file is in the current working directory for direct script mode
+    if not Path('BeamerSlideGenerator.py').exists():
+        try:
+            shutil.copy2(bsg_file, 'BeamerSlideGenerator.py')
+        except Exception as e:
+            print(f"Warning: Could not copy BeamerSlideGenerator.py to current directory: {e}")
+
+def setup_system_installation():
+    """Set up system-wide installation with all required files"""
+    try:
+        system, paths = get_installation_paths()
+
+        # Create installation directories
+        if system == "Linux":
+            # Main installation directory in user's home
+            install_dir = Path.home() / '.local' / 'lib' / 'bsg-ide'
+            bin_dir = Path.home() / '.local' / 'bin'
+        elif system == "Windows":
+            install_dir = Path(os.getenv('APPDATA')) / 'BSG-IDE'
+            bin_dir = install_dir / 'bin'
+        else:  # macOS
+            install_dir = Path.home() / 'Library' / 'Application Support' / 'BSG-IDE'
+            bin_dir = Path.home() / '.local' / 'bin'
+
+        # Create directories
+        install_dir.mkdir(parents=True, exist_ok=True)
+        bin_dir.mkdir(parents=True, exist_ok=True)
+
+        # Get current script directory
+        script_dir = Path(__file__).parent.resolve()
+
+        # Copy required Python files
+        required_files = {
+            'BSG-IDE.py': 'BSG_IDE.py',  # Rename to valid module name
+            'BeamerSlideGenerator.py': 'BeamerSlideGenerator.py',
+            'Beam2odp.py': 'Beam2odp.py'  # if you have this file
+        }
+
+        # Copy all required files to installation directory
+        for src_name, dest_name in required_files.items():
+            src_file = script_dir / src_name
+            if src_file.exists():
+                shutil.copy2(src_file, install_dir / dest_name)
+                print(f"✓ Copied {src_name} to {install_dir / dest_name}")
+
+        # Create __init__.py in installation directory
+        (install_dir / '__init__.py').touch()
+
+        # Create launcher script based on platform
+        if system == "Linux":
+            launcher_script = f"""#!/usr/bin/env python3
+import sys
+import os
+from pathlib import Path
+
+# Add installation directory to Python path
+install_dir = Path('{install_dir}')
+sys.path.insert(0, str(install_dir))
+
+# Import and run main program
+from BSG_IDE import main
+
+if __name__ == '__main__':
+    main()
+"""
+            # Create launcher in bin directory
+            launcher_path = bin_dir / 'bsg-ide'
+            launcher_path.write_text(launcher_script)
+            make_executable(launcher_path)
+            print(f"✓ Created launcher at {launcher_path}")
+
+            # Create desktop entry
+            apps_dir = Path.home() / '.local' / 'share' / 'applications'
+            apps_dir.mkdir(parents=True, exist_ok=True)
+
+            desktop_entry = f"""[Desktop Entry]
+Version=1.0
+Type=Application
+Name=BSG-IDE
+Comment=Beamer Slide Generator IDE
+Exec={launcher_path}
+Icon=bsg-ide
+Terminal=false
+Categories=Office;Documentation;
+Keywords=presentation;slides;beamer;latex;
+"""
+            desktop_file = apps_dir / 'bsg-ide.desktop'
+            desktop_file.write_text(desktop_entry)
+            make_executable(desktop_file)
+
+        elif system == "Windows":
+            launcher_script = f"""@echo off
+set PYTHONPATH={install_dir};%PYTHONPATH%
+python -c "from BSG_IDE import main; main()" %*
+"""
+            # Create batch file in bin directory
+            launcher_path = bin_dir / 'bsg-ide.bat'
+            launcher_path.write_text(launcher_script)
+            print(f"✓ Created launcher at {launcher_path}")
+
+            # Create Start Menu shortcut
+            try:
+                import winshell
+                from win32com.client import Dispatch
+                programs_path = Path(winshell.folder("CSIDL_PROGRAMS")) / "BSG-IDE"
+                programs_path.mkdir(parents=True, exist_ok=True)
+
+                shortcut_path = programs_path / "BSG-IDE.lnk"
+                shell = Dispatch('WScript.Shell')
+                shortcut = shell.CreateShortCut(str(shortcut_path))
+                shortcut.Targetpath = str(launcher_path)
+                shortcut.save()
+            except ImportError:
+                print("Warning: Could not create Windows shortcut")
+
+        else:  # macOS
+            launcher_script = f"""#!/usr/bin/env python3
+import sys
+import os
+from pathlib import Path
+
+# Add installation directory to Python path
+install_dir = Path('{install_dir}')
+sys.path.insert(0, str(install_dir))
+
+# Ensure BeamerSlideGenerator.py is available
+bsg_file = install_dir / 'BeamerSlideGenerator.py'
+if not bsg_file.exists():
+    print("Error: BeamerSlideGenerator.py not found")
+    sys.exit(1)
+
+# Import and run main program
+from BSG_IDE import main
+
+if __name__ == '__main__':
+    main()
+"""
+            # Create launcher in bin directory
+            launcher_path = bin_dir / 'bsg-ide'
+            launcher_path.write_text(launcher_script)
+            make_executable(launcher_path)
+            print(f"✓ Created launcher at {launcher_path}")
+
+        # Add installation directory to PYTHONPATH in shell rc file
+        if system != "Windows":
+            shell_rc = Path.home() / ('.zshrc' if os.path.exists(Path.home() / '.zshrc') else '.bashrc')
+            pythonpath_line = f'\nexport PYTHONPATH="{install_dir}:$PYTHONPATH"\n'
+            path_line = f'\nexport PATH="{bin_dir}:$PATH"\n'
+
+            if shell_rc.exists():
+                content = shell_rc.read_text()
+                if pythonpath_line not in content:
+                    shell_rc.write_text(content + pythonpath_line + path_line)
+            else:
+                shell_rc.write_text(pythonpath_line + path_line)
+
+        print(f"""
+Installation completed successfully:
+- Files installed to: {install_dir}
+- Launcher created at: {launcher_path}
+- Python path updated to include installation directory
+""")
+
+        return True
+
+    except Exception as e:
+        print(f"Installation error: {str(e)}")
+        traceback.print_exc()
+        return False
 def main():
+    # First check dependencies
     check_and_install_dependencies()
-    app = BeamerSlideEditor()
-    app.mainloop()
+
+    # Get system information
+    system, paths = get_installation_paths()
+
+    # Check if running as script or installed version
+    current_script = Path(__file__).resolve()
+
+    if system == "Linux":
+        installed_path = paths['bin'] / 'bsg-ide'
+    elif system == "Windows":
+        installed_path = paths['bin'] / 'bsg-ide.pyw'
+    elif system == "Darwin":
+        installed_path = paths['bin'] / 'bsg-ide'
+    else:
+        installed_path = None
+
+    # If script version and not installed, set up installation
+    if installed_path and current_script != installed_path and not check_installation():
+        print("First-time run detected. Setting up BSG-IDE...")
+        try:
+            if setup_system_installation():
+                print("Installation successful! Launching installed version...")
+
+                # Launch installed version with proper permissions
+                if system == "Windows":
+                    os.startfile(str(installed_path))
+                else:
+                    os.execv(sys.executable, [sys.executable, str(installed_path)] + sys.argv[1:])
+                sys.exit(0)
+            else:
+                print("Installation incomplete. Running from current location.")
+        except Exception as e:
+            print(f"Installation failed: {str(e)}")
+            print("Running from current location.")
+
+    # Launch the IDE
+    try:
+        app = BeamerSlideEditor()
+        app.mainloop()
+    except Exception as e:
+        print(f"Error launching IDE: {str(e)}")
+        if system != "Windows":  # Show terminal output on Unix systems
+            input("Press Enter to exit...")
+#----------------------------------------------------------------------------
 
 if __name__ == "__main__":
     main()
