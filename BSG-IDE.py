@@ -15,10 +15,14 @@ import webbrowser
 import re
 from typing import Optional, Dict, List, Tuple
 from PIL import Image, ImageDraw
-
-import sys
+import requests
+import traceback  # Add this import at the top
 #---------------------------------------------------------------------------------------------------------
-
+import time
+import shutil
+import zipfile
+import tempfile
+from pathlib import Path
 import os
 import sys
 import subprocess
@@ -26,7 +30,7 @@ import shutil
 from pathlib import Path
 import importlib.util
 from typing import List, Tuple
-
+from Beam2odp import  BeamerToODP
 def check_and_install_dependencies() -> None:
     """
     Check for required dependencies and install if missing.
@@ -1106,6 +1110,54 @@ class PreambleEditor(ctk.CTkToplevel):
         editor.wait_window()
         return editor.preamble if hasattr(editor, 'preamble') else None
 #------------------------------------------------------------------------------------------
+class NotesToggleFrame(ctk.CTkFrame):
+    """Frame containing notes display options with tooltips"""
+    def __init__(self, parent, main_editor, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        # Store reference to main editor
+        self.main_editor = main_editor
+
+        # Notes mode variable
+        self.notes_mode = tk.StringVar(value="both")
+
+        # Create radio buttons for different notes modes
+        modes = [
+            ("PDF Only", "slides", "Hide all presentation notes"),
+            ("Notes Only", "notes", "Show only presentation notes"),
+            ("PDF with Notes", "both", "Show PDF with notes on second screen")
+        ]
+
+        # Create label
+        label = ctk.CTkLabel(self, text="Notes Display:", anchor="w")
+        label.pack(side="left", padx=5)
+        self.create_tooltip(label, "Select how notes should appear in the final output")
+
+        # Create radio buttons
+        for text, value, tooltip in modes:
+            btn = ctk.CTkRadioButton(
+                self,
+                text=text,
+                variable=self.notes_mode,
+                value=value
+            )
+            btn.pack(side="left", padx=10)
+            self.create_tooltip(btn, tooltip)
+
+    def get_notes_directive(self) -> str:
+        """Return the appropriate beamer directive based on current mode"""
+        mode = self.notes_mode.get()
+        if mode == "slides":
+            return "\\setbeameroption{hide notes}"
+        elif mode == "notes":
+            return "\\setbeameroption{show only notes}"
+        else:  # both
+            return "\\setbeameroption{show notes on second screen=right}"
+
+
+
+
+#------------------------------------------------------------------------------------------
 class BeamerSlideEditor(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -1198,37 +1250,7 @@ class BeamerSlideEditor(ctk.CTk):
                 self.custom_preamble = new_preamble
                 messagebox.showinfo("Success", "Preamble updated successfully!")
 
-    def generate_tex_content(self) -> str:
-        """Generate complete tex file content with custom preamble if available"""
-        if hasattr(self, 'custom_preamble'):
-            content = self.custom_preamble
-        else:
-            content = get_beamer_preamble(
-                self.presentation_info['title'],
-                self.presentation_info['subtitle'],
-                self.presentation_info['author'],
-                self.presentation_info['institution'],
-                self.presentation_info['short_institute'],
-                self.presentation_info['date']
-            )
 
-        # Add slides
-        for slide in self.slides:
-            content += f"\\title {slide['title']}\n"
-            content += "\\begin{Content}"
-            if slide['media']:
-                content += f" {slide['media']}"
-            content += "\n"
-
-            # Add content items
-            for item in slide['content']:
-                if item.strip():
-                    content += f"{item}\n"
-
-            content += "\\end{Content}\n\n"
-
-        content += "\\end{document}"
-        return content
 #--------------------------------------------------------------------------------------------------------------------
     def create_terminal(self) -> None:
         """Create a terminal/console widget"""
@@ -1682,8 +1704,7 @@ Created by {self.__author__}
                     })
 
         return slides
-#------------------------------------------------------------------------------------
-
+#--------------------------------------------------------------------------------------
     def create_sidebar(self) -> None:
         """Create sidebar with slide list and controls with enhanced navigation"""
         self.sidebar = ctk.CTkFrame(self)
@@ -1814,7 +1835,7 @@ Created by {self.__author__}
                 messagebox.showinfo("Success", "Slide duplicated successfully!")
             else:
                 messagebox.showwarning("Warning", "No slide to duplicate!")
-
+#---------------------------------------------------------------------------------------------------
     def create_main_editor(self) -> None:
         """Create main editor area with content and notes sections"""
         self.editor_frame = ctk.CTkFrame(self)
@@ -1840,16 +1861,17 @@ Created by {self.__author__}
         media_buttons = ctk.CTkFrame(media_frame)
         media_buttons.pack(side="right", padx=5)
 
-        media_button_data = [
-            ("Local File", self.browse_media),
-            ("YouTube", self.youtube_dialog),
-            ("Search Images", self.search_images),
-            ("No Media", lambda: self.media_entry.insert(0, "\\None"))
+        button_data = [
+            ("Local File", self.browse_media, "Browse local media files"),
+            ("YouTube", self.youtube_dialog, "Add YouTube video"),
+            ("Search Images", self.search_images, "Search for images online"),
+            ("No Media", lambda: self.media_entry.insert(0, "\\None"), "Create slide without media")
         ]
 
-        for text, command in media_button_data:
-            ctk.CTkButton(media_buttons, text=text,
-                         command=command).pack(side="left", padx=2)
+        for text, command, tooltip in button_data:
+            btn = ctk.CTkButton(media_buttons, text=text, command=command)
+            btn.pack(side="left", padx=2)
+            self.create_tooltip(btn, tooltip)
 
         # Create editors container
         editors_frame = ctk.CTkFrame(self.editor_frame)
@@ -1867,21 +1889,48 @@ Created by {self.__author__}
         self.content_editor.pack(fill="both", expand=True, padx=5, pady=5)
 
         # Notes section
-        notes_frame = ctk.CTkFrame(editors_frame)
+        notes_frame = ctk.CTkFrame(self.editor_frame)
         notes_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
-        # Notes header with toggle
         notes_header = ctk.CTkFrame(notes_frame)
         notes_header.pack(fill="x", padx=5, pady=2)
 
         ctk.CTkLabel(notes_header, text="Presentation Notes:").pack(side="left", padx=5)
-        self.notes_var = ctk.BooleanVar(value=True)
-        self.notes_switch = ctk.CTkSwitch(
-            notes_header,
-            text="Include Notes",
-            variable=self.notes_var
-        )
-        self.notes_switch.pack(side="right", padx=5)
+
+        # Notes control buttons on the right
+        notes_buttons = ctk.CTkFrame(notes_header)
+        notes_buttons.pack(side="right", padx=5)
+
+        # Initialize notes mode
+        self.notes_mode = tk.StringVar(value="both")
+        self.notes_buttons = {}
+
+        # Define button configurations
+        buttons_config = [
+            ("slides", "Slides Only", "Generate slides without notes", "#2B87BB", "#1B5577"),
+            ("notes", "Notes Only", "Generate notes only", "#27AE60", "#1A7340"),
+            ("both", "Slides + Notes", "Generate slides with notes", "#8E44AD", "#5E2D73")
+        ]
+
+        # Create the three buttons for notes control
+        for mode, text, tooltip, active_color, hover_color in buttons_config:
+            btn = ctk.CTkButton(
+                notes_buttons,
+                text=text,
+                command=lambda m=mode: self.set_notes_mode(m),
+                width=100,
+                fg_color=active_color if self.notes_mode.get() == mode else "gray",
+                hover_color=hover_color
+            )
+            btn.pack(side="left", padx=2)
+            self.create_tooltip(btn, tooltip)
+
+            # Store button reference with its colors
+            self.notes_buttons[mode] = {
+                'button': btn,
+                'active_color': active_color,
+                'hover_color': hover_color
+            }
 
         self.notes_editor = ctk.CTkTextbox(notes_frame, height=150)
         self.notes_editor.pack(fill="both", expand=True, padx=5, pady=5)
@@ -1890,57 +1939,537 @@ Created by {self.__author__}
         self.syntax_highlighter = BeamerSyntaxHighlighter(self.content_editor)
         self.notes_highlighter = BeamerSyntaxHighlighter(self.notes_editor)
 
-        # Configure weight for editors
-        editors_frame.grid_rowconfigure(0, weight=2)  # Content gets more space
-        editors_frame.grid_rowconfigure(1, weight=1)  # Notes gets less space
+        # Set initial button colors
+        self.update_notes_buttons(self.notes_mode.get())
+
+    def set_notes_mode(self, mode: str) -> None:
+        """Set notes mode and update UI"""
+        self.notes_mode.set(mode)
+        self.update_notes_buttons(mode)
+
+        # Update notes editor state
+        if mode == "slides":
+            self.notes_editor.configure(state="disabled")
+        else:
+            self.notes_editor.configure(state="normal")
+
+    def update_notes_buttons(self, active_mode: str) -> None:
+        """Update button colors based on active mode"""
+        for mode, btn_info in self.notes_buttons.items():
+            if mode == active_mode:
+                btn_info['button'].configure(
+                    fg_color=btn_info['active_color'],
+                    hover_color=btn_info['hover_color']
+                )
+            else:
+                btn_info['button'].configure(
+                    fg_color="gray",
+                    hover_color="#4A4A4A"
+                )
 
     def create_toolbar(self) -> None:
-        """Create main editor toolbar with file operations"""
+        """Create main editor toolbar without notes controls"""
         self.toolbar = ctk.CTkFrame(self)
         self.toolbar.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
 
-        # File operations
-        file_buttons = [
-            ("New", self.new_file),
-            ("Open", self.open_file),
-            ("Save", self.save_file),
-            ("Convert to TeX", self.convert_to_tex),
-            ("Generate PDF", self.generate_pdf),
-            ("Preview PDF", self.preview_pdf)
+        # Basic file operations buttons
+        buttons = [
+            ("New", self.new_file, "Create new presentation"),
+            ("Open", self.open_file, "Open existing presentation"),
+            ("Save", self.save_file, "Save current presentation"),
+            ("Convert to TeX", self.convert_to_tex, "Convert to LaTeX format"),
+            ("Generate PDF", self.generate_pdf, "Generate PDF file"),
+            ("Preview PDF", self.preview_pdf, "View generated PDF"),
+            ("Export to Overleaf", self.create_overleaf_zip, "Create Overleaf-compatible zip")
         ]
 
-        for text, command in file_buttons:
-            ctk.CTkButton(self.toolbar, text=text,
-                         command=command).pack(side="left", padx=5)
+        for text, command, tooltip in buttons:
+            if text == "Export to Overleaf":
+                btn = ctk.CTkButton(
+                    self.toolbar,
+                    text=text,
+                    command=command,
+                    width=120,
+                    fg_color="#47A141",
+                    hover_color="#2E8B57"
+                )
+            else:
+                btn = ctk.CTkButton(
+                    self.toolbar,
+                    text=text,
+                    command=command,
+                    width=100
+                )
+            btn.pack(side="left", padx=5)
+            self.create_tooltip(btn, tooltip)
+#------------------------------------------------------------------------------------------------------
 
-    def convert_to_tex(self) -> None:
-            """Separate function to convert text to TeX"""
-            if not self.current_file:
-                messagebox.showwarning("Warning", "Please save your file first!")
-                return
 
+
+    def on_notes_mode_change(self, mode: str) -> None:
+        """Handle notes mode change"""
+        self.notes_mode.set(mode)
+
+        # Update button colors
+        for btn in self.mode_buttons:
+            if btn.mode == mode:
+                btn.configure(fg_color=btn.active_color)
+            else:
+                btn.configure(fg_color="gray")
+
+        # Configure editor state
+        if mode == "slides":
+            self.notes_editor.configure(state="disabled")
+        else:
+            self.notes_editor.configure(state="normal")
+
+
+
+    def create_tooltip(self, widget, text):
+        """Create tooltip for widget"""
+        def show_tooltip(event):
+            tooltip = tk.Toplevel()
+            tooltip.wm_overrideredirect(True)
+            tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+
+            label = tk.Label(tooltip, text=text, justify='left',
+                           background="#ffffe0", relief='solid', borderwidth=1,
+                           font=("Arial", 10))
+            label.pack()
+
+            def hide_tooltip():
+                tooltip.destroy()
+
+            widget.tooltip = tooltip
+            widget.tooltip_timer = self.after(2000, hide_tooltip)
+
+        def hide_tooltip(event):
+            if hasattr(widget, 'tooltip'):
+                widget.tooltip.destroy()
+                if hasattr(widget, 'tooltip_timer'):
+                    self.after_cancel(widget.tooltip_timer)
+
+        widget.bind('<Enter>', show_tooltip)
+        widget.bind('<Leave>', hide_tooltip)
+
+    def generate_odp(self) -> None:
+        """Generate ODP presentation with automatic TEX generation if needed"""
+        if not self.current_file:
+            messagebox.showwarning("Warning", "Please save your file first!")
+            return
+
+        try:
+            #self.save_file()  # Save current state to ensure latest content
+
+            # Get base filename without extension
+            base_filename = os.path.splitext(self.current_file)[0]
+            tex_file = base_filename + '.tex'
+
+            # Clear terminal
+            self.clear_terminal()
+            self.write_to_terminal("Starting ODP generation process...\n")
+
+            # Check if TEX file exists and generate if needed
+            if not os.path.exists(tex_file):
+                self.write_to_terminal("TEX file not found. Generating from source...\n")
+                try:
+                    from BeamerSlideGenerator import process_input_file
+                    process_input_file(self.current_file, tex_file)
+                    self.write_to_terminal("✓ TEX file generated successfully\n", "green")
+                except Exception as e:
+                    self.write_to_terminal(f"✗ Error generating TEX file: {str(e)}\n", "red")
+                    raise Exception("TEX generation failed")
+
+            # Convert TEX to ODP
+            self.write_to_terminal("Converting TEX to ODP...\n")
             try:
-                self.save_file()  # Save current state
+                from Beam2odp import BeamerToODP
+                converter = BeamerToODP(tex_file)
+                self.write_to_terminal("Parsing TEX content...\n")
+                converter.parse_input()
 
-                # Get base filename without extension
-                base_filename = os.path.splitext(self.current_file)[0]
-                tex_file = base_filename + '.tex'
+                self.write_to_terminal("Generating ODP file...\n")
+                odp_file = converter.generate_odp()
 
-                # Clear terminal
-                self.clear_terminal()
-                self.write_to_terminal("Converting text to TeX...\n")
+                if odp_file and os.path.exists(odp_file):
+                    self.write_to_terminal("✓ ODP file generated successfully!\n", "green")
 
-                # Convert using BeamerSlideGenerator
-                from BeamerSlideGenerator import process_input_file
-                process_input_file(self.current_file, tex_file)
-
-                self.write_to_terminal("✓ Text to TeX conversion successful\n", "green")
-                messagebox.showinfo("Success", "TeX file generated successfully!")
+                    # Ask to open the generated file
+                    if messagebox.askyesno("Success",
+                                         "ODP presentation generated successfully! Would you like to open it?"):
+                        if sys.platform.startswith('win'):
+                            os.startfile(odp_file)
+                        elif sys.platform.startswith('darwin'):
+                            subprocess.run(['open', odp_file])
+                        else:
+                            subprocess.run(['xdg-open', odp_file])
+                else:
+                    self.write_to_terminal("✗ Error: No output file was generated\n", "red")
 
             except Exception as e:
-                self.write_to_terminal(f"✗ Error in conversion: {str(e)}\n", "red")
-                messagebox.showerror("Error", f"Error converting to TeX:\n{str(e)}")
+                error_text = f"✗ Error in ODP conversion: {str(e)}\n"
+                error_text += "Detailed error information:\n"
+                error_text += traceback.format_exc()
+                self.write_to_terminal(error_text, "red")
+                raise Exception("ODP conversion failed")
 
+        except Exception as e:
+            messagebox.showerror("Error", f"Error generating ODP presentation:\n{str(e)}")
+            print(f"Error details: {str(e)}")
+            traceback.print_exc()
+
+    def get_required_media_files(self, tex_content: str) -> set:
+        """Parse TEX file to identify all required media files including multimedia content and previews"""
+        required_files = set()
+
+        # Regular expressions for different media references
+        patterns = {
+            'images': [
+                r'\\includegraphics(?:\[.*?\])?\{([^}]+)\}',    # Standard images
+                r'\\pgfimage(?:\[.*?\])?\{([^}]+)\}',          # PGF images
+                r'media_files/([^}]+_preview\.png)'             # Preview images
+            ],
+            'video': [
+                r'\\movie(?:\[.*?\])?\{.*?\}\{\.?/?media_files/([^}]+)\}',  # Movie elements (handle ./ prefix)
+                r'\\href\{run:([^}]+)\}',                       # Runnable media links
+                r'\\movie\[.*?\]\{.*?\}\{([^}]+)\}'            # Movie with options
+            ],
+            'animations': [
+                r'\\animategraphics(?:\[.*?\])?\{[^}]*\}\{([^}]+)\}',  # Animated graphics
+                r'\\animate(?:\[.*?\])?\{[^}]*\}\{([^}]+)\}'           # General animations
+            ],
+            'audio': [
+                r'\\sound(?:\[.*?\])?\{.*?\}\{([^}]+)\}',      # Sound elements
+                r'\\audiofile\{([^}]+)\}'                       # Audio files
+            ],
+            'general_media': [
+                r'\\file\s+media_files/([^\s}]+)',             # General media files
+                r'\\play\s+\\file\s+media_files/([^\s}]+)',    # Playable media
+                r'\\mediapath\{([^}]+)\}'                       # Media path references
+            ]
+        }
+
+        self.write_to_terminal("\nAnalyzing required media files:\n")
+
+        # Find all media references
+        for media_type, pattern_list in patterns.items():
+            self.write_to_terminal(f"\nChecking {media_type} references:\n")
+            for pattern in pattern_list:
+                matches = re.finditer(pattern, tex_content)
+                for match in matches:
+                    filepath = match.group(1)
+                    # Clean up the path
+                    filepath = filepath.replace('media_files/', '')
+                    filepath = filepath.replace('./', '')  # Remove any ./ prefix
+                    filepath = filepath.strip()
+
+                    # Add the file to required files
+                    required_files.add(filepath)
+                    self.write_to_terminal(f"  ✓ Found: {filepath}\n", "green")
+
+                    # If this is a preview image, also add the corresponding video
+                    if filepath.endswith('_preview.png'):
+                        base_video_name = filepath.replace('_preview.png', '.mp4')
+                        required_files.add(base_video_name)
+                        self.write_to_terminal(f"  ✓ Added corresponding video: {base_video_name}\n", "green")
+
+                    # If this is a video, check for its preview image
+                    if filepath.endswith(('.mp4', '.avi', '.mov', '.mkv', '.webm')):
+                        preview_name = filepath.rsplit('.', 1)[0] + '_preview.png'
+                        if preview_name not in required_files:
+                            required_files.add(preview_name)
+                            self.write_to_terminal(f"  ✓ Added corresponding preview: {preview_name}\n", "green")
+
+        return required_files
+
+    def verify_media_files(self, required_files: set) -> tuple:
+        """Verify existence of required media files and classify them"""
+        verified_files = set()
+        missing_files = set()
+        media_types = {
+            'images': [],
+            'videos': [],
+            'audio': [],
+            'animations': [],
+            'other': []
+        }
+
+        for filepath in required_files:
+            full_path = os.path.join('media_files', filepath)
+            if os.path.exists(full_path):
+                verified_files.add(filepath)
+                # Classify file by extension
+                ext = os.path.splitext(filepath)[1].lower()
+                if ext in ['.png', '.jpg', '.jpeg', '.pdf', '.eps']:
+                    media_types['images'].append(filepath)
+                elif ext in ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv']:
+                    media_types['videos'].append(filepath)
+                elif ext in ['.mp3', '.wav', '.ogg', '.m4a', '.flac']:
+                    media_types['audio'].append(filepath)
+                elif ext in ['.gif', '.webp']:
+                    media_types['animations'].append(filepath)
+                else:
+                    media_types['other'].append(filepath)
+            else:
+                missing_files.add(filepath)
+
+        return verified_files, missing_files, media_types
+
+    def create_manifest(self, tex_file: str, verified_files: set, missing_files: set, media_types: dict) -> str:
+        """Create detailed manifest content"""
+        manifest_content = [
+            "# Project Media Files Manifest",
+            f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+            "\n## Project Files:",
+            f"- {os.path.basename(tex_file)} (Main TeX file)",
+            "\n## Media Files by Type:"
+        ]
+
+        # Add categorized media files
+        for media_type, files in media_types.items():
+            if files:
+                manifest_content.extend([
+                    f"\n### {media_type.title()}:",
+                    *[f"- media_files/{file}" for file in sorted(files)]
+                ])
+
+        # Add missing files section if any
+        if missing_files:
+            manifest_content.extend([
+                "\n## Missing Files (Please Check):",
+                *[f"- {file}" for file in sorted(missing_files)]
+            ])
+
+        manifest_content.extend([
+            "\n## File Statistics:",
+            f"Total Files: {len(verified_files) + len(missing_files)}",
+            f"Successfully Included: {len(verified_files)}",
+            f"Missing: {len(missing_files)}"
+        ])
+
+        return '\n'.join(manifest_content)
+
+    def create_overleaf_zip(self) -> None:
+        """Create a zip file compatible with Overleaf containing tex and all required media files"""
+        if not self.current_file:
+            messagebox.showwarning("Warning", "Please save your file first!")
+            return
+
+        try:
+            # First ensure current state is saved and tex is generated
+            #self.save_file()
+
+            # Get base filename without extension
+            base_filename = os.path.splitext(self.current_file)[0]
+            tex_file = base_filename + '.tex'
+
+            # Clear terminal and show progress
+            self.clear_terminal()
+            self.write_to_terminal("Creating Overleaf-compatible zip file...\n")
+
+            # Convert to tex if not already done
+            if not os.path.exists(tex_file):
+                self.write_to_terminal("Generating TeX file...\n")
+                from BeamerSlideGenerator import process_input_file
+                process_input_file(self.current_file, tex_file)
+                self.write_to_terminal("✓ TeX file generated successfully\n", "green")
+
+            # Read TEX content and identify required files
+            with open(tex_file, 'r', encoding='utf-8') as f:
+                tex_content = f.read()
+
+            # Create the progress dialog
+            self.update_idletasks()  # Ensure main window is updated
+            progress = self.create_progress_dialog(
+                "Creating Zip File",
+                "Analyzing required files..."
+            )
+
+            try:
+                # Analyze and verify media files
+                required_files = self.get_required_media_files(tex_content)
+                verified_files, missing_files, media_types = self.verify_media_files(required_files)
+
+                # Create zip file
+                zip_filename = base_filename + '_overleaf.zip'
+                total_files = len(verified_files) + 1  # +1 for tex file
+                processed_files = 0
+
+                progress.update_progress(0, "Creating zip file...")
+
+                with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    # Add the tex file
+                    progress.update_progress(
+                        (processed_files / total_files) * 100,
+                        "Adding TeX file..."
+                    )
+                    zipf.write(tex_file, os.path.basename(tex_file))
+                    processed_files += 1
+                    self.write_to_terminal(f"✓ Added: {os.path.basename(tex_file)}\n", "green")
+
+                    # Add verified media files
+                    self.write_to_terminal("\nAdding media files:\n")
+                    for filename in verified_files:
+                        file_path = os.path.join('media_files', filename)
+                        progress.update_progress(
+                            (processed_files / total_files) * 100,
+                            f"Adding {filename}..."
+                        )
+
+                        # Ensure the media_files directory exists in the zip
+                        if processed_files == 1:  # First media file
+                            zipf.writestr('media_files/.keep', '')  # Create empty file to ensure directory exists
+
+                        zipf.write(file_path, os.path.join('media_files', filename))
+                        self.write_to_terminal(f"✓ Added: {filename}\n", "green")
+                        processed_files += 1
+
+                    # Create detailed manifest
+                    manifest_content = self.create_manifest(
+                        tex_file, verified_files, missing_files, media_types
+                    )
+                    zipf.writestr('manifest.txt', manifest_content)
+
+                progress.update_progress(100, "Complete!")
+                time.sleep(0.5)  # Brief pause to show completion
+
+                # Show completion message with details
+                message = [f"Zip file created successfully!"]
+
+                # Add statistics
+                stats = []
+                total_files = sum(len(files) for files in media_types.values())
+                if total_files > 0:
+                    stats.extend([
+                        "",
+                        "Media files included:",
+                        *[f"- {media_type.title()}: {len(files)} files"
+                          for media_type, files in media_types.items() if files]
+                    ])
+
+                # Add warnings for missing files
+                if missing_files:
+                    stats.extend([
+                        "",
+                        f"Warning: {len(missing_files)} required files were missing.",
+                        "Check manifest.txt in the zip file for details."
+                    ])
+
+                # Add total size
+                try:
+                    zip_size = os.path.getsize(zip_filename)
+                    stats.append("")
+                    stats.append(f"Total zip size: {self.format_file_size(zip_size)}")
+                except OSError:
+                    pass
+
+                message.extend(stats)
+                message.append("\nWould you like to open the containing folder?")
+
+                # Close progress dialog before showing message
+                progress.close()
+
+                if messagebox.askyesno("Success", "\n".join(message)):
+                    # Open the folder containing the zip file
+                    if sys.platform.startswith('win'):
+                        os.system(f'explorer /select,"{zip_filename}"')
+                    elif sys.platform.startswith('darwin'):
+                        subprocess.run(['open', '-R', zip_filename])
+                    else:
+                        subprocess.run(['xdg-open', os.path.dirname(zip_filename)])
+
+            except Exception as e:
+                if 'progress' in locals():
+                    progress.close()
+                raise
+
+        except Exception as e:
+            error_msg = f"Error creating zip file: {str(e)}\n"
+            self.write_to_terminal(f"✗ {error_msg}", "red")
+            traceback.print_exc()  # Print full traceback to help with debugging
+            messagebox.showerror("Error", f"Error creating zip file:\n{str(e)}")
+
+    def format_file_size(self, size: int) -> str:
+        """Format file size in human-readable format"""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024:
+                return f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} TB"
+
+    def create_progress_dialog(self, title: str, message: str) -> 'ProgressDialog':
+        """Create a progress dialog window"""
+        class ProgressDialog:
+            def __init__(self, parent, title, message):
+                self.window = ctk.CTkToplevel(parent)
+                self.window.title(title)
+                self.window.geometry("300x150")
+                self.window.transient(parent)
+
+                # Center the window
+                self.window.update_idletasks()
+                width = self.window.winfo_width()
+                height = self.window.winfo_height()
+                x = (self.window.winfo_screenwidth() // 2) - (width // 2)
+                y = (self.window.winfo_screenheight() // 2) - (height // 2)
+                self.window.geometry(f'+{x}+{y}')
+
+                self.message = ctk.CTkLabel(self.window, text=message)
+                self.message.pack(pady=10)
+
+                self.progress = ctk.CTkProgressBar(self.window)
+                self.progress.pack(pady=10, padx=20, fill="x")
+                self.progress.set(0)
+
+                self.progress_text = ctk.CTkLabel(self.window, text="0%")
+                self.progress_text.pack(pady=5)
+
+                # Wait for window to be visible before grabbing
+                self.window.wait_visibility()
+                self.window.grab_set()
+
+                # Keep dialog on top
+                self.window.lift()
+                self.window.focus_force()
+
+            def update_progress(self, value: float, message: str = None) -> None:
+                """Update progress bar and message"""
+                try:
+                    if self.window.winfo_exists():
+                        self.progress.set(value / 100)
+                        self.progress_text.configure(text=f"{value:.1f}%")
+                        if message:
+                            self.message.configure(text=message)
+                        self.window.update()
+                except tk.TclError:
+                    pass  # Window might have been closed
+
+            def close(self) -> None:
+                """Close the progress dialog"""
+                try:
+                    if self.window.winfo_exists():
+                        self.window.grab_release()
+                        self.window.destroy()
+                except tk.TclError:
+                    pass  # Window might have been closed
+
+        return ProgressDialog(self, title, message)
+
+
+
+    def open_presentation(self, file_path):
+        """Open the generated presentation with appropriate application"""
+        try:
+            if sys.platform.startswith('win'):
+                os.startfile(file_path)
+            elif sys.platform.startswith('darwin'):
+                subprocess.run(['open', file_path])
+            else:
+                subprocess.run(['xdg-open', file_path])
+        except Exception as e:
+            self.write_to_terminal(f"Error opening presentation: {str(e)}\n", "red")
+            messagebox.showerror("Error",
+                               f"Error opening presentation:\n{str(e)}")
 
     def create_context_menu(self) -> None:
         """Create right-click context menu"""
@@ -2107,25 +2636,16 @@ Created by {self.__author__}
             return
 
         try:
-            self.save_file()  # Save current state to text file
+            # Clear terminal
+            self.clear_terminal()
+
+            # Step 1: Convert text to TeX using our proper conversion function
+            self.write_to_terminal("Step 1: Converting text to TeX...\n")
+            self.convert_to_tex()  # This will handle notes mode correctly
 
             # Get base filename without extension
             base_filename = os.path.splitext(self.current_file)[0]
             tex_file = base_filename + '.tex'
-
-            # Clear terminal
-            self.clear_terminal()
-
-            # Step 1: Convert text to TeX
-            self.write_to_terminal("Step 1: Converting text to TeX...\n")
-            from BeamerSlideGenerator import process_input_file
-
-            try:
-                process_input_file(self.current_file, tex_file)
-                self.write_to_terminal("✓ Text to TeX conversion successful\n", "green")
-            except Exception as e:
-                self.write_to_terminal(f"✗ Error in text to TeX conversion: {str(e)}\n", "red")
-                raise
 
             # Step 2: First pdflatex pass
             self.write_to_terminal("\nStep 2: First pdflatex pass...\n")
@@ -2348,12 +2868,9 @@ Created by {self.__author__}
         )
         open_google_image_search(query)
 
-    # Content Generation
     def generate_tex_content(self) -> str:
         """Generate complete tex file content with proper notes handling"""
-        include_notes = self.notes_var.get()
-
-        # Get base preamble
+        # Get base content
         if hasattr(self, 'custom_preamble'):
             content = self.custom_preamble
         else:
@@ -2366,52 +2883,68 @@ Created by {self.__author__}
                 self.presentation_info['date']
             )
 
-        # Add notes configuration if notes are included
-        if include_notes:
-            # Replace documentclass line
-            content = re.sub(
-                r'\\documentclass\[.*?\]{beamer}',
-                r'\\documentclass[aspectratio=169,show notes on second screen=right]{beamer}',
-                content
-            )
-
-            # Add notes package and configuration
-            content = content.replace(
-                '\\begin{document}',
-                '\\usepackage{pgfpages}\n\\setbeameroption{show notes on second screen=right}\n\\begin{document}'
-            )
-
-        # Add slides with notes
+        # Modify preamble for notes configuration
+        content = self.modify_preamble_for_notes(content)
+        print(content)
+        # Add slides with appropriate notes handling
         for slide in self.slides:
-            # Begin frame
-            content += "\\begin{frame}\n"
+            content += f"\\begin{frame}\n"
             content += f"\\frametitle{{{slide['title']}}}\n"
 
-            # Add media if present
             if slide['media']:
                 content += f"{slide['media']}\n"
 
-            # Add content items
             for item in slide['content']:
                 if item.strip():
                     content += f"{item}\n"
 
             content += "\\end{frame}\n"
 
-            # Add notes if enabled
-            if include_notes and 'notes' in slide and slide['notes']:
+            # Add notes if not in slides_only mode
+            if self.notes_mode.get() != "slides_only" and 'notes' in slide and slide['notes']:
                 content += "\\note{\n\\begin{itemize}\n"
                 for note in slide['notes']:
                     if note.strip():
-                        # Clean up any existing itemize markers
                         note = note.lstrip('•- ').strip()
                         content += f"\\item {note}\n"
-                content += "\\end{itemize}\n}\n\n"
-            else:
-                content += "\n"
+                content += "\\end{itemize}\n}\n"
+
+            content += "\n"
 
         content += "\\end{document}\n"
         return content
+
+    def modify_preamble_for_notes(self, tex_content: str) -> str:
+        """Modify the preamble based on current notes mode"""
+        mode = self.notes_mode.get()
+        print(mode)
+        # Define the notes configuration based on mode
+        notes_configs = {
+            "slides": "\\setbeameroption{hide notes}",
+            "notes": "\\setbeameroption{show only notes}",
+            "both": "\\setbeameroption{show notes on second screen=right}"
+        }
+
+        # First, remove any existing notes configurations
+        tex_content = re.sub(r'%.*\\setbeameroption{[^}]*}.*\n', '', tex_content)
+        tex_content = re.sub(r'\\setbeameroption{[^}]*}', '', tex_content)
+
+        # Ensure pgfpages package is present
+        if "\\usepackage{pgfpages}" not in tex_content:
+            package_line = "\\usepackage{pgfpages}\n"
+        else:
+            package_line = ""
+
+        # Get the appropriate notes configuration
+        notes_config = notes_configs[mode]
+
+        # Add the configuration just before \begin{document}
+        doc_pos = tex_content.find("\\begin{document}")
+        if doc_pos != -1:
+            insert_text = f"{package_line}% Notes configuration\n{notes_config}\n\\setbeamertemplate{{note page}}{{\\pagecolor{{yellow!5}}\\insertnote}}\n\n"
+            tex_content = tex_content[:doc_pos] + insert_text + tex_content[doc_pos:]
+
+        return tex_content
 
     def load_file(self, filename: str) -> None:
         """Load presentation from file"""
@@ -2472,7 +3005,77 @@ Created by {self.__author__}
 
         except Exception as e:
             messagebox.showerror("Error", f"Error loading file: {str(e)}")
+#------------------------------------------------------------------------------
+    def convert_to_tex(self) -> None:
+        """Convert text to TeX with appropriate notes mode"""
+        if not self.current_file:
+            messagebox.showwarning("Warning", "Please save your file first!")
+            return
 
+        try:
+            # Get base filename without extension
+            base_filename = os.path.splitext(self.current_file)[0]
+            tex_file = base_filename + '.tex'
+
+            # Clear terminal
+            self.clear_terminal()
+            self.write_to_terminal("Converting text to TeX...\n")
+
+            # First let BeamerSlideGenerator create the tex file
+            from BeamerSlideGenerator import process_input_file
+            process_input_file(self.current_file, tex_file)
+
+            # Now read the generated tex file
+            with open(tex_file, 'r') as f:
+                content = f.read()
+
+            # Debug print
+            self.write_to_terminal("\nOriginal content:\n")
+            self.write_to_terminal(content[:500] + "...\n")  # Print first 500 chars
+
+            # Get current mode and corresponding beamer option
+            mode = self.notes_mode.get()
+            self.write_to_terminal(f"\nCurrent mode: {mode}\n")
+
+            notes_config = {
+                "slides": "\\setbeameroption{hide notes} % Only slides",
+                "notes": "\\setbeameroption{show only notes} % Only notes",
+                "both": "\\setbeameroption{show notes on second screen=right} % Both"
+            }[mode]
+
+            # Remove any existing notes configuration
+            content = re.sub(r'\\usepackage{pgfpages}.*\n', '', content)
+            content = re.sub(r'\\setbeameroption{[^}]*}.*\n', '', content)
+            content = re.sub(r'\\setbeamertemplate{note page}.*\n', '', content)
+
+            # Check if \begin{document} exists in the content
+            if '\\begin{document}' not in content:
+                self.write_to_terminal("\nWarning: \\begin{document} not found in content!\n", "red")
+                return
+
+            # Insert the new configuration before \begin{document}
+            modified_content = content.replace(
+                '\\begin{document}',
+                f'\\usepackage{{pgfpages}}\n{notes_config}\n\\setbeamertemplate{{note page}}{{\\pagecolor{{yellow!5}}\\insertnote}}\n\\begin{{document}}'
+            )
+
+            # Debug print
+            self.write_to_terminal("\nModified content:\n")
+            self.write_to_terminal(modified_content[:500] + "...\n")  # Print first 500 chars
+
+            # Write the modified content back to the tex file
+            with open(tex_file, 'w') as f:
+                f.write(modified_content)
+
+            self.write_to_terminal("✓ Text to TeX conversion successful\n", "green")
+            messagebox.showinfo("Success", "TeX file generated successfully!")
+
+        except Exception as e:
+            self.write_to_terminal(f"✗ Error in conversion: {str(e)}\n", "red")
+            self.write_to_terminal(f"Error details: {traceback.format_exc()}\n", "red")
+            messagebox.showerror("Error", f"Error converting to TeX:\n{str(e)}")
+
+#-----------------------------------------------------------------------------
 def main():
     check_and_install_dependencies()
     app = BeamerSlideEditor()

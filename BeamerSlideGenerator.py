@@ -1173,40 +1173,25 @@ def process_input_file(file_path, output_filename='movie.tex'):
         print(f"Error reading input file: {str(e)}")
         return
 
+    # Get preamble information first
     has_preamble, preamble_lines, content_lines, has_titlepage, has_maketitle = detect_preamble(lines)
 
     # Initialize the output .tex file
     try:
         with open(output_filename, 'w') as f:
             if has_preamble:
-                # Modify preamble for notes support
-                modified_preamble = []
-                for line in preamble_lines:
-                    if line.startswith('\\documentclass'):
-                        modified_preamble.append('\\documentclass[12pt]{beamer}\n')
-                    elif '\\begin{document}' in line:
-                        modified_preamble.extend([
-                            '\\usepackage{pgfpages}\n',
-                            '\\setbeameroption{show notes on second screen=right}\n',
-                            '\\setbeamertemplate{note page}{\\pagecolor{yellow!5}\\insertnote}\n',
-                            line
-                        ])
-                    else:
-                        modified_preamble.append(line)
-
-                f.writelines(modified_preamble)
+                # Just copy the preamble as is
+                f.writelines(preamble_lines)
 
                 if not has_maketitle:
                     f.write("\\maketitle\n")
                 if not has_titlepage:
                     f.write("\\begin{frame}\n\\titlepage\n\\end{frame}\n\n")
             else:
+                # Basic preamble without notes configuration
                 f.write("""\\documentclass[12pt]{beamer}
 \\usepackage{graphicx}
 \\usepackage{multimedia}
-\\usepackage{pgfpages}
-\\setbeameroption{show notes on second screen=right}
-\\setbeamertemplate{note page}{\\pagecolor{yellow!5}\\insertnote}
 
 \\begin{document}
 
@@ -1252,7 +1237,6 @@ def process_input_file(file_path, output_filename='movie.tex'):
 
             if line.startswith("\\end{Content}"):
                 if not current_url:
-                    # [URL handling code remains the same]
                     print(f"\nNo URL provided for slide with title: {title}")
                     search_query = construct_search_query(title, content)
                     print(f"Opening Google Image search for: {search_query}")
@@ -1358,7 +1342,6 @@ def process_input_file(file_path, output_filename='movie.tex'):
     with open(output_filename, 'a') as f:
         f.write("\\end{document}")
 
-    # Update both .tex and .txt files if we have URL updates
     if url_updates:
         update_input_file(file_path, url_updates, is_tex_file=False)
         update_input_file(output_filename, url_updates, is_tex_file=True)
@@ -1377,6 +1360,8 @@ def process_input_file(file_path, output_filename='movie.tex'):
         print(f"\nOutput written to: {output_filename}")
         if url_updates:
             print("Both source file and output file have been updated with new media paths.")
+
+
 def main():
     """
     Main execution function with enhanced file creation capability.
