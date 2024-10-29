@@ -3,7 +3,9 @@
 BSG_Integrated_Development_Environment.py
 An integrated development environment for BeamerSlideGenerator
 Combines GUI editing, syntax highlighting, and presentation generation.
-"""
+
+
+#--------------------------------------------------------------------
 import tkinter as tk
 from PIL import Image
 from tkinter import ttk
@@ -13,13 +15,14 @@ import os
 from pathlib import Path
 import webbrowser
 import re
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple,Any
 from PIL import Image, ImageDraw
 import requests
 import traceback  # Add this import at the top
 #---------------------------------------------------------------------------------------------------------
 import time
 import shutil
+import atexit
 import zipfile
 import tempfile
 from pathlib import Path
@@ -29,56 +32,687 @@ import subprocess
 import shutil
 from pathlib import Path
 import importlib.util
-from typing import List, Tuple
+
+import fitz  # PyMuPDF
+import io
+import screeninfo
+import threading
+import socket
+import json
+
+"""
+#------------------------------Check and install ----------------------------------------------
+import os,re
+import sys
+import tempfile
+import atexit
+import shutil
+import threading
+import socket
+import json
+import time
+import subprocess
+import importlib.util
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, simpledialog
+import customtkinter as ctk
+from typing import Optional, Dict, List, Tuple,Any
+from pathlib import Path
+from PIL import Image
+import traceback
+import webbrowser
+
 def check_and_install_dependencies() -> None:
     """
     Check for required dependencies and install if missing.
+    Corrected version with proper PyMuPDF handling.
     """
     print("Checking and installing dependencies...")
 
+    # First, remove problematic packages if they exist
+    problematic_packages = ['fitz', 'frontend']
+    for package in problematic_packages:
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", package])
+            print(f"✓ Removed problematic package: {package}")
+        except:
+            pass
+
     # Required Python packages
     python_packages = [
-        ('customtkinter', 'customtkinter'),
-        ('Pillow', 'PIL'),
-        ('requests', 'requests'),
-        ('yt_dlp', 'yt_dlp'),
-        ('opencv-python', 'cv2')
+        ('customtkinter', 'customtkinter', 'customtkinter'),
+        ('Pillow', 'PIL', 'Pillow'),
+        ('requests', 'requests', 'requests'),
+        ('yt_dlp', 'yt_dlp', 'yt-dlp'),
+        ('opencv-python', 'cv2', 'opencv-python'),
+        ('screeninfo', 'screeninfo', 'screeninfo'),
+        ('numpy', 'numpy', 'numpy')  # Required for PyMuPDF
     ]
 
-    # Required system commands
-    system_commands = [
-        ('pdflatex', 'texlive texlive-latex-extra texlive-latex-recommended'),
-        ('xdg-open', 'xdg-utils')  # For Linux
-    ]
-
-    # Check and install Python packages
-    for package, import_name in python_packages:
+    # Install core dependencies first
+    for package_name, import_name, install_name in python_packages:
         try:
             importlib.import_module(import_name)
-            print(f"✓ {package} is installed")
+            print(f"✓ {package_name} is installed")
         except ImportError:
-            print(f"Installing {package}...")
+            print(f"Installing {package_name}...")
             try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-                print(f"✓ {package} installed successfully")
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", install_name])
+                print(f"✓ {package_name} installed successfully")
             except subprocess.CalledProcessError as e:
-                print(f"✗ Error installing {package}: {str(e)}")
+                print(f"✗ Error installing {package_name}: {str(e)}")
                 sys.exit(1)
 
-    # Check system commands
-    is_windows = sys.platform.startswith('win')
-    if is_windows:
-        check_windows_dependencies()
-    else:
-        check_linux_dependencies(system_commands)
+    # Handle PyMuPDF installation
+    try:
+        import fitz
+        print("✓ PyMuPDF is already installed correctly")
+    except ImportError:
+        print("Installing PyMuPDF...")
+        try:
+            # Try latest stable version first
+            subprocess.check_call([
+                sys.executable, "-m", "pip", "install", "--no-cache-dir", "PyMuPDF"
+            ])
 
-    # Check for BeamerSlideGenerator.py
-    check_bsg_file()
+            # Verify installation
+            try:
+                import fitz
+                print(f"✓ PyMuPDF installed successfully (version {fitz.version[0]})")
+            except ImportError as e:
+                # If latest version fails, try specific version
+                print("Trying alternative PyMuPDF installation...")
+                subprocess.check_call([
+                    sys.executable, "-m", "pip", "install", "--no-cache-dir",
+                    "PyMuPDF==1.23.7"  # Known stable version
+                ])
+                import fitz
+                print(f"✓ PyMuPDF installed successfully (version {fitz.version[0]})")
+        except Exception as e:
+            print(f"✗ Error installing PyMuPDF: {str(e)}")
+            traceback.print_exc()
+            sys.exit(1)
 
     # Create required directories
     os.makedirs('media_files', exist_ok=True)
 
     print("\nAll dependencies are satisfied!")
+
+def verify_pymupdf_installation():
+    """
+    Verify PyMuPDF is installed correctly and usable.
+    """
+    try:
+        import fitz
+        # Try to access version info
+        version = fitz.version[0]
+        print(f"PyMuPDF version: {version}")
+
+        # Try to create a simple test document
+        test_doc = fitz.open()  # Creates an empty PDF
+        test_doc.new_page()     # Adds a page
+        test_doc.close()        # Closes the document
+
+        print("✓ PyMuPDF verification successful")
+        return True
+    except Exception as e:
+        print(f"PyMuPDF verification failed: {str(e)}")
+        return False
+
+def get_pymupdf_info():
+    """
+    Get detailed information about PyMuPDF installation.
+    """
+    try:
+        import fitz
+        return {
+            'version': fitz.version[0],
+            'binding_version': fitz.version[1],
+            'build_date': fitz.version[2],
+            'lib_path': fitz.__file__
+        }
+    except Exception as e:
+        return f"Error getting PyMuPDF info: {str(e)}"
+
+def import_required_packages():
+    """
+    Import all required packages with proper error handling and verification.
+    """
+    try:
+        # First verify PyMuPDF
+        if not verify_pymupdf_installation():
+            raise ImportError("PyMuPDF installation verification failed")
+
+        # Now import everything else
+        import tkinter as tk
+        from PIL import Image, ImageDraw, ImageTk
+        import customtkinter as ctk
+        from tkinter import ttk, filedialog, messagebox, simpledialog
+        import screeninfo
+        import requests
+        import cv2
+        import yt_dlp
+        import fitz
+
+        modules = {
+            'tk': tk,
+            'Image': Image,
+            'ImageDraw': ImageDraw,
+            'ImageTk': ImageTk,
+            'ctk': ctk,
+            'ttk': ttk,
+            'fitz': fitz,
+            'screeninfo': screeninfo,
+            'requests': requests,
+            'cv2': cv2,
+            'yt_dlp': yt_dlp
+        }
+
+        # Print success message with version info
+        print(f"\nSuccessfully imported all packages:")
+        print(f"PyMuPDF version: {fitz.version[0]}")
+        print(f"PIL version: {Image.__version__}")
+        print(f"OpenCV version: {cv2.__version__}")
+
+        return modules
+
+    except Exception as e:
+        print(f"Error importing required packages: {str(e)}")
+        traceback.print_exc()
+        sys.exit(1)
+#--------------------------------------------------Dialogs -------------------------
+class InstitutionNameDialog(ctk.CTkToplevel):
+    """Dialog for handling long institution names"""
+    def __init__(self, parent, institution_name):
+        super().__init__(parent)
+        self.title("Institution Name Warning")
+        self.geometry("500x250")
+        self.short_name = None
+
+        # Center dialog
+        self.transient(parent)
+        self.grab_set()
+
+        # Create widgets
+        ctk.CTkLabel(self, text="Long Institution Name Detected",
+                    font=("Arial", 14, "bold")).pack(pady=10)
+
+        ctk.CTkLabel(self, text=f"Current name:\n{institution_name}",
+                    wraplength=450).pack(pady=10)
+
+        ctk.CTkLabel(self, text="Please provide a shorter version for slide footers:").pack(pady=5)
+
+        self.entry = ctk.CTkEntry(self, width=300)
+        self.entry.pack(pady=10)
+
+        button_frame = ctk.CTkFrame(self)
+        button_frame.pack(pady=20)
+
+        ctk.CTkButton(button_frame, text="Use Short Name",
+                     command=self.use_short_name).pack(side="left", padx=10)
+        ctk.CTkButton(button_frame, text="Keep Original",
+                     command=self.keep_original).pack(side="left", padx=10)
+
+    def use_short_name(self):
+        self.short_name = self.entry.get()
+        self.destroy()
+
+    def keep_original(self):
+        self.destroy()
+
+class MediaSelectionDialog(ctk.CTkToplevel):
+    """Dialog for selecting media when URL fails"""
+    def __init__(self, parent, title, content):
+        super().__init__(parent)
+        self.title("Media Selection")
+        self.geometry("600x400")
+        self.result = None
+
+        # Center dialog
+        self.transient(parent)
+        self.grab_set()
+
+        # Create widgets
+        ctk.CTkLabel(self, text="Media Selection Required",
+                    font=("Arial", 14, "bold")).pack(pady=10)
+
+        # Show search query
+        search_query = construct_search_query(title, content)
+        query_frame = ctk.CTkFrame(self)
+        query_frame.pack(fill="x", padx=20, pady=10)
+
+        ctk.CTkLabel(query_frame, text=f"Search query: {search_query}",
+                    wraplength=550).pack(side="left", pady=5)
+
+        ctk.CTkButton(query_frame, text="Open Search",
+                     command=lambda: open_google_image_search(search_query)).pack(side="right", padx=5)
+
+        # Options
+        options_frame = ctk.CTkFrame(self)
+        options_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        # URL Entry
+        url_frame = ctk.CTkFrame(options_frame)
+        url_frame.pack(fill="x", pady=5)
+        self.url_entry = ctk.CTkEntry(url_frame, width=400)
+        self.url_entry.pack(side="left", padx=5)
+        ctk.CTkButton(url_frame, text="Use URL",
+                     command=self.use_url).pack(side="left", padx=5)
+
+        # File Selection
+        file_frame = ctk.CTkFrame(options_frame)
+        file_frame.pack(fill="x", pady=5)
+        self.file_listbox = ctk.CTkTextbox(file_frame, height=150)
+        self.file_listbox.pack(fill="x", pady=5)
+
+        # Populate file list
+        try:
+            files = os.listdir('media_files')
+            for i, file in enumerate(files, 1):
+                self.file_listbox.insert('end', f"{i}. {file}\n")
+        except Exception as e:
+            self.file_listbox.insert('end', f"Error accessing media_files: {str(e)}")
+
+        ctk.CTkButton(file_frame, text="Use Selected File",
+                     command=self.use_file).pack(pady=5)
+
+        # No Media Option
+        ctk.CTkButton(options_frame, text="Create Slide Without Media",
+                     command=self.use_none).pack(pady=10)
+
+    def use_url(self):
+        url = self.url_entry.get().strip()
+        if url:
+            self.result = url
+            self.destroy()
+
+    def use_file(self):
+        # Get selected line
+        try:
+            selection = self.file_listbox.get("sel.first", "sel.last")
+            if selection:
+                file_name = selection.split('.', 1)[1].strip()
+                self.result = f"\\file media_files/{file_name}"
+                self.destroy()
+        except:
+            messagebox.showwarning("Selection Required",
+                                 "Please select a file from the list")
+
+    def use_none(self):
+        self.result = "\\None"
+        self.destroy()
+
+# Function to replace console prompts with GUI dialogs
+def handle_long_institution(parent, institution_name):
+    """Handle long institution name with GUI dialog"""
+    dialog = InstitutionNameDialog(parent, institution_name)
+    parent.wait_window(dialog)
+    return dialog.short_name
+
+def handle_media_selection(parent, title, content):
+    """Handle media selection with GUI dialog"""
+    dialog = MediaSelectionDialog(parent, title, content)
+    parent.wait_window(dialog)
+    return dialog.result
+
+#----------------------------------------------------------Install in local bin -----------------------------------
+
+def install_system_wide():
+    """Install BSG-IDE system-wide with proper icons and launchers"""
+    try:
+        # Determine system type and paths
+        system, paths = get_installation_paths()
+
+        print("Installing BSG-IDE system-wide...")
+
+        # Create required directories
+        os.makedirs(paths['bin'], exist_ok=True)
+        install_dir = paths['share'] / 'bsg-ide' if system != "Windows" else paths['bin']
+        os.makedirs(install_dir, exist_ok=True)
+
+        # Create icons
+        if not create_icon(install_dir):
+            print("Warning: Failed to create application icons")
+
+        # Get current script path
+        current_script = os.path.abspath(__file__)
+
+        if system == "Linux":
+            # Create desktop entry with icon
+            desktop_entry = f"""[Desktop Entry]
+Version=1.0
+Type=Application
+Name=BSG-IDE
+Comment=Beamer Slide Generator IDE
+Exec={paths['bin']}/bsg-ide
+Icon=bsg-ide
+Terminal=false
+Categories=Office;Development;Education;
+Keywords=presentation;latex;beamer;slides;
+StartupWMClass=bsg-ide
+"""
+
+            # Create launcher script
+            launcher = f"""#!/usr/bin/env python3
+import sys
+import os
+
+# Add installation directory to Python path
+sys.path.insert(0, '{install_dir}')
+
+# Ensure GUI mode
+os.environ['DISPLAY'] = ':0'
+
+from BSG_IDE import main
+
+if __name__ == '__main__':
+    main()
+"""
+            # Write launcher
+            launcher_path = paths['bin'] / 'bsg-ide'
+            launcher_path.write_text(launcher)
+            launcher_path.chmod(0o755)
+
+            # Create desktop entry
+            desktop_path = paths['apps'] / 'bsg-ide.desktop'
+            desktop_path.write_text(desktop_entry)
+            desktop_path.chmod(0o755)
+
+        elif system == "Windows":
+            # Create Windows executable
+            import winreg
+
+            # Create batch file that preserves GUI
+            batch_content = f"""@echo off
+start /b pythonw "{current_script}" %*"""
+
+            batch_path = paths['bin'] / 'bsg-ide.bat'
+            batch_path.write_text(batch_content)
+
+            # Create Start Menu shortcut with icon
+            try:
+                import winshell
+                from win32com.client import Dispatch
+
+                shell = Dispatch('WScript.Shell')
+                shortcut = shell.CreateShortCut(str(paths['shortcut'] / 'BSG-IDE.lnk'))
+                shortcut.Targetpath = f'pythonw'
+                shortcut.Arguments = f'"{current_script}"'
+                shortcut.IconLocation = str(install_dir / 'icons' / 'bsg-ide.ico')
+                shortcut.WindowStyle = 1  # Normal window
+                shortcut.save()
+
+            except ImportError:
+                print("Warning: Could not create Windows shortcut (winshell not installed)")
+
+        elif system == "Darwin":  # macOS
+            # Create app bundle
+            os.makedirs(paths['contents'] / 'MacOS', exist_ok=True)
+            os.makedirs(paths['contents'] / 'Resources', exist_ok=True)
+
+            # Create icns from png
+            icon_path = install_dir / 'icons' / 'bsg-ide_256x256.png'
+            if icon_path.exists():
+                img = Image.open(icon_path)
+                icns_path = paths['resources'] / 'bsg-ide.icns'
+                img.save(icns_path, format='ICNS')
+
+            # Create launcher script
+            launcher = f"""#!/usr/bin/env python3
+import sys
+import os
+
+# Add installation directory to Python path
+sys.path.insert(0, '{install_dir}')
+
+# Ensure GUI mode
+os.environ['DISPLAY'] = ':0'
+
+from BSG_IDE import main
+
+if __name__ == '__main__':
+    main()
+"""
+            # Write launcher
+            launcher_path = paths['contents'] / 'MacOS' / 'bsg-ide'
+            launcher_path.write_text(launcher)
+            launcher_path.chmod(0o755)
+
+            # Create Info.plist with icon
+            info_plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>bsg-ide</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.airis4d.bsg-ide</string>
+    <key>CFBundleName</key>
+    <string>BSG-IDE</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleIconFile</key>
+    <string>bsg-ide</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.10</string>
+</dict>
+</plist>"""
+
+            plist_path = paths['contents'] / 'Info.plist'
+            plist_path.write_text(info_plist)
+
+        print("\nInstallation completed successfully!")
+        print("\nYou can now run BSG-IDE from your system's application menu.")
+
+        return True
+
+    except Exception as e:
+        print(f"Error during installation: {str(e)}")
+        traceback.print_exc()
+        return False
+
+def create_icon(install_dir: Path) -> bool:
+    """Create icon with airis4D logo and BSG-IDE text below"""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import os
+
+        # Create icons directory
+        icons_dir = install_dir / 'icons'
+        os.makedirs(icons_dir, exist_ok=True)
+
+        # Icon sizes needed for different platforms
+        sizes = [16, 32, 48, 64, 128, 256]
+
+        # Create base icon image (make it square)
+        size = 256  # Base size
+        img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        # Draw airis4D logo - maintaining exact proportions from ASCII art
+        logo_height = size * 0.6  # Logo takes up 60% of height
+        margin = size * 0.2  # 20% margin from top
+
+        # Calculate logo dimensions
+        logo_width = logo_height * 0.8  # Maintain aspect ratio
+
+        # Logo starting position
+        start_x = (size - logo_width) / 2
+        start_y = margin
+
+        # Draw the triangle (airis4D logo)
+        triangle_points = [
+            (start_x, start_y + logo_height),  # Bottom left
+            (start_x + logo_width/2, start_y), # Top
+            (start_x + logo_width, start_y + logo_height)  # Bottom right
+        ]
+
+        # Draw outer triangle
+        draw.polygon(triangle_points, fill=(255, 0, 0, 255))  # Red for outer triangle
+
+        # Calculate inner triangle points (80% size of outer)
+        inner_scale = 0.8
+        inner_offset_x = (logo_width * (1 - inner_scale)) / 2
+        inner_offset_y = (logo_height * (1 - inner_scale))
+        inner_points = [
+            (start_x + inner_offset_x, start_y + logo_height - inner_offset_y),
+            (start_x + logo_width/2, start_y + inner_offset_y),
+            (start_x + logo_width - inner_offset_x, start_y + logo_height - inner_offset_y)
+        ]
+        draw.polygon(inner_points, fill=(0, 0, 0, 255))  # Black for inner triangle
+
+        # Add "BSG-IDE" text below logo
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", int(size * 0.15))
+        except:
+            font = ImageFont.load_default()
+
+        text = "BSG-IDE"
+        text_bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_x = (size - text_width) // 2
+        text_y = start_y + logo_height + (size * 0.05)  # Small gap between logo and text
+        draw.text((text_x, text_y), text, font=font, fill=(0, 0, 0, 255))
+
+        # Save in different sizes
+        for icon_size in sizes:
+            resized = img.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
+            icon_path = icons_dir / f'bsg-ide_{icon_size}x{icon_size}.png'
+            resized.save(icon_path, 'PNG')
+
+            # For Linux, also save in appropriate hicolor directory
+            if sys.platform.startswith('linux'):
+                hicolor_path = Path.home() / '.local' / 'share' / 'icons' / 'hicolor' / f'{icon_size}x{icon_size}' / 'apps'
+                os.makedirs(hicolor_path, exist_ok=True)
+                resized.save(hicolor_path / 'bsg-ide.png', 'PNG')
+
+        # Create .ico file for Windows
+        if sys.platform.startswith('win'):
+            icon_sizes = [(16,16), (32,32), (48,48), (256,256)]
+            images = []
+            for size in icon_sizes:
+                resized = img.resize(size, Image.Resampling.LANCZOS)
+                images.append(resized)
+            ico_path = icons_dir / 'bsg-ide.ico'
+            img.save(ico_path, format='ICO', sizes=icon_sizes)
+
+        return True
+
+    except Exception as e:
+        print(f"Error creating icon: {str(e)}")
+        traceback.print_exc()
+        return False
+#--------------------------------------pyempress ----------------------------------
+def setup_pympress():
+    """Install pympress and its dependencies if not already installed"""
+    try:
+        import pympress
+        print("✓ Pympress is already installed")
+        return True
+    except ImportError:
+        print("Installing pympress and dependencies...")
+        try:
+            # Install required dependencies first
+            dependencies = [
+                'python3-gi',
+                'python3-gi-cairo',
+                'gir1.2-gtk-3.0',
+                'python3-cairo',
+                'libgtk-3-0',
+                'librsvg2-common',
+                'poppler-utils'
+            ]
+
+            # Detect package manager
+            if shutil.which('apt'):
+                install_cmd = ['sudo', 'apt', 'install', '-y']
+            elif shutil.which('dnf'):
+                install_cmd = ['sudo', 'dnf', 'install', '-y']
+            elif shutil.which('pacman'):
+                install_cmd = ['sudo', 'pacman', '-S', '--noconfirm']
+            else:
+                print("Could not detect package manager. Please install dependencies manually:")
+                print(" ".join(dependencies))
+                return False
+
+            # Install system dependencies
+            for dep in dependencies:
+                try:
+                    subprocess.check_call(install_cmd + [dep])
+                    print(f"✓ Installed {dep}")
+                except subprocess.CalledProcessError:
+                    print(f"✗ Failed to install {dep}")
+                    continue
+
+            # Install pympress using pip
+            subprocess.check_call([
+                sys.executable, "-m", "pip", "install", "--no-cache-dir", "pympress"
+            ])
+            print("✓ Pympress installed successfully")
+            return True
+
+        except Exception as e:
+            print(f"✗ Error installing pympress: {str(e)}")
+            traceback.print_exc()
+            return False
+
+def launch_pympress(pdf_path: str) -> None:
+    """Launch pympress with the specified PDF"""
+    try:
+        if not os.path.exists(pdf_path):
+            raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+
+        # Verify pympress is installed
+        if not setup_pympress():
+            messagebox.showerror(
+                "Error",
+                "Failed to setup pympress. Please install it manually:\n" +
+                "https://github.com/pympress/pympress#installation"
+            )
+            return
+
+        # Launch pympress with the PDF
+        subprocess.Popen(['pympress', pdf_path])
+
+    except Exception as e:
+        messagebox.showerror("Error", f"Error launching pympress:\n{str(e)}")
+        traceback.print_exc()
+
+
+#--------------------------------------------------------------------------
+def setup_static_directory():
+    """
+    Create required static directory structure for PyMuPDF
+    """
+    print("Setting up static directory structure...")
+
+    # Create required directories
+    directories = [
+        'static',
+        'static/css',
+        'static/js',
+        'static/images'
+    ]
+
+    for directory in directories:
+        os.makedirs(directory, exist_ok=True)
+        print(f"✓ Created directory: {directory}")
+
+    # Create minimal required files
+    minimal_files = {
+        'static/css/style.css': '/* Minimal CSS */',
+        'static/js/script.js': '// Minimal JS',
+        'static/.keep': ''  # Empty file to ensure directory is tracked
+    }
+
+    for filepath, content in minimal_files.items():
+        with open(filepath, 'w') as f:
+            f.write(content)
+        print(f"✓ Created file: {filepath}")
+
+
 
 def check_windows_dependencies() -> None:
     """
@@ -1967,7 +2601,7 @@ Created by {self.__author__}
                 )
 
     def create_toolbar(self) -> None:
-        """Create main editor toolbar without notes controls"""
+        """Create main editor toolbar with presentation features"""
         self.toolbar = ctk.CTkFrame(self)
         self.toolbar.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
 
@@ -1978,6 +2612,7 @@ Created by {self.__author__}
             ("Save", self.save_file, "Save current presentation"),
             ("Convert to TeX", self.convert_to_tex, "Convert to LaTeX format"),
             ("Generate PDF", self.generate_pdf, "Generate PDF file"),
+            ("Present with Notes", self.present_with_notes, "Launch dual-screen presentation with notes"),
             ("Preview PDF", self.preview_pdf, "View generated PDF"),
             ("Export to Overleaf", self.create_overleaf_zip, "Create Overleaf-compatible zip")
         ]
@@ -1992,6 +2627,15 @@ Created by {self.__author__}
                     fg_color="#47A141",
                     hover_color="#2E8B57"
                 )
+            elif text == "Present with Notes":
+                btn = ctk.CTkButton(
+                    self.toolbar,
+                    text=text,
+                    command=command,
+                    width=120,
+                    fg_color="#4A90E2",  # Distinctive blue color
+                    hover_color="#357ABD"
+                )
             else:
                 btn = ctk.CTkButton(
                     self.toolbar,
@@ -2001,9 +2645,44 @@ Created by {self.__author__}
                 )
             btn.pack(side="left", padx=5)
             self.create_tooltip(btn, tooltip)
+
+    def present_with_notes(self) -> None:
+        """Present PDF using pympress for dual-screen display with notes"""
+        if not self.current_file:
+            messagebox.showwarning("Warning", "Please save your file first!")
+            return
+
+        try:
+            # Get base filename without extension
+            base_filename = os.path.splitext(self.current_file)[0]
+            pdf_file = base_filename + '.pdf'
+
+            # Check if PDF exists and generate if needed
+            if not os.path.exists(pdf_file):
+                self.write_to_terminal("PDF not found. Generating...")
+                self.generate_pdf()
+
+                if not os.path.exists(pdf_file):
+                    messagebox.showerror("Error", "Failed to generate PDF presentation.")
+                    return
+
+            # Launch presentation with pympress
+            self.write_to_terminal("Launching pympress presentation viewer...")
+            launch_pympress(pdf_file)
+            self.write_to_terminal("✓ Presentation launched successfully\n", "green")
+            self.write_to_terminal("\nPympress Controls:\n")
+            self.write_to_terminal("- Right Arrow/Space/Page Down: Next slide\n")
+            self.write_to_terminal("- Left Arrow/Page Up: Previous slide\n")
+            self.write_to_terminal("- Escape: Exit presentation\n")
+            self.write_to_terminal("- F11: Toggle fullscreen\n")
+            self.write_to_terminal("- N: Toggle notes\n")
+            self.write_to_terminal("- P: Pause/unpause timer\n")
+
+        except Exception as e:
+            self.write_to_terminal(f"✗ Error launching presentation: {str(e)}\n", "red")
+            messagebox.showerror("Error", f"Error launching presentation:\n{str(e)}")
+            traceback.print_exc()
 #------------------------------------------------------------------------------------------------------
-
-
 
     def on_notes_mode_change(self, mode: str) -> None:
         """Handle notes mode change"""
@@ -3378,52 +4057,70 @@ Installation completed successfully:
         print(f"Installation error: {str(e)}")
         traceback.print_exc()
         return False
+
 def main():
-    # First check dependencies
-    check_and_install_dependencies()
+    """Main entry point"""
+    if not check_installation():
+        print("\nFirst-time run detected. Setting up system installation...")
+        if install_system_wide():
+            print("Installation successful! Please restart the application.")
+            return
+        else:
+            print("Warning: System installation failed. Running in local mode.")
 
-    # Get system information
-    system, paths = get_installation_paths()
-
-    # Check if running as script or installed version
-    current_script = Path(__file__).resolve()
-
-    if system == "Linux":
-        installed_path = paths['bin'] / 'bsg-ide'
-    elif system == "Windows":
-        installed_path = paths['bin'] / 'bsg-ide.pyw'
-    elif system == "Darwin":
-        installed_path = paths['bin'] / 'bsg-ide'
-    else:
-        installed_path = None
-
-    # If script version and not installed, set up installation
-    if installed_path and current_script != installed_path and not check_installation():
-        print("First-time run detected. Setting up BSG-IDE...")
-        try:
-            if setup_system_installation():
-                print("Installation successful! Launching installed version...")
-
-                # Launch installed version with proper permissions
-                if system == "Windows":
-                    os.startfile(str(installed_path))
-                else:
-                    os.execv(sys.executable, [sys.executable, str(installed_path)] + sys.argv[1:])
-                sys.exit(0)
-            else:
-                print("Installation incomplete. Running from current location.")
-        except Exception as e:
-            print(f"Installation failed: {str(e)}")
-            print("Running from current location.")
-
-    # Launch the IDE
     try:
-        app = BeamerSlideEditor()
-        app.mainloop()
+        # First check dependencies
+        check_and_install_dependencies()
+
+        # Import required packages
+        modules = import_required_packages()
+
+        # Get system information
+        system = sys.platform
+
+        # Check if called as standalone script
+        if len(sys.argv) > 0 and sys.argv[0].endswith('pdf_presenter.py'):
+            if len(sys.argv) != 2:
+                print("Usage when running as standalone: python pdf_presenter.py <path_to_pdf>")
+                sys.exit(1)
+
+            pdf_path = sys.argv[1]
+            if not os.path.exists(pdf_path):
+                print(f"Error: PDF file not found: {pdf_path}")
+                sys.exit(1)
+
+            # Create and start the presenter
+                presenter = PDFPresenter(pdf_path, modules)
+                # Start update timer
+                start_time = time.time()
+                def update_timer():
+                    elapsed = int(time.time() - start_time)
+                    minutes = elapsed // 60
+                    seconds = elapsed % 60
+                    presenter.presenter_window.time_label.config(
+                        text=f"{minutes:02d}:{seconds:02d}"
+                    )
+                    presenter.presenter_window.window.after(1000, update_timer)
+
+                update_timer()
+                # Start main loop
+                presenter.presenter_window.window.mainloop()
+
+        else:
+            # Running as integrated module - launch IDE
+            app = BeamerSlideEditor()
+            app.mainloop()
+
+        # Ensure cleanup
+        if 'presenter' in locals():
+            presenter.cleanup()
+
     except Exception as e:
-        print(f"Error launching IDE: {str(e)}")
-        if system != "Windows":  # Show terminal output on Unix systems
+        print(f"Error in main: {str(e)}")
+        traceback.print_exc()
+        if system != "win32":  # Show terminal output on Unix systems
             input("Press Enter to exit...")
+
 #----------------------------------------------------------------------------
 
 if __name__ == "__main__":
