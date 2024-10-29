@@ -3698,7 +3698,7 @@ Created by {self.__author__}
         return line
 
     def convert_to_tex(self) -> None:
-        """Convert text to TeX using BeamerSlideGenerator's process_input_file"""
+        """Convert text to TeX using BeamerSlideGenerator and add notes configuration"""
         if not self.current_file:
             messagebox.showwarning("Warning", "Please save your file first!")
             return
@@ -3723,6 +3723,36 @@ Created by {self.__author__}
 
             # Check if tex file was created
             if os.path.exists(tex_file):
+                # Read the generated tex file
+                with open(tex_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                # Get notes configuration based on mode
+                mode = self.notes_mode.get()
+                notes_config = {
+                    "slides": "\\setbeameroption{hide notes}",
+                    "notes": "\\setbeameroption{show only notes}",
+                    "both": "\\setbeameroption{show notes on second screen=right}"
+                }[mode]
+
+                # Find position to insert notes configuration
+                doc_pos = content.find("\\begin{document}")
+                if doc_pos != -1:
+                    # Prepare notes configuration
+                    notes_setup = (
+                        "% Notes configuration\n"
+                        "\\usepackage{pgfpages}\n"
+                        f"{notes_config}\n"
+                        "\\setbeamertemplate{note page}{\\pagecolor{yellow!5}\\insertnote}\n\n"
+                    )
+
+                    # Insert notes configuration before \begin{document}
+                    modified_content = content[:doc_pos] + notes_setup + content[doc_pos:]
+
+                    # Write modified content back to file
+                    with open(tex_file, 'w', encoding='utf-8') as f:
+                        f.write(modified_content)
+
                 self.write("✓ Text to TeX conversion successful\n", "green")
                 messagebox.showinfo("Success", "TeX file generated successfully!")
             else:
