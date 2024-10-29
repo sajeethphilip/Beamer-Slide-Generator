@@ -48,6 +48,7 @@ import tempfile
 import atexit
 import shutil
 import threading
+import queue
 import socket
 import json
 import time
@@ -330,6 +331,52 @@ export PYTHONPATH="$HOME/.local/lib/bsg-ide:$PYTHONPATH"
         print(f"Error during installation: {str(e)}")
         traceback.print_exc()
         return False
+
+
+class MediaURLDialog(ctk.CTkToplevel):
+    def __init__(self, parent, slide_index, media_entry):
+        super().__init__(parent)
+        self.title("Update Media Location")
+        self.geometry("500x150")
+        self.media_entry = media_entry
+
+        # Center dialog
+        self.transient(parent)
+        self.grab_set()
+
+        # Create widgets
+        ctk.CTkLabel(self, text=f"Enter media URL for slide {slide_index + 1}:").pack(pady=10)
+
+        self.url_entry = ctk.CTkEntry(self, width=400)
+        self.url_entry.pack(pady=10)
+        self.url_entry.insert(0, media_entry.get())
+
+        button_frame = ctk.CTkFrame(self)
+        button_frame.pack(pady=10)
+
+        ctk.CTkButton(button_frame, text="Play URL",
+                     command=self.use_play_url).pack(side="left", padx=5)
+        ctk.CTkButton(button_frame, text="Static URL",
+                     command=self.use_static_url).pack(side="left", padx=5)
+        ctk.CTkButton(button_frame, text="Cancel",
+                     command=self.cancel).pack(side="left", padx=5)
+
+    def use_play_url(self):
+        url = self.url_entry.get().strip()
+        if url:
+            self.media_entry.delete(0, 'end')
+            self.media_entry.insert(0, f"\\play \\url {url}")
+        self.destroy()
+
+    def use_static_url(self):
+        url = self.url_entry.get().strip()
+        if url:
+            self.media_entry.delete(0, 'end')
+            self.media_entry.insert(0, f"\\url {url}")
+        self.destroy()
+
+    def cancel(self):
+        self.destroy()
 
 def update_installation():
     """Silently update installed files if running from a newer version"""
@@ -1375,6 +1422,16 @@ class BeamerSyntaxHighlighter:
         # Bind events to the CTkTextbox
         self.ctk_text.bind('<KeyRelease>', self.highlight)
         self.ctk_text.bind('<Control-v>', lambda e: self.after_paste())
+        # Initialize presentation metadata
+        self.presentation_info = {
+            'title': '',
+            'subtitle': '',
+            'author': '',
+            'institution': 'Artificial Intelligence Research and Intelligent Systems (airis4D)',
+            'short_institute': 'airis4D',
+            'date': '\\today'
+        }
+
 
     def toggle(self) -> None:
         """Toggle syntax highlighting on/off"""
@@ -1418,12 +1475,22 @@ class BeamerSyntaxHighlighter:
 class FileThumbnailBrowser(ctk.CTkToplevel):
     def __init__(self, parent, initial_dir="media_files", callback=None):
         super().__init__(parent)
-        self.title("Media Browser")
-        self.geometry("800x600")
 
         # Import required modules
-        from PIL import Image, ImageDraw, ImageFont
-        import mimetypes
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            self.Image = Image
+            self.ImageDraw = ImageDraw
+            self.ImageFont = ImageFont
+            self.has_pil = True
+        except ImportError as e:
+            print(f"Error importing PIL modules: {e}")
+            self.has_pil = False
+            messagebox.showwarning("Warning",
+                                 "Image processing libraries not available.\nThumbnails will be limited.")
+
+        self.title("Media Browser")
+        self.geometry("800x600")
 
         # Store initial directory and callback
         self.current_dir = os.path.abspath(initial_dir)
@@ -1432,6 +1499,9 @@ class FileThumbnailBrowser(ctk.CTkToplevel):
         self.current_row = 0
         self.current_col = 0
         self.max_cols = 4
+
+        # Create media_files directory if it doesn't exist
+        os.makedirs(initial_dir, exist_ok=True)
 
         # File categories with extended video types
         self.file_categories = {
@@ -1442,11 +1512,187 @@ class FileThumbnailBrowser(ctk.CTkToplevel):
             'data': ('.csv', '.xlsx', '.json', '.xml')
         }
 
-        # Create UI components with navigation
+        # Create UI components
         self.create_navigation_bar()
         self.create_toolbar()
         self.create_content_area()
         self.load_files()
+
+    def create_thumbnail(self, file_path):
+        """Create thumbnail with proper error handling"""
+        if not self.has_pil:
+            return self.create_fallback_thumbnail()
+
+        try:
+            category = self.get_file_category(file_path)
+            thumb_size = (150, 150)
+
+            if category == 'image':
+                try:
+                    with self.Image.open(file_path) as img:
+                        # Convert to RGB if necessary
+                        if img.mode in ('RGBA', 'P'):
+                            img = img.convert('RGB')
+
+                        # Create thumbnail
+                        img.thumbnail(thumb_size, self.Image.Resampling.LANCZOS)
+
+                        # Create background
+                        thumb_bg = self.Image.new('RGB', thumb_size, 'black')
+
+                        # Center image on background
+                        offset = ((thumb_size[0] - img.size[0]) // 2,
+                                (thumb_size[1] - img.size[1]) // 2)
+                        thumb_bg.paste(img, offset)
+
+                        return ctk.CTkImage(light_image=thumb_bg,
+                                          dark_image=thumb_bg,
+                                          size=thumb_size)
+                except Exception as e:
+                    print(f"Error creating image thumbnail: {str(e)}")
+                    return self.create_generic_thumbnail("Image\nError", "#8B0000")
+
+            else:
+                # Create appropriate generic thumbnail based on category
+                colors = {
+                    'video': "#4a90e2",
+                    'audio': "#e24a90",
+                    'document': "#90e24a",
+                    'data': "#4ae290"
+                }
+                color = colors.get(category, "#808080")
+                text = category.upper() if category else "FILE"
+                return self.create_generic_thumbnail(text, color)
+
+        except Exception as e:
+            print(f"Error creating thumbnail for {file_path}: {str(e)}")
+            return self.create_fallback_thumbnail()
+
+    def create_generic_thumbnail(self, text, color):
+        """Create generic thumbnail with text"""
+        if not self.has_pil:
+            return self.create_fallback_thumbnail()
+
+        try:
+            thumb_size = (150, 150)
+            img = self.Image.new('RGB', thumb_size, 'black')
+            draw = self.ImageDraw.Draw(img)
+
+            # Draw colored rectangle
+            margin = 20
+            draw.rectangle(
+                [margin, margin, thumb_size[0]-margin, thumb_size[1]-margin],
+                fill=color
+            )
+
+            # Draw text
+            text_bbox = draw.textbbox((0, 0), text)
+            text_width = text_bbox[2] - text_bbox[0]
+            text_height = text_bbox[3] - text_bbox[1]
+
+            text_x = (thumb_size[0] - text_width) // 2
+            text_y = (thumb_size[1] - text_height) // 2
+
+            draw.text((text_x, text_y), text, fill="white")
+
+            return ctk.CTkImage(light_image=img,
+                              dark_image=img,
+                              size=thumb_size)
+        except Exception as e:
+            print(f"Error creating generic thumbnail: {str(e)}")
+            return self.create_fallback_thumbnail()
+
+    def create_fallback_thumbnail(self):
+        """Create a basic fallback thumbnail when PIL is not available or errors occur"""
+        try:
+            img = self.Image.new('RGB', (150, 150), color='gray')
+            return ctk.CTkImage(light_image=img,
+                              dark_image=img,
+                              size=(150, 150))
+        except:
+            # Create an empty CTkImage if all else fails
+            return ctk.CTkImage(light_image=None,
+                              dark_image=None,
+                              size=(150, 150))
+
+#-------------------------------------------------------------------------------------------
+
+
+    def create_file_item(self, file_name):
+        """Create file display item with proper error handling"""
+        try:
+            frame = ctk.CTkFrame(self.scrollable_frame)
+            frame.grid(row=self.current_row, column=self.current_col,
+                      padx=10, pady=10, sticky="nsew")
+
+            file_path = os.path.join(self.current_dir, file_name)
+
+            # Create thumbnail
+            try:
+                thumbnail = self.create_thumbnail(file_path)
+            except Exception as e:
+                print(f"Error creating thumbnail: {e}")
+                thumbnail = self.create_generic_thumbnail("Error", "#8B0000")
+
+            if thumbnail:
+                # Create thumbnail button
+                thumb_button = ctk.CTkButton(
+                    frame,
+                    image=thumbnail,
+                    text="",
+                    command=lambda path=file_path: self.on_file_click(path),
+                    width=150,
+                    height=150
+                )
+                thumb_button.pack(pady=(5, 0))
+
+                # Add filename label
+                label = ctk.CTkLabel(
+                    frame,
+                    text=file_name,
+                    wraplength=140
+                )
+                label.pack(pady=(5, 5))
+
+                # Store reference to thumbnail
+                self.thumbnails.append(thumbnail)
+
+            # Update grid position
+            self.current_col += 1
+            if self.current_col >= self.max_cols:
+                self.current_col = 0
+                self.current_row += 1
+
+        except Exception as e:
+            print(f"Error creating file item: {str(e)}")
+
+    def on_file_click(self, file_path: str) -> None:
+        """Handle file selection with proper path handling"""
+        if self.callback:
+            # Create relative path if file is in media_files directory
+            try:
+                relative_to_media = os.path.relpath(file_path, 'media_files')
+                if relative_to_media.startswith('..'):
+                    # File is outside media_files - use absolute path
+                    final_path = file_path
+                else:
+                    # File is inside media_files - use relative path
+                    final_path = os.path.join('media_files', relative_to_media)
+
+                # Determine if file should be played
+                ext = os.path.splitext(file_path)[1].lower()
+                is_video = ext in self.file_categories['video']
+
+                if is_video and hasattr(self, 'play_vars') and self.play_vars.get(file_path, tk.BooleanVar(value=True)).get():
+                    self.callback(f"\\play \\file {final_path}")
+                else:
+                    self.callback(f"\\file {final_path}")
+
+            except Exception as e:
+                print(f"Error handling file selection: {str(e)}")
+                return
+
+        self.destroy()
 
     def create_navigation_bar(self):
         """Create navigation bar with path and controls"""
@@ -1604,81 +1850,6 @@ class FileThumbnailBrowser(ctk.CTkToplevel):
 
         return 'other'
 
-    def create_thumbnail(self, file_path):
-        """Create thumbnail based on file type"""
-        try:
-            category = self.get_file_category(file_path)
-            ext = os.path.splitext(file_path)[1].lower()
-            thumb_size = (150, 150)
-
-            if category == 'image':
-                try:
-                    with Image.open(file_path) as img:
-                        # Convert to RGB if necessary
-                        if img.mode in ('RGBA', 'P'):
-                            img = img.convert('RGB')
-
-                        # Create thumbnail
-                        img.thumbnail(thumb_size, Image.Resampling.LANCZOS)
-
-                        # Create background
-                        thumb_bg = Image.new('RGB', thumb_size, 'black')
-
-                        # Center image on background
-                        offset = ((thumb_size[0] - img.size[0]) // 2,
-                                (thumb_size[1] - img.size[1]) // 2)
-                        thumb_bg.paste(img, offset)
-
-                        return ctk.CTkImage(light_image=thumb_bg,
-                                          dark_image=thumb_bg,
-                                          size=thumb_size)
-                except Exception as e:
-                    print(f"Error creating image thumbnail: {e}")
-                    return self.create_generic_thumbnail("Image\nError", "darkred")
-
-            elif category == 'video':
-                return self.create_generic_thumbnail("Video", "#4a90e2")
-
-            elif category == 'audio':
-                return self.create_generic_thumbnail("Audio", "#e24a90")
-
-            elif category == 'document':
-                return self.create_generic_thumbnail("Doc", "#90e24a")
-
-            elif category == 'data':
-                return self.create_generic_thumbnail("Data", "#4ae290")
-
-            else:
-                return self.create_generic_thumbnail(ext[1:].upper() if ext else "File", "#808080")
-
-        except Exception as e:
-            print(f"Error creating thumbnail for {file_path}: {str(e)}")
-            return self.create_generic_thumbnail("Error", "darkred")
-
-    def create_generic_thumbnail(self, text, color="gray"):
-        """Create a generic thumbnail with text"""
-        thumb_size = (150, 150)
-        img = Image.new('RGB', thumb_size, 'black')
-        draw = ImageDraw.Draw(img)
-
-        # Draw colored rectangle
-        margin = 20
-        draw.rectangle(
-            [margin, margin, thumb_size[0]-margin, thumb_size[1]-margin],
-            fill=color
-        )
-
-        # Add text
-        text_bbox = draw.textbbox((0, 0), text)
-        text_width = text_bbox[2] - text_bbox[0]
-        text_height = text_bbox[3] - text_bbox[1]
-
-        text_x = (thumb_size[0] - text_width) // 2
-        text_y = (thumb_size[1] - text_height) // 2
-
-        draw.text((text_x, text_y), text, fill="white")
-
-        return ctk.CTkImage(light_image=img, dark_image=img, size=thumb_size)
 
     def navigate_up(self):
         """Navigate to parent directory"""
@@ -1770,75 +1941,6 @@ class FileThumbnailBrowser(ctk.CTkToplevel):
             self.current_col = 0
             self.current_row += 1
 
-    def create_file_item(self, file_name):
-            """Create file display item with play toggle"""
-            frame = ctk.CTkFrame(self.scrollable_frame)
-            frame.grid(row=self.current_row, column=self.current_col,
-                      padx=10, pady=10, sticky="nsew")
-
-            file_path = os.path.join(self.current_dir, file_name)
-
-            # Create thumbnail
-            thumbnail = self.create_thumbnail(file_path)
-            if thumbnail:
-                # Determine if file is playable
-                ext = os.path.splitext(file_path)[1].lower()
-                is_playable = ext in self.file_categories['video']
-
-                # Create buttons frame
-                buttons_frame = ctk.CTkFrame(frame)
-                buttons_frame.pack(fill="x", pady=(5, 0))
-
-                # Create play toggle if file is playable
-                if is_playable:
-                    self.play_vars = getattr(self, 'play_vars', {})
-                    self.play_vars[file_path] = tk.BooleanVar(value=True)
-
-                    play_toggle = ctk.CTkSwitch(
-                        buttons_frame,
-                        text="Play Mode",
-                        variable=self.play_vars[file_path],
-                        width=60
-                    )
-                    play_toggle.pack(side="top", pady=2)
-
-                # Create thumbnail button
-                thumb_button = ctk.CTkButton(
-                    frame,
-                    image=thumbnail,
-                    text="",
-                    command=lambda path=file_path: self.on_file_click(path),
-                    width=150,
-                    height=150
-                )
-                thumb_button.pack(pady=(5, 0))
-
-                # Add filename label
-                label = ctk.CTkLabel(
-                    frame,
-                    text=file_name,
-                    wraplength=140
-                )
-                label.pack(pady=(5, 5))
-
-                # Add file size label
-                size = os.path.getsize(file_path)
-                size_text = self.format_file_size(size)
-                size_label = ctk.CTkLabel(
-                    frame,
-                    text=size_text,
-                    font=("Arial", 10)
-                )
-                size_label.pack(pady=(0, 5))
-
-                # Store reference to thumbnail
-                self.thumbnails.append(thumbnail)
-
-            # Update grid position
-            self.current_col += 1
-            if self.current_col >= self.max_cols:
-                self.current_col = 0
-                self.current_row += 1
 
     def enter_folder(self, folder_name):
         """Enter selected folder"""
@@ -1881,30 +1983,7 @@ class FileThumbnailBrowser(ctk.CTkToplevel):
             size /= 1024
         return f"{size:.1f} TB"
 
-    def on_file_click(self, file_path):
-        """Handle file selection with enhanced path handling and play mode"""
-        if self.callback:
-            # Create relative or absolute path based on selection
-            relative_to_media = os.path.relpath(file_path, 'media_files')
-            if relative_to_media.startswith('..'):
-                # File is outside media_files - use absolute path
-                final_path = file_path
-            else:
-                # File is inside media_files - use relative path
-                final_path = os.path.join('media_files', relative_to_media)
 
-            # Check if file is playable and play mode is enabled
-            ext = os.path.splitext(file_path)[1].lower()
-            is_playable = ext in self.file_categories['video']
-            play_mode = is_playable and self.play_vars.get(file_path, tk.BooleanVar(value=True)).get()
-
-            # Create appropriate directive
-            if play_mode:
-                self.callback(f"\\play \\file {final_path}")
-            else:
-                self.callback(f"\\file {final_path}")
-
-        self.destroy()
 #------------------------------------------------------------------------------------------
 class PreambleEditor(ctk.CTkToplevel):
     def __init__(self, parent, current_preamble=None):
@@ -2157,55 +2236,46 @@ class BeamerSlideEditor(ctk.CTk):
         self.stderr_redirector = OutputRedirector(self.terminal)
         sys.stdout = self.stdout_redirector
         sys.stderr = self.stderr_redirector
+#---------------------------------------------------------------------------New run pdflatex ----------------
+    # First, add an input method to handle terminal input
+    def terminal_input(self, prompt: str) -> str:
+        """Get input from terminal with prompt"""
+        # Create input frame
+        input_frame = ctk.CTkFrame(self.terminal)
+        input_frame.pack(fill="x", padx=2, pady=2)
 
-    def run_pdflatex(self, tex_file: str) -> bool:
-        """Run pdflatex with proper terminal handling"""
-        try:
-            # Prepare command
-            cmd = ['pdflatex', '-interaction=nonstopmode', tex_file]
+        # Add prompt
+        self.write_to_terminal(prompt, "yellow")
 
-            # Start process with pipe for output
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                universal_newlines=True,
-                cwd=os.path.dirname(tex_file) or '.'
-            )
+        # Create entry widget
+        entry = ctk.CTkEntry(input_frame, width=300)
+        entry.pack(side="left", padx=5, fill="x", expand=True)
 
-            # Read output in real-time
-            while True:
-                line = process.stdout.readline()
-                if not line and process.poll() is not None:
-                    break
+        # Create event to signal when input is complete
+        input_ready = threading.Event()
+        result = []  # List to store input result
 
-                if line:
-                    # Color error messages in red
-                    if any(err in line for err in ['Error:', '!', 'Fatal error']):
-                        self.write_to_terminal(line, "red")
-                    # Color warnings in yellow
-                    elif 'Warning' in line:
-                        self.write_to_terminal(line, "yellow")
-                    else:
-                        self.write_to_terminal(line)
+        def on_submit():
+            result.append(entry.get())
+            input_ready.set()
+            input_frame.destroy()
+            self.write_to_terminal(f"{entry.get()}\n", "white")  # Echo input
 
-            # Get return code
-            return_code = process.wait()
+        # Add submit button
+        submit_btn = ctk.CTkButton(input_frame, text="Submit", command=on_submit)
+        submit_btn.pack(side="left", padx=5)
 
-            # Log completion status
-            if return_code == 0:
-                self.write_to_terminal("\n✓ PDF generation completed successfully\n", "green")
-            else:
-                self.write_to_terminal("\n✗ PDF generation failed\n", "red")
+        # Handle Enter key
+        entry.bind("<Return>", lambda e: on_submit())
 
-            return return_code == 0
+        # Focus entry
+        entry.focus_set()
 
-        except Exception as e:
-            self.write_to_terminal(f"\nProcess error: {str(e)}\n", "red")
-            return False
+        # Wait for input
+        input_ready.wait()
+        return result[0] if result else ""
 
+#----------------------------------------------------------------
     def write_to_terminal(self, text: str, color: str = "white") -> None:
         """Write to terminal with color support"""
         try:
@@ -2218,31 +2288,9 @@ class BeamerSlideEditor(ctk.CTk):
             self.terminal.update_idletasks()
         except Exception as e:
             print(f"Error writing to terminal: {str(e)}\nText: {text}")
-#--------------------------------------------------------------------------------------------------------------------
-    def edit_preamble(self):
-            """Open preamble editor"""
-            # Get current preamble if exists
-            current_preamble = get_beamer_preamble(
-                self.presentation_info['title'],
-                self.presentation_info['subtitle'],
-                self.presentation_info['author'],
-                self.presentation_info['institution'],
-                self.presentation_info['short_institute'],
-                self.presentation_info['date']
-            )
 
-            # Open preamble editor
-            new_preamble = PreambleEditor.edit_preamble(self, current_preamble)
-
-            if new_preamble is not None:
-                # Store the custom preamble
-                self.custom_preamble = new_preamble
-                messagebox.showinfo("Success", "Preamble updated successfully!")
-
-
-#--------------------------------------------------------------------------------------------------------------------
     def create_terminal(self) -> None:
-        """Create a terminal/console widget"""
+        """Create a simple but functional terminal widget"""
         self.terminal_frame = ctk.CTkFrame(self)
         self.terminal_frame.grid(row=4, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
         self.grid_rowconfigure(4, weight=1)  # Make terminal expandable
@@ -2251,46 +2299,61 @@ class BeamerSlideEditor(ctk.CTk):
         header_frame = ctk.CTkFrame(self.terminal_frame)
         header_frame.pack(fill="x", padx=2, pady=2)
 
-        ctk.CTkLabel(header_frame, text="Compilation Output", font=("Arial", 12, "bold")).pack(side="left", padx=5)
+        # Add working directory display
+        self.dir_label = ctk.CTkLabel(header_frame, text=f"📁 {os.getcwd()}")
+        self.dir_label.pack(side="left", padx=5)
 
         # Control buttons
         self.auto_scroll_var = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(header_frame, text="Auto-scroll", variable=self.auto_scroll_var).pack(side="right", padx=5)
+        ctk.CTkCheckBox(header_frame, text="Auto-scroll",
+                        variable=self.auto_scroll_var).pack(side="right", padx=5)
 
         ctk.CTkButton(header_frame, text="Clear",
-                     command=self.clear_terminal).pack(side="right", padx=5)
+                      command=self.clear_terminal).pack(side="right", padx=5)
 
-        ctk.CTkButton(header_frame, text="Stop Compilation",
-                     command=self.stop_compilation,
-                     fg_color="red").pack(side="right", padx=5)
+        ctk.CTkButton(header_frame, text="Stop",
+                      command=self.stop_compilation,
+                      fg_color="red").pack(side="right", padx=5)
 
-        # Terminal output text widget
+        # Terminal output text widget with basic styling
         self.terminal = ctk.CTkTextbox(self.terminal_frame, height=150)
         self.terminal.pack(fill="both", expand=True, padx=2, pady=2)
 
-        # Configure terminal appearance
-        self.terminal._text_color = "white"
-        self.terminal._fg_color = "black"
-        self.terminal.configure(font=("Courier", 10))
+        # Configure basic terminal styling
+        self.terminal._textbox.configure(font=("Courier", 10))
+        self.terminal._textbox.tag_configure("red", foreground="red")
+        self.terminal._textbox.tag_configure("green", foreground="green")
+        self.terminal._textbox.tag_configure("yellow", foreground="yellow")
 
-        # Store process reference
+        # Set up stdout/stderr redirection
+        sys.stdout = self
+        sys.stderr = self
+
+        # Store process reference and working directory
         self.current_process = None
+        self.working_dir = os.getcwd()
+
+
+    def flush(self):
+        """Required for stdout/stderr redirection"""
+        pass
 
     def clear_terminal(self) -> None:
         """Clear terminal content"""
-        self.terminal.delete('1.0', 'end')
+        self.terminal.configure(state="normal")
+        self.terminal._textbox.delete("1.0", "end")
+        self.terminal.configure(state="disabled")
 
     def stop_compilation(self) -> None:
-        """Stop the current compilation process"""
+        """Stop current compilation process"""
         if self.current_process:
             try:
                 self.current_process.terminate()
-                self.write_to_terminal("\n[Compilation process terminated by user]\n", "red")
-            except Exception as e:
-                self.write_to_terminal(f"\n[Error terminating process: {str(e)}]\n", "red")
+                self.write("\n[Compilation process terminated by user]\n")
+            except:
+                pass
             finally:
                 self.current_process = None
-
 
 #--------------------------------------------------------------------------------------------------------------------
     def create_footer(self) -> None:
@@ -3511,34 +3574,6 @@ Created by {self.__author__}
                 command=lambda t=insert_text: self.insert_text(t)
             ).pack(fill="x", padx=2, pady=2)
 
-    def show_settings_dialog(self) -> None:
-        """Show presentation settings dialog"""
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("Presentation Settings")
-        dialog.geometry("500x400")
-
-        # Create entry fields for presentation metadata
-        entries = {}
-        for i, (key, value) in enumerate(self.presentation_info.items()):
-            label = ctk.CTkLabel(dialog, text=key.title() + ":")
-            label.grid(row=i, column=0, padx=5, pady=5)
-
-            entry = ctk.CTkEntry(dialog, width=300)
-            entry.insert(0, value)
-            entry.grid(row=i, column=1, padx=5, pady=5)
-            entries[key] = entry
-
-        # Save button
-        def save_settings():
-            for key, entry in entries.items():
-                self.presentation_info[key] = entry.get()
-            dialog.destroy()
-
-        ctk.CTkButton(dialog, text="Save Settings",
-                     command=save_settings).grid(row=len(entries),
-                                               column=0,
-                                               columnspan=2,
-                                               pady=20)
 
     def toggle_highlighting(self) -> None:
         """Toggle syntax highlighting"""
@@ -3585,9 +3620,9 @@ Created by {self.__author__}
         )
         if filename:
             self.load_file(filename)
-
+#-----------------------------------------------------------------------------
     def save_file(self) -> None:
-        """Save presentation in BeamerSlideGenerator-compatible format"""
+        """Save presentation preserving custom preamble"""
         if not self.current_file:
             filename = filedialog.asksaveasfilename(
                 defaultextension=".txt",
@@ -3602,16 +3637,8 @@ Created by {self.__author__}
         self.save_current_slide()
 
         try:
-            # Get preamble from BeamerSlideGenerator
-            from BeamerSlideGenerator import get_beamer_preamble
-            content = get_beamer_preamble(
-                self.presentation_info['title'],
-                self.presentation_info['subtitle'],
-                self.presentation_info['author'],
-                self.presentation_info['institution'],
-                self.presentation_info['short_institute'],
-                self.presentation_info['date']
-            )
+            # Get custom preamble with logo
+            content = self.get_custom_preamble()
 
             # Add slides in BeamerSlideGenerator's expected format
             for slide in self.slides:
@@ -3643,11 +3670,177 @@ Created by {self.__author__}
             with open(self.current_file, 'w') as f:
                 f.write(content)
 
-            print(f"File saved successfully: {self.current_file}")
+            self.write("✓ File saved successfully: " + self.current_file + "\n", "green")
 
         except Exception as e:
+            self.write(f"✗ Error saving file: {str(e)}\n", "red")
             messagebox.showerror("Error", f"Error saving file:\n{str(e)}")
-            print(f"Error details: {str(e)}")
+
+    def convert_media_to_latex(self, line: str) -> str:
+        """Convert media directives to proper LaTeX commands"""
+        if '\\file' in line:
+            # Convert \file to \includegraphics
+            media_path = line.split('\\file')[-1].strip()
+            return f"\\includegraphics[width=0.48\\textwidth,keepaspectratio]{{{media_path}}}"
+        elif '\\play' in line:
+            # Handle play directives
+            if '\\file' in line:
+                media_path = line.split('\\file')[-1].strip()
+                # Using raw string to handle nested braces
+                return (r"\movie[externalviewer]{"
+                       r"\includegraphics[width=0.48\textwidth,keepaspectratio]"
+                       f"{{{media_path}}}}}{{{media_path}}}")
+            elif '\\url' in line:
+                url = line.split('\\url')[-1].strip()
+                return f"\\href{{{url}}}{{\\textcolor{{blue}}{{Click to play video}}}}"
+        elif '\\None' in line:
+            return ""  # Return empty string for \None directive
+        return line
+
+    def convert_to_tex(self) -> None:
+        """Convert text to TeX with proper media handling"""
+        if not self.current_file:
+            messagebox.showwarning("Warning", "Please save your file first!")
+            return
+
+        try:
+            # Get base filename without extension
+            base_filename = os.path.splitext(self.current_file)[0]
+            tex_file = base_filename + '.tex'
+
+            # Clear terminal
+            self.write("Converting text to TeX...\n")
+
+            # Get custom preamble with logo
+            content = self.get_custom_preamble()
+
+            # Add notes configuration
+            mode = self.notes_mode.get()
+            notes_config = {
+                "slides": "\\setbeameroption{hide notes}",
+                "notes": "\\setbeameroption{show only notes}",
+                "both": "\\setbeameroption{show notes on second screen=right}"
+            }[mode]
+
+            # Add notes configuration before \begin{document}
+            doc_pos = content.find("\\begin{document}")
+            if doc_pos != -1:
+                content = (content[:doc_pos] +
+                          "% Notes configuration\n" +
+                          notes_config + "\n" +
+                          "\\setbeamertemplate{note page}{\\pagecolor{yellow!5}\\insertnote}\n\n" +
+                          content[doc_pos:])
+
+            # Process each frame
+            for slide in self.slides:
+                content += "\\begin{frame}\n"
+                content += f"\\frametitle{{{slide['title']}}}\n"
+
+                # Handle media
+                if slide['media']:
+                    content += self.convert_media_to_latex(slide['media']) + "\n"
+
+                # Add content in itemize environment if needed
+                if slide['content']:
+                    content += "\\begin{itemize}\n"
+                    for item in slide['content']:
+                        if item.strip():
+                            if not item.startswith('-'):
+                                item = f"- {item}"
+                            content += f"\\item {item[1:].strip()}\n"  # Remove the '-' and add \item
+                    content += "\\end{itemize}\n"
+
+                content += "\\end{frame}\n\n"
+
+                # Add notes if present and not in slides_only mode
+                if mode != "slides" and 'notes' in slide and slide['notes']:
+                    content += "\\note{\n\\begin{itemize}\n"
+                    for note in slide['notes']:
+                        if note.strip():
+                            note = note.lstrip('•- ').strip()
+                            content += f"\\item {note}\n"
+                    content += "\\end{itemize}\n}\n\n"
+
+            # Add document end
+            content += "\\end{document}\n"
+
+            # Write the TeX file
+            with open(tex_file, 'w') as f:
+                f.write(content)
+
+            self.write("✓ Text to TeX conversion successful\n", "green")
+            messagebox.showinfo("Success", "TeX file generated successfully!")
+
+        except Exception as e:
+            self.write(f"✗ Error in conversion: {str(e)}\n", "red")
+            self.write(f"Error details: {traceback.format_exc()}\n", "red")
+            messagebox.showerror("Error", f"Error converting to TeX:\n{str(e)}")
+
+    def get_custom_preamble(self) -> str:
+            """Generate custom preamble with proper logo handling"""
+            try:
+                # If we have a stored custom preamble, use it as base
+                if hasattr(self, 'custom_preamble'):
+                    base_preamble = self.custom_preamble
+                else:
+                    # Get base preamble from BeamerSlideGenerator
+                    from BeamerSlideGenerator import get_beamer_preamble
+                    base_preamble = get_beamer_preamble(
+                        self.presentation_info['title'],
+                        self.presentation_info['subtitle'],
+                        self.presentation_info['author'],
+                        self.presentation_info['institution'],
+                        self.presentation_info['short_institute'],
+                        self.presentation_info['date']
+                    )
+
+                # Process logo
+                if 'logo' in self.presentation_info and self.presentation_info['logo']:
+                    # Remove any existing logo commands
+                    preamble = re.sub(
+                        r'\\logo{[^}]*}\s*\n?',
+                        '',
+                        base_preamble
+                    )
+
+                    # Add our logo command just before \begin{document}
+                    doc_pos = preamble.find("\\begin{document}")
+                    if doc_pos != -1:
+                        logo_command = self.presentation_info['logo'] + "\n\n"
+                        preamble = preamble[:doc_pos] + logo_command + preamble[doc_pos:]
+                    else:
+                        # If no \begin{document} found, append logo at end
+                        preamble = base_preamble + "\n" + self.presentation_info['logo'] + "\n"
+                else:
+                    preamble = base_preamble
+
+                return preamble
+
+            except Exception as e:
+                print(f"Error generating custom preamble: {e}")
+                # Fallback to default preamble without logo
+                try:
+                    from BeamerSlideGenerator import get_beamer_preamble
+                    preamble = get_beamer_preamble(
+                        self.presentation_info['title'],
+                        self.presentation_info['subtitle'],
+                        self.presentation_info['author'],
+                        self.presentation_info['institution'],
+                        self.presentation_info['short_institute'],
+                        self.presentation_info['date']
+                    )
+                    # Remove default logo if any
+                    preamble = re.sub(
+                        r'\\logo{[^}]*}\s*\n?',
+                        '',
+                        preamble
+                    )
+                    return preamble
+                except Exception as e2:
+                    print(f"Error in fallback preamble generation: {e2}")
+                    return ""
+#------------------------------------------------------------------------------
+
 
     def generate_pdf(self) -> None:
         """Generate PDF with text to TeX conversion and compilation"""
@@ -3657,39 +3850,162 @@ Created by {self.__author__}
 
         try:
             # Clear terminal
-            self.clear_terminal()
+            self.terminal.configure(state="normal")
+            self.terminal._textbox.delete("1.0", "end")
+            self.terminal.configure(state="disabled")
 
-            # Step 1: Convert text to TeX using our proper conversion function
-            self.write_to_terminal("Step 1: Converting text to TeX...\n")
-            self.convert_to_tex()  # This will handle notes mode correctly
+            # Save current state
+            self.save_current_slide()
 
             # Get base filename without extension
             base_filename = os.path.splitext(self.current_file)[0]
             tex_file = base_filename + '.tex'
 
+            # Step 1: Convert text to TeX first
+            self.write("Step 1: Converting text to TeX...\n")
+            self.convert_to_tex()  # This will handle notes mode correctly
+
             # Step 2: First pdflatex pass
-            self.write_to_terminal("\nStep 2: First pdflatex pass...\n")
+            self.write("\nStep 2: First pdflatex pass...\n")
             success = self.run_pdflatex(tex_file)
 
             if success:
                 # Step 3: Second pdflatex pass for references
-                self.write_to_terminal("\nStep 3: Second pdflatex pass...\n")
+                self.write("\nStep 3: Second pdflatex pass...\n")
                 success = self.run_pdflatex(tex_file)
 
                 if success:
-                    self.write_to_terminal("\n✓ PDF generated successfully!\n", "green")
+                    pdf_file = base_filename + '.pdf'
+                    if os.path.exists(pdf_file):
+                        # Calculate file size
+                        size = os.path.getsize(pdf_file)
+                        size_str = self.format_file_size(size)
 
-                    # Ask if user wants to view the PDF
-                    if messagebox.askyesno("Open PDF", "Would you like to view the generated PDF?"):
-                        self.preview_pdf()
+                        self.write("\n✓ PDF generated successfully!\n", "green")
+                        self.write(f"PDF Size: {size_str}\n", "green")
+
+                        # Ask if user wants to view the PDF
+                        if messagebox.askyesno("Success",
+                                             f"PDF generated successfully!\nSize: {size_str}\n\nWould you like to view it now?"):
+                            self.preview_pdf()
+                    else:
+                        self.write("\n✗ Error: PDF file not found after compilation\n", "red")
                 else:
-                    self.write_to_terminal("\n✗ Error in second pdflatex pass\n", "red")
+                    self.write("\n✗ Error in second pdflatex pass\n", "red")
             else:
-                self.write_to_terminal("\n✗ Error in first pdflatex pass\n", "red")
+                self.write("\n✗ Error in first pdflatex pass\n", "red")
 
         except Exception as e:
-            self.write_to_terminal(f"\n✗ Error: {str(e)}\n", "red")
+            error_msg = f"\n✗ Error generating PDF: {str(e)}\n"
+            self.write(error_msg, "red")
+
+            # Add detailed error information
+            if hasattr(e, '__traceback__'):
+                self.write("\nDetailed error information:\n", "red")
+                self.write(traceback.format_exc(), "red")
+
             messagebox.showerror("Error", f"Error generating PDF:\n{str(e)}")
+
+    def write(self, text: str, tag: str = None) -> None:
+        """Write text to terminal with optional color tag"""
+        try:
+            self.terminal.configure(state="normal")
+
+            if tag:
+                end_mark = self.terminal._textbox.index("end-1c")
+                self.terminal._textbox.insert("end", text)
+                self.terminal._textbox.tag_add(tag, end_mark, "end-1c")
+            else:
+                self.terminal._textbox.insert("end", text)
+
+            self.terminal.configure(state="disabled")
+
+            if self.auto_scroll_var.get():
+                self.terminal.see("end")
+                self.terminal.update_idletasks()
+
+        except Exception as e:
+            print(f"Error writing to terminal: {str(e)}", file=sys.__stdout__)
+
+    def run_pdflatex(self, tex_file: str) -> bool:
+        """Run pdflatex with output to terminal"""
+        try:
+            # Store original directory
+            original_dir = os.getcwd()
+
+            # Change to tex file directory
+            tex_dir = os.path.dirname(tex_file) or '.'
+            os.chdir(tex_dir)
+
+            # Update directory label
+            if hasattr(self, 'dir_label'):
+                self.dir_label.configure(text=f"📁 {tex_dir}")
+
+            # Start pdflatex process
+            self.current_process = subprocess.Popen(
+                ['pdflatex', '-interaction=nonstopmode', tex_file],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
+
+            # Read output in real-time
+            while True:
+                line = self.current_process.stdout.readline()
+                if not line and self.current_process.poll() is not None:
+                    break
+
+                if line:
+                    # Color code the output
+                    if any(err in line for err in ['Error:', '!', 'Fatal error']):
+                        self.write(line, "red")
+                    elif 'Warning' in line:
+                        self.write(line, "yellow")
+                    else:
+                        self.write(line)
+
+                    # Keep UI responsive
+                    self.update_idletasks()
+
+            # Get process result
+            return_code = self.current_process.wait()
+            self.current_process = None
+
+            return return_code == 0
+
+        except Exception as e:
+            self.write(f"\nProcess error: {str(e)}\n", "red")
+            if self.current_process:
+                self.current_process = None
+            return False
+
+        finally:
+            # Restore original directory
+            os.chdir(original_dir)
+            if hasattr(self, 'dir_label'):
+                self.dir_label.configure(text=f"📁 {original_dir}")
+
+
+
+    def handle_pdf_completion(self, pdf_file: str, size_str: str) -> None:
+        """Handle successful PDF generation"""
+        if messagebox.askyesno("Success",
+                              f"PDF generated successfully!\nSize: {size_str}\n\nWould you like to view it now?"):
+            self.preview_pdf()
+
+    def handle_compilation_error(self, error: Exception) -> None:
+        """Handle compilation errors"""
+        error_msg = f"Error generating PDF: {str(error)}\n"
+        self.write_to_terminal(f"\n✗ {error_msg}", "red")
+
+        # Add detailed error information to terminal
+        if hasattr(error, '__traceback__'):
+            self.write_to_terminal("\nDetailed error information:\n", "red")
+            self.write_to_terminal(traceback.format_exc(), "red")
+
+        messagebox.showerror("Error", f"Error generating PDF:\n{str(error)}")
 
     def preview_pdf(self) -> None:
         """Preview generated PDF using system default PDF viewer"""
@@ -3980,78 +4296,160 @@ Created by {self.__author__}
         except Exception as e:
             messagebox.showerror("Error", f"Error loading file: {str(e)}")
 #------------------------------------------------------------------------------
-    def convert_to_tex(self) -> None:
-        """Convert text to TeX with appropriate notes mode"""
-        if not self.current_file:
-            messagebox.showwarning("Warning", "Please save your file first!")
-            return
+    def show_settings_dialog(self) -> None:
+        """Show presentation settings dialog with logo handling"""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Presentation Settings")
+        dialog.geometry("500x450")
 
-        try:
-            # Get base filename without extension
-            base_filename = os.path.splitext(self.current_file)[0]
-            tex_file = base_filename + '.tex'
+        # Make dialog modal but wait until it's visible
+        dialog.transient(self)
 
-            # Clear terminal
-            self.clear_terminal()
-            self.write_to_terminal("Converting text to TeX...\n")
+        # Center the dialog on parent window
+        def center_dialog():
+            dialog.update_idletasks()  # Make sure dialog is fully created
+            screen_width = dialog.winfo_screenwidth()
+            screen_height = dialog.winfo_screenheight()
+            window_width = dialog.winfo_width()
+            window_height = dialog.winfo_height()
+            x = (screen_width - window_width) // 2
+            y = (screen_height - window_height) // 2
+            dialog.geometry(f"+{x}+{y}")
 
-            # First let BeamerSlideGenerator create the tex file
-            from BeamerSlideGenerator import process_input_file
-            process_input_file(self.current_file, tex_file)
+            # Set grab after dialog is visible
+            dialog.after(100, lambda: dialog.grab_set())
 
-            # Now read the generated tex file
-            with open(tex_file, 'r') as f:
-                content = f.read()
+        # Container frame for settings
+        main_frame = ctk.CTkFrame(dialog)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-            # Debug print
-            self.write_to_terminal("\nOriginal content:\n")
-            self.write_to_terminal(content[:500] + "...\n")  # Print first 500 chars
+        # Create entry fields for presentation metadata
+        entries = {}
+        row = 0
+        for key, value in self.presentation_info.items():
+            if key != 'logo':  # Handle logo separately
+                label = ctk.CTkLabel(main_frame, text=key.title() + ":")
+                label.grid(row=row, column=0, padx=5, pady=5, sticky="e")
 
-            # Get current mode and corresponding beamer option
-            mode = self.notes_mode.get()
-            self.write_to_terminal(f"\nCurrent mode: {mode}\n")
+                entry = ctk.CTkEntry(main_frame, width=300)
+                entry.insert(0, value)
+                entry.grid(row=row, column=1, padx=5, pady=5, sticky="ew")
+                entries[key] = entry
+                row += 1
 
-            notes_config = {
-                "slides": "\\setbeameroption{hide notes} % Only slides",
-                "notes": "\\setbeameroption{show only notes} % Only notes",
-                "both": "\\setbeameroption{show notes on second screen=right} % Both"
-            }[mode]
+        # Add logo selection
+        logo_label = ctk.CTkLabel(main_frame, text="Logo:")
+        logo_label.grid(row=row, column=0, padx=5, pady=5, sticky="e")
 
-            # Remove any existing notes configuration
-            content = re.sub(r'\\usepackage{pgfpages}.*\n', '', content)
-            content = re.sub(r'\\setbeameroption{[^}]*}.*\n', '', content)
-            content = re.sub(r'\\setbeamertemplate{note page}.*\n', '', content)
+        logo_frame = ctk.CTkFrame(main_frame)
+        logo_frame.grid(row=row, column=1, sticky="ew", padx=5, pady=5)
 
-            # Check if \begin{document} exists in the content
-            if '\\begin{document}' not in content:
-                self.write_to_terminal("\nWarning: \\begin{document} not found in content!\n", "red")
-                return
+        logo_entry = ctk.CTkEntry(logo_frame, width=240)
+        logo_entry.pack(side="left", padx=(0, 5), fill="x", expand=True)
 
-            # Insert the new configuration before \begin{document}
-            modified_content = content.replace(
-                '\\begin{document}',
-                f'\\usepackage{{pgfpages}}\n{notes_config}\n\\setbeamertemplate{{note page}}{{\\pagecolor{{yellow!5}}\\insertnote}}\n\\begin{{document}}'
+        # Insert existing logo path if present
+        if 'logo' in self.presentation_info:
+            logo_path = self.presentation_info['logo']
+            # Extract path from logo command if present
+            if '\\includegraphics' in logo_path:
+                match = re.search(r'\\includegraphics\[.*?\]{(.*?)}', logo_path)
+                if match:
+                    logo_entry.insert(0, match.group(1))
+            else:
+                logo_entry.insert(0, logo_path)
+
+        def browse_logo():
+            """Handle logo file selection"""
+            filename = filedialog.askopenfilename(
+                title="Select Logo Image",
+                filetypes=[
+                    ("Image files", "*.png *.jpg *.jpeg *.pdf"),
+                    ("PNG files", "*.png"),
+                    ("JPEG files", "*.jpg *.jpeg"),
+                    ("PDF files", "*.pdf"),
+                    ("All files", "*.*")
+                ],
+                parent=dialog  # Set parent for proper modal behavior
             )
+            if filename:
+                logo_entry.delete(0, 'end')
+                logo_entry.insert(0, filename)
 
-            # Debug print
-            self.write_to_terminal("\nModified content:\n")
-            self.write_to_terminal(modified_content[:500] + "...\n")  # Print first 500 chars
+        ctk.CTkButton(logo_frame, text="Browse",
+                      command=browse_logo).pack(side="left", padx=5)
 
-            # Write the modified content back to the tex file
-            with open(tex_file, 'w') as f:
-                f.write(modified_content)
+        def save_settings():
+            """Save settings including logo"""
+            try:
+                # Save regular metadata
+                for key, entry in entries.items():
+                    self.presentation_info[key] = entry.get()
 
-            self.write_to_terminal("✓ Text to TeX conversion successful\n", "green")
-            messagebox.showinfo("Success", "TeX file generated successfully!")
+                # Save logo if specified
+                logo_path = logo_entry.get().strip()
+                if logo_path:
+                    if os.path.exists(logo_path):
+                        # Save logo path with LaTeX formatting
+                        self.presentation_info['logo'] = f"\\logo{{\\includegraphics[height=1cm]{{{logo_path}}}}}"
+                    else:
+                        messagebox.showerror("Error",
+                                           f"Logo file not found:\n{logo_path}",
+                                           parent=dialog)
+                        return
+                else:
+                    # Remove logo if entry is empty
+                    self.presentation_info.pop('logo', None)
 
-        except Exception as e:
-            self.write_to_terminal(f"✗ Error in conversion: {str(e)}\n", "red")
-            self.write_to_terminal(f"Error details: {traceback.format_exc()}\n", "red")
-            messagebox.showerror("Error", f"Error converting to TeX:\n{str(e)}")
+                dialog.grab_release()
+                dialog.destroy()
 
-#-----------------------------------------------------------------------------
+            except Exception as e:
+                messagebox.showerror("Error",
+                                   f"Error saving settings:\n{str(e)}",
+                                   parent=dialog)
+
+        def on_cancel():
+            """Handle dialog cancellation"""
+            dialog.grab_release()
+            dialog.destroy()
+
+        # Add buttons frame
+        buttons_frame = ctk.CTkFrame(main_frame)
+        buttons_frame.grid(row=row + 1, column=0, columnspan=2, pady=20)
+
+        # Add Save and Cancel buttons
+        ctk.CTkButton(buttons_frame, text="Save Settings",
+                      command=save_settings).pack(side="left", padx=10)
+
+        ctk.CTkButton(buttons_frame, text="Cancel",
+                      command=on_cancel).pack(side="left", padx=10)
+
+        # Configure grid
+        main_frame.columnconfigure(1, weight=1)
+
+        # Handle dialog close button
+        dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+
+        # Center and show dialog
+        dialog.after(10, center_dialog)
+
+        # Lift dialog to top
+        dialog.lift()
 
 
+    def edit_preamble(self):
+        """Open preamble editor with logo support"""
+        # Get current preamble including logo
+        current_preamble = self.get_custom_preamble()
+
+        # Open preamble editor
+        new_preamble = PreambleEditor.edit_preamble(self, current_preamble)
+
+        if new_preamble is not None:
+            # Store the custom preamble
+            self.custom_preamble = new_preamble
+            messagebox.showinfo("Success", "Preamble updated successfully!")
+#-------------------------------------------------------------------------
 def get_installation_paths():
     """Get platform-specific installation paths"""
     import platform
