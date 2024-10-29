@@ -1,5 +1,5 @@
 
-# Can we have a tool that bridges the gap from idea generation to PDF presentation all under one umbrella? That is what Beamer Slide Generator and its IDE BSG-IDE are all about.
+# Bridge the gap from Idea Generation to PDF Presentation
 
 Create a presentation slide in no time. That is the goal. Read the manual (RTM!) Contact me (nsp@airis4d.com) for clarifications. Contribute to the manual by adding your observations. AND Enjoy!
 
