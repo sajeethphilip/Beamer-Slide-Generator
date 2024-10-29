@@ -3698,78 +3698,35 @@ Created by {self.__author__}
         return line
 
     def convert_to_tex(self) -> None:
-        """Convert text to TeX with proper media handling"""
+        """Convert text to TeX using BeamerSlideGenerator's process_input_file"""
         if not self.current_file:
             messagebox.showwarning("Warning", "Please save your file first!")
             return
 
         try:
+            # Save current state first
+            self.save_file()
+
             # Get base filename without extension
             base_filename = os.path.splitext(self.current_file)[0]
             tex_file = base_filename + '.tex'
 
-            # Clear terminal
+            # Clear terminal and show progress
+            self.clear_terminal()
             self.write("Converting text to TeX...\n")
 
-            # Get custom preamble with logo
-            content = self.get_custom_preamble()
+            # Import process_input_file from BeamerSlideGenerator
+            from BeamerSlideGenerator import process_input_file
 
-            # Add notes configuration
-            mode = self.notes_mode.get()
-            notes_config = {
-                "slides": "\\setbeameroption{hide notes}",
-                "notes": "\\setbeameroption{show only notes}",
-                "both": "\\setbeameroption{show notes on second screen=right}"
-            }[mode]
+            # Process the input file to create tex
+            process_input_file(self.current_file, tex_file)
 
-            # Add notes configuration before \begin{document}
-            doc_pos = content.find("\\begin{document}")
-            if doc_pos != -1:
-                content = (content[:doc_pos] +
-                          "% Notes configuration\n" +
-                          notes_config + "\n" +
-                          "\\setbeamertemplate{note page}{\\pagecolor{yellow!5}\\insertnote}\n\n" +
-                          content[doc_pos:])
-
-            # Process each frame
-            for slide in self.slides:
-                content += "\\begin{frame}\n"
-                content += f"\\frametitle{{{slide['title']}}}\n"
-
-                # Handle media
-                if slide['media']:
-                    content += self.convert_media_to_latex(slide['media']) + "\n"
-
-                # Add content in itemize environment if needed
-                if slide['content']:
-                    content += "\\begin{itemize}\n"
-                    for item in slide['content']:
-                        if item.strip():
-                            if not item.startswith('-'):
-                                item = f"- {item}"
-                            content += f"\\item {item[1:].strip()}\n"  # Remove the '-' and add \item
-                    content += "\\end{itemize}\n"
-
-                content += "\\end{frame}\n\n"
-
-                # Add notes if present and not in slides_only mode
-                if mode != "slides" and 'notes' in slide and slide['notes']:
-                    content += "\\note{\n\\begin{itemize}\n"
-                    for note in slide['notes']:
-                        if note.strip():
-                            note = note.lstrip('•- ').strip()
-                            content += f"\\item {note}\n"
-                    content += "\\end{itemize}\n}\n\n"
-
-            # Add document end
-            content += "\\end{document}\n"
-
-            # Write the TeX file
-            with open(tex_file, 'w') as f:
-                f.write(content)
-
-            self.write("✓ Text to TeX conversion successful\n", "green")
-            messagebox.showinfo("Success", "TeX file generated successfully!")
+            # Check if tex file was created
+            if os.path.exists(tex_file):
+                self.write("✓ Text to TeX conversion successful\n", "green")
+                messagebox.showinfo("Success", "TeX file generated successfully!")
+            else:
+                raise Exception("TeX file was not created")
 
         except Exception as e:
             self.write(f"✗ Error in conversion: {str(e)}\n", "red")
