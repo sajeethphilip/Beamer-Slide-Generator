@@ -4,42 +4,6 @@ BSG_Integrated_Development_Environment.py
 An integrated development environment for BeamerSlideGenerator
 Combines GUI editing, syntax highlighting, and presentation generation.
 
-
-#--------------------------------------------------------------------
-import tkinter as tk
-from PIL import Image
-from tkinter import ttk
-import customtkinter as ctk
-from tkinter import filedialog, messagebox, simpledialog
-import os
-from pathlib import Path
-import webbrowser
-import re
-from typing import Optional, Dict, List, Tuple,Any
-from PIL import Image, ImageDraw
-import requests
-import traceback  # Add this import at the top
-#---------------------------------------------------------------------------------------------------------
-import time
-import shutil
-import atexit
-import zipfile
-import tempfile
-from pathlib import Path
-import os
-import sys
-import subprocess
-import shutil
-from pathlib import Path
-import importlib.util
-
-import fitz  # PyMuPDF
-import io
-import screeninfo
-import threading
-import socket
-import json
-
 """
 #------------------------------Check and install ----------------------------------------------
 import os,re
@@ -52,10 +16,12 @@ import queue
 import socket
 import json
 import time
+import zipfile
 import subprocess
 import importlib.util
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
+from BSG_terminal import InteractiveTerminal, SimpleRedirector
 import customtkinter as ctk
 from typing import Optional, Dict, List, Tuple,Any
 from pathlib import Path
@@ -607,40 +573,6 @@ def handle_media_selection(parent, title, content):
 
 #----------------------------------------------------------Install in local bin -----------------------------------
 
-class OutputRedirector:
-    """Redirects stdout and stderr to the IDE terminal"""
-    def __init__(self, terminal_widget):
-        self.terminal = terminal_widget
-        self.terminal_color = "white"
-
-    def write(self, text):
-        if self.terminal:
-            # Schedule the write in the main thread
-            self.terminal.after(0, self.terminal_write, text)
-
-    def terminal_write(self, text):
-        """Write to terminal with color support"""
-        try:
-            if "Error" in text or "error" in text or "ERROR" in text:
-                color = "red"
-            elif "Warning" in text or "warning" in text:
-                color = "yellow"
-            elif "Success" in text or "✓" in text:
-                color = "green"
-            else:
-                color = "white"
-
-            self.terminal.configure(state="normal")
-            self.terminal.insert("end", text, color)
-            self.terminal.see("end")
-            self.terminal.configure(state="disabled")
-        except Exception as e:
-            # Fallback to standard output if terminal write fails
-            print(f"Terminal write failed: {str(e)}\nOriginal text: {text}")
-
-    def flush(self):
-        pass
-
 def setup_python_paths():
     """Setup Python paths for imports"""
     import sys
@@ -665,7 +597,7 @@ def setup_python_paths():
             sys.path.insert(0, str_path)
 
 def create_bsg_launcher(install_dir: Path, paths: dict) -> str:
-    """Create launcher script with all necessary components"""
+    """Create launcher script with updated terminal handling"""
     launcher_script = f"""#!/usr/bin/env python3
 import sys
 import os
@@ -687,35 +619,8 @@ for path in INSTALL_PATHS:
     if os.path.exists(path) and path not in sys.path:
         sys.path.insert(0, path)
 
-class OutputRedirector:
-    \"\"\"Redirects stdout and stderr to the IDE terminal\"\"\"
-    def __init__(self, terminal_widget):
-        self.terminal = terminal_widget
-        self.terminal_color = "white"
-
-    def write(self, text):
-        if self.terminal:
-            # Schedule the write in the main thread
-            self.terminal.after(0, self.terminal_write, text)
-
-    def terminal_write(self, text):
-        \"\"\"Write to terminal with color support\"\"\"
-        if "Error" in text or "error" in text or "ERROR" in text:
-            self.terminal_color = "red"
-        elif "Warning" in text or "warning" in text:
-            self.terminal_color = "yellow"
-        elif "Success" in text or "✓" in text:
-            self.terminal_color = "green"
-        else:
-            self.terminal_color = "white"
-
-        self.terminal.configure(state="normal")
-        self.terminal.insert("end", text, self.terminal_color)
-        self.terminal.see("end")
-        self.terminal.configure(state="disabled")
-
-    def flush(self):
-        pass
+# Import the terminal module
+from BSG_terminal import InteractiveTerminal, SimpleRedirector
 
 # Import and run main program
 try:
@@ -726,8 +631,8 @@ try:
 
     # Redirect stdout and stderr to app's terminal after it's created
     if hasattr(app, 'terminal'):
-        sys.stdout = OutputRedirector(app.terminal)
-        sys.stderr = OutputRedirector(app.terminal)
+        sys.stdout = SimpleRedirector(app.terminal)
+        sys.stderr = SimpleRedirector(app.terminal, "red")
 
     # Start the application
     app.mainloop()
@@ -2179,9 +2084,7 @@ class BeamerSlideEditor(ctk.CTk):
         self.geometry("1200x800")
         # Add terminal after other UI elements
         self.create_terminal()
-        # Redirect stdout and stderr
-        sys.stdout = OutputRedirector(self.terminal)
-        sys.stderr = OutputRedirector(self.terminal)
+
 
         try:
             # Try to load the logo image
@@ -2232,117 +2135,86 @@ class BeamerSlideEditor(ctk.CTk):
 #--------------------------------------------------------------------------------------------------------------------
     def setup_output_redirection(self):
         """Set up output redirection to terminal"""
-        self.stdout_redirector = OutputRedirector(self.terminal)
-        self.stderr_redirector = OutputRedirector(self.terminal)
-        sys.stdout = self.stdout_redirector
-        sys.stderr = self.stderr_redirector
+        if hasattr(self, 'terminal'):
+            sys.stdout = SimpleRedirector(self.terminal, "white")
+            sys.stderr = SimpleRedirector(self.terminal, "red")
+
+    # Method to update working directory
+    def update_terminal_directory(self, directory: str) -> None:
+        """Update terminal working directory"""
+        if hasattr(self, 'terminal'):
+            self.terminal.set_working_directory(directory)
 #---------------------------------------------------------------------------New run pdflatex ----------------
     # First, add an input method to handle terminal input
     def terminal_input(self, prompt: str) -> str:
         """Get input from terminal with prompt"""
-        # Create input frame
-        input_frame = ctk.CTkFrame(self.terminal)
-        input_frame.pack(fill="x", padx=2, pady=2)
-
-        # Add prompt
-        self.write_to_terminal(prompt, "yellow")
-
-        # Create entry widget
-        entry = ctk.CTkEntry(input_frame, width=300)
-        entry.pack(side="left", padx=5, fill="x", expand=True)
-
-        # Create event to signal when input is complete
-        input_ready = threading.Event()
-        result = []  # List to store input result
-
-        def on_submit():
-            result.append(entry.get())
-            input_ready.set()
-            input_frame.destroy()
-            self.write_to_terminal(f"{entry.get()}\n", "white")  # Echo input
-
-        # Add submit button
-        submit_btn = ctk.CTkButton(input_frame, text="Submit", command=on_submit)
-        submit_btn.pack(side="left", padx=5)
-
-        # Handle Enter key
-        entry.bind("<Return>", lambda e: on_submit())
-
-        # Focus entry
-        entry.focus_set()
-
-        # Wait for input
-        input_ready.wait()
-        return result[0] if result else ""
-
-#----------------------------------------------------------------
-    def write_to_terminal(self, text: str, color: str = "white") -> None:
-        """Write to terminal with color support"""
         try:
-            self.terminal.configure(state="normal")
-            self.terminal.insert("end", text, color)
-            self.terminal.see("end")
-            self.terminal.configure(state="disabled")
+            self.write(prompt, "yellow")
+            # Use terminal's built-in input handling
+            future_input = []
+            input_ready = threading.Event()
 
-            # Force update
-            self.terminal.update_idletasks()
+            def on_input(text):
+                future_input.append(text)
+                input_ready.set()
+
+            # Store current input handler
+            old_handler = self.terminal._handle_input
+
+            # Set temporary input handler
+            def temp_handler(event):
+                text = self.terminal.display._textbox.get("insert linestart", "insert lineend")
+                if text.startswith("$ "):
+                    text = text[2:].strip()
+                    self.terminal.write("\n")
+                    on_input(text)
+                    return "break"
+                return "break"
+
+            self.terminal.display.bind("<Return>", temp_handler)
+
+            # Wait for input
+            input_ready.wait()
+
+            # Restore original handler
+            self.terminal.display.bind("<Return>", old_handler)
+
+            return future_input[0] if future_input else ""
+
         except Exception as e:
-            print(f"Error writing to terminal: {str(e)}\nText: {text}")
+            self.write(f"Error getting input: {str(e)}\n", "red")
+            return ""
+
+    #----------------------------------------------------------------
+    def write_to_terminal(self, text: str, color: str = "white") -> None:
+        """Alias for write method to maintain compatibility"""
+        self.write(text, color)
+
 
     def create_terminal(self) -> None:
-        """Create a simple but functional terminal widget"""
-        self.terminal_frame = ctk.CTkFrame(self)
-        self.terminal_frame.grid(row=4, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+        """Create interactive terminal with output redirection"""
+        # Create terminal instance
+        self.terminal = InteractiveTerminal(self, initial_directory=os.getcwd())
+        self.terminal.grid(row=4, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
         self.grid_rowconfigure(4, weight=1)  # Make terminal expandable
 
-        # Terminal header with controls
-        header_frame = ctk.CTkFrame(self.terminal_frame)
-        header_frame.pack(fill="x", padx=2, pady=2)
+        # Set up redirections
+        sys.stdout = SimpleRedirector(self.terminal, "white")
+        sys.stderr = SimpleRedirector(self.terminal, "red")
 
-        # Add working directory display
-        self.dir_label = ctk.CTkLabel(header_frame, text=f"📁 {os.getcwd()}")
-        self.dir_label.pack(side="left", padx=5)
-
-        # Control buttons
-        self.auto_scroll_var = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(header_frame, text="Auto-scroll",
-                        variable=self.auto_scroll_var).pack(side="right", padx=5)
-
-        ctk.CTkButton(header_frame, text="Clear",
-                      command=self.clear_terminal).pack(side="right", padx=5)
-
-        ctk.CTkButton(header_frame, text="Stop",
-                      command=self.stop_compilation,
-                      fg_color="red").pack(side="right", padx=5)
-
-        # Terminal output text widget with basic styling
-        self.terminal = ctk.CTkTextbox(self.terminal_frame, height=150)
-        self.terminal.pack(fill="both", expand=True, padx=2, pady=2)
-
-        # Configure basic terminal styling
-        self.terminal._textbox.configure(font=("Courier", 10))
-        self.terminal._textbox.tag_configure("red", foreground="red")
-        self.terminal._textbox.tag_configure("green", foreground="green")
-        self.terminal._textbox.tag_configure("yellow", foreground="yellow")
-
-        # Set up stdout/stderr redirection
-        sys.stdout = self
-        sys.stderr = self
-
-        # Store process reference and working directory
+        # Store process reference
         self.current_process = None
-        self.working_dir = os.getcwd()
 
 
     def flush(self):
         """Required for stdout/stderr redirection"""
         pass
 
+    # Replace the clear_terminal method
     def clear_terminal(self) -> None:
         """Clear terminal content"""
-        self.terminal.configure(state="normal")
-        self.terminal._textbox.delete("1.0", "end")
-        self.terminal.configure(state="disabled")
+        if hasattr(self, 'terminal'):
+            self.terminal.clear()
 
     def stop_compilation(self) -> None:
         """Stop current compilation process"""
@@ -3830,16 +3702,14 @@ Created by {self.__author__}
 
 
     def generate_pdf(self) -> None:
-        """Generate PDF with text to TeX conversion and compilation"""
+        """Generate PDF with improved terminal handling and progress feedback"""
         if not self.current_file:
             messagebox.showwarning("Warning", "Please save your file first!")
             return
 
         try:
             # Clear terminal
-            self.terminal.configure(state="normal")
-            self.terminal._textbox.delete("1.0", "end")
-            self.terminal.configure(state="disabled")
+            self.clear_terminal()
 
             # Save current state
             self.save_current_slide()
@@ -3849,16 +3719,16 @@ Created by {self.__author__}
             tex_file = base_filename + '.tex'
 
             # Step 1: Convert text to TeX first
-            self.write("Step 1: Converting text to TeX...\n")
+            self.write("Step 1: Converting text to TeX...\n", "white")
             self.convert_to_tex()  # This will handle notes mode correctly
 
             # Step 2: First pdflatex pass
-            self.write("\nStep 2: First pdflatex pass...\n")
+            self.write("\nStep 2: First pdflatex pass...\n", "white")
             success = self.run_pdflatex(tex_file)
 
             if success:
                 # Step 3: Second pdflatex pass for references
-                self.write("\nStep 3: Second pdflatex pass...\n")
+                self.write("\nStep 3: Second pdflatex pass...\n", "white")
                 success = self.run_pdflatex(tex_file)
 
                 if success:
@@ -3870,6 +3740,11 @@ Created by {self.__author__}
 
                         self.write("\n✓ PDF generated successfully!\n", "green")
                         self.write(f"PDF Size: {size_str}\n", "green")
+
+                        # Check for any warnings in the log file
+                        log_file = base_filename + '.log'
+                        if os.path.exists(log_file):
+                            self.check_latex_log(log_file)
 
                         # Ask if user wants to view the PDF
                         if messagebox.askyesno("Success",
@@ -3893,26 +3768,60 @@ Created by {self.__author__}
 
             messagebox.showerror("Error", f"Error generating PDF:\n{str(e)}")
 
-    def write(self, text: str, tag: str = None) -> None:
-        """Write text to terminal with optional color tag"""
+    def check_latex_log(self, log_file: str) -> None:
+        """Check LaTeX log file for warnings and errors"""
         try:
-            self.terminal.configure(state="normal")
+            with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                log_content = f.read()
 
-            if tag:
-                end_mark = self.terminal._textbox.index("end-1c")
-                self.terminal._textbox.insert("end", text)
-                self.terminal._textbox.tag_add(tag, end_mark, "end-1c")
-            else:
-                self.terminal._textbox.insert("end", text)
+            # Check for common issues
+            warnings = []
+            errors = []
 
-            self.terminal.configure(state="disabled")
+            warning_patterns = [
+                r'Warning: ([^\n]+)',
+                r'LaTeX Warning: ([^\n]+)',
+                r'Package [^\n]+ Warning: ([^\n]+)'
+            ]
 
-            if self.auto_scroll_var.get():
-                self.terminal.see("end")
-                self.terminal.update_idletasks()
+            error_patterns = [
+                r'! ([^\n]+)',
+                r'Error: ([^\n]+)',
+                r'! LaTeX Error: ([^\n]+)'
+            ]
+
+            for pattern in warning_patterns:
+                for match in re.finditer(pattern, log_content):
+                    warnings.append(match.group(1))
+
+            for pattern in error_patterns:
+                for match in re.finditer(pattern, log_content):
+                    errors.append(match.group(1))
+
+            if warnings or errors:
+                self.write("\nCompilation Report:\n", "yellow")
+
+                if errors:
+                    self.write("\nErrors:\n", "red")
+                    for error in errors:
+                        self.write(f"• {error}\n", "red")
+
+                if warnings:
+                    self.write("\nWarnings:\n", "yellow")
+                    for warning in warnings:
+                        self.write(f"• {warning}\n", "yellow")
 
         except Exception as e:
+            self.write(f"\nError reading log file: {str(e)}\n", "red")
+
+    def write(self, text: str, color: str = "white") -> None:
+        """Write text to terminal with color support"""
+        try:
+            if hasattr(self, 'terminal'):
+                self.terminal.write(text, color)
+        except Exception as e:
             print(f"Error writing to terminal: {str(e)}", file=sys.__stdout__)
+
 
     def run_pdflatex(self, tex_file: str) -> bool:
         """Run pdflatex with output to terminal"""
@@ -3924,9 +3833,8 @@ Created by {self.__author__}
             tex_dir = os.path.dirname(tex_file) or '.'
             os.chdir(tex_dir)
 
-            # Update directory label
-            if hasattr(self, 'dir_label'):
-                self.dir_label.configure(text=f"📁 {tex_dir}")
+            # Update working directory in terminal
+            self.terminal.set_working_directory(tex_dir)
 
             # Start pdflatex process
             self.current_process = subprocess.Popen(
@@ -3971,8 +3879,7 @@ Created by {self.__author__}
         finally:
             # Restore original directory
             os.chdir(original_dir)
-            if hasattr(self, 'dir_label'):
-                self.dir_label.configure(text=f"📁 {original_dir}")
+            self.terminal.set_working_directory(original_dir)
 
 
 
