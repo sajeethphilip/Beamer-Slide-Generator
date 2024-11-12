@@ -6,9 +6,165 @@ Combines GUI editing, syntax highlighting, and presentation generation.
 
 """
 #------------------------------Check and install ----------------------------------------------
+import importlib.util
 import os,re
 import sys
 import tempfile
+import subprocess
+#------------------------------------------------------------------------------------------------------
+import venv
+import platform
+from pathlib import Path
+
+def check_and_install_dependencies() -> None:
+    """
+    Check for required dependencies and install if missing.
+    Uses a virtual environment named 'my_python' in the home directory.
+    """
+    print("Checking and setting up virtual environment...")
+
+    # Get home directory path
+    home_dir = Path.home()
+    venv_path = home_dir / 'my_python'
+
+    # Check if venv exists
+    venv_exists = venv_path.exists()
+
+    # Create venv if it doesn't exist
+    if not venv_exists:
+        print("Creating virtual environment in:", venv_path)
+        try:
+            venv.create(venv_path, with_pip=True)
+            print("✓ Virtual environment created successfully")
+        except Exception as e:
+            print(f"✗ Error creating virtual environment: {str(e)}")
+            sys.exit(1)
+
+    # Get the path to the Python executable in the virtual environment
+    if platform.system() == "Windows":
+        venv_python = venv_path / "Scripts" / "python.exe"
+        venv_pip = venv_path / "Scripts" / "pip.exe"
+        activate_script = venv_path / "Scripts" / "activate.bat"
+    else:
+        venv_python = venv_path / "bin" / "python"
+        venv_pip = venv_path / "bin" / "pip"
+        activate_script = venv_path / "bin" / "activate"
+
+    # Activate virtual environment
+    if platform.system() == "Windows":
+        activate_cmd = str(activate_script)
+        os.system(activate_cmd)
+    else:
+        activate_cmd = f"source {activate_script}"
+        # Note: source command only works in shell, not in Python subprocess
+        # We'll use the full path to pip/python instead
+
+    print("\nInstalling/Updating dependencies...")
+
+    # First, remove problematic packages if they exist
+    problematic_packages = ['fitz', 'frontend']
+    for package in problematic_packages:
+        try:
+            subprocess.check_call([str(venv_pip), "uninstall", "-y", package])
+            print(f"✓ Removed problematic package: {package}")
+        except:
+            pass
+
+    # Required Python packages
+    python_packages = [
+        ('customtkinter', 'customtkinter', 'customtkinter'),
+        ('Pillow', 'PIL', 'Pillow'),
+        ('requests', 'requests', 'requests'),
+        ('yt_dlp', 'yt_dlp', 'yt-dlp'),
+        ('opencv-python', 'cv2', 'opencv-python'),
+        ('screeninfo', 'screeninfo', 'screeninfo'),
+        ('numpy', 'numpy', 'numpy')
+    ]
+
+    # Install core dependencies
+    for package_name, import_name, install_name in python_packages:
+        try:
+            # Try to import first
+            module_spec = subprocess.run(
+                [str(venv_python), "-c", f"import {import_name}"],
+                capture_output=True,
+                text=True
+            )
+
+            if module_spec.returncode == 0:
+                print(f"✓ {package_name} is installed")
+            else:
+                print(f"Installing {package_name}...")
+                subprocess.check_call([
+                    str(venv_pip),
+                    "install",
+                    "--no-cache-dir",
+                    install_name
+                ])
+                print(f"✓ {package_name} installed successfully")
+        except subprocess.CalledProcessError as e:
+            print(f"✗ Error installing {package_name}: {str(e)}")
+            sys.exit(1)
+
+    # Handle PyMuPDF installation
+    try:
+        module_spec = subprocess.run(
+            [str(venv_python), "-c", "import fitz"],
+            capture_output=True,
+            text=True
+        )
+
+        if module_spec.returncode == 0:
+            print("✓ PyMuPDF is already installed correctly")
+        else:
+            print("Installing PyMuPDF...")
+            try:
+                # Try latest stable version first
+                subprocess.check_call([
+                    str(venv_pip),
+                    "install",
+                    "--no-cache-dir",
+                    "PyMuPDF"
+                ])
+
+                # Verify installation
+                module_spec = subprocess.run(
+                    [str(venv_python), "-c", "import fitz; print(fitz.version[0])"],
+                    capture_output=True,
+                    text=True
+                )
+
+                if module_spec.returncode == 0:
+                    print(f"✓ PyMuPDF installed successfully (version {module_spec.stdout.strip()})")
+                else:
+                    # If latest version fails, try specific version
+                    print("Trying alternative PyMuPDF installation...")
+                    subprocess.check_call([
+                        str(venv_pip),
+                        "install",
+                        "--no-cache-dir",
+                        "PyMuPDF==1.23.7"  # Known stable version
+                    ])
+                    print(f"✓ PyMuPDF installed successfully (version 1.23.7)")
+            except Exception as e:
+                print(f"✗ Error installing PyMuPDF: {str(e)}")
+                sys.exit(1)
+    except Exception as e:
+        print(f"✗ Error verifying PyMuPDF: {str(e)}")
+        sys.exit(1)
+
+    # Create required directories
+    os.makedirs('media_files', exist_ok=True)
+
+    # Update sys.executable to use virtual environment Python
+    sys.executable = str(venv_python)
+
+    print("\n✓ All dependencies are satisfied!")
+    print(f"✓ Using virtual environment at: {venv_path}")
+
+check_and_install_dependencies()
+
+
 import atexit
 import shutil
 import threading
@@ -17,8 +173,6 @@ import socket
 import json
 import time
 import zipfile
-import subprocess
-import importlib.util
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 import customtkinter as ctk
@@ -181,83 +335,7 @@ class SimpleRedirector:
     def flush(self):
         pass
 
-#------------------------------------------------------------------------------------------------------
-
-def check_and_install_dependencies() -> None:
-    """
-    Check for required dependencies and install if missing.
-    Corrected version with proper PyMuPDF handling.
-    """
-    print("Checking and installing dependencies...")
-
-    # First, remove problematic packages if they exist
-    problematic_packages = ['fitz', 'frontend']
-    for package in problematic_packages:
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", package])
-            print(f"✓ Removed problematic package: {package}")
-        except:
-            pass
-
-    # Required Python packages
-    python_packages = [
-        ('customtkinter', 'customtkinter', 'customtkinter'),
-        ('Pillow', 'PIL', 'Pillow'),
-        ('requests', 'requests', 'requests'),
-        ('yt_dlp', 'yt_dlp', 'yt-dlp'),
-        ('opencv-python', 'cv2', 'opencv-python'),
-        ('screeninfo', 'screeninfo', 'screeninfo'),
-        ('numpy', 'numpy', 'numpy')  # Required for PyMuPDF
-    ]
-
-    # Install core dependencies first
-    for package_name, import_name, install_name in python_packages:
-        try:
-            importlib.import_module(import_name)
-            print(f"✓ {package_name} is installed")
-        except ImportError:
-            print(f"Installing {package_name}...")
-            try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", install_name])
-                print(f"✓ {package_name} installed successfully")
-            except subprocess.CalledProcessError as e:
-                print(f"✗ Error installing {package_name}: {str(e)}")
-                sys.exit(1)
-
-    # Handle PyMuPDF installation
-    try:
-        import fitz
-        print("✓ PyMuPDF is already installed correctly")
-    except ImportError:
-        print("Installing PyMuPDF...")
-        try:
-            # Try latest stable version first
-            subprocess.check_call([
-                sys.executable, "-m", "pip", "install", "--no-cache-dir", "PyMuPDF"
-            ])
-
-            # Verify installation
-            try:
-                import fitz
-                print(f"✓ PyMuPDF installed successfully (version {fitz.version[0]})")
-            except ImportError as e:
-                # If latest version fails, try specific version
-                print("Trying alternative PyMuPDF installation...")
-                subprocess.check_call([
-                    sys.executable, "-m", "pip", "install", "--no-cache-dir",
-                    "PyMuPDF==1.23.7"  # Known stable version
-                ])
-                import fitz
-                print(f"✓ PyMuPDF installed successfully (version {fitz.version[0]})")
-        except Exception as e:
-            print(f"✗ Error installing PyMuPDF: {str(e)}")
-            traceback.print_exc()
-            sys.exit(1)
-
-    # Create required directories
-    os.makedirs('media_files', exist_ok=True)
-
-    print("\nAll dependencies are satisfied!")
+#---------------------------------------------------------------------------------
 
 
 def verify_pymupdf_installation():
@@ -4828,7 +4906,7 @@ def main():
                 return
 
         # Normal startup
-        check_and_install_dependencies()
+        #check_and_install_dependencies()
         app = BeamerSlideEditor()
         app.mainloop()
 
