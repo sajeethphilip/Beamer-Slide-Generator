@@ -6,7 +6,6 @@ Combines GUI editing, syntax highlighting, and presentation generation.
 
 """
 #------------------------------Check and install ----------------------------------------------
-import importlib.util
 import os,re
 import sys
 import tempfile
@@ -15,152 +14,208 @@ import subprocess
 import venv
 import platform
 from pathlib import Path
+import site
+import socket
+from importlib import util
 
-def check_and_install_dependencies() -> None:
-    """
-    Check for required dependencies and install if missing.
-    Uses a virtual environment named 'my_python' in the home directory.
-    """
-    print("Checking and setting up virtual environment...")
+def check_internet_connection():
+    """Check internet connection without external dependencies"""
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=3)
+        return True
+    except OSError:
+        return False
 
-    # Get home directory path
-    home_dir = Path.home()
-    venv_path = home_dir / 'my_python'
+def setup_virtual_env():
+    """Setup and activate virtual environment"""
+    try:
+        home_dir = Path.home()
+        venv_path = home_dir / 'my_python'
 
-    # Check if venv exists
-    venv_exists = venv_path.exists()
-
-    # Create venv if it doesn't exist
-    if not venv_exists:
-        print("Creating virtual environment in:", venv_path)
-        try:
+        # Create venv if it doesn't exist
+        if not venv_path.exists():
             venv.create(venv_path, with_pip=True)
-            print("✓ Virtual environment created successfully")
-        except Exception as e:
-            print(f"✗ Error creating virtual environment: {str(e)}")
-            sys.exit(1)
 
-    # Get the path to the Python executable in the virtual environment
-    if platform.system() == "Windows":
-        venv_python = venv_path / "Scripts" / "python.exe"
-        venv_pip = venv_path / "Scripts" / "pip.exe"
-        activate_script = venv_path / "Scripts" / "activate.bat"
-    else:
-        venv_python = venv_path / "bin" / "python"
-        venv_pip = venv_path / "bin" / "pip"
-        activate_script = venv_path / "bin" / "activate"
+        # Get paths based on platform
+        if platform.system() == "Windows":
+            venv_python = venv_path / "Scripts" / "python.exe"
+            venv_pip = venv_path / "Scripts" / "pip.exe"
+        else:
+            venv_python = venv_path / "bin" / "python"
+            venv_pip = venv_path / "bin" / "pip"
 
-    # Activate virtual environment
-    if platform.system() == "Windows":
-        activate_cmd = str(activate_script)
-        os.system(activate_cmd)
-    else:
-        activate_cmd = f"source {activate_script}"
-        # Note: source command only works in shell, not in Python subprocess
-        # We'll use the full path to pip/python instead
+        return str(venv_python), str(venv_pip), True
+    except Exception as e:
+        return sys.executable, "pip", False
 
-    print("\nInstalling/Updating dependencies...")
-
-    # First, remove problematic packages if they exist
-    problematic_packages = ['fitz', 'frontend']
-    for package in problematic_packages:
-        try:
-            subprocess.check_call([str(venv_pip), "uninstall", "-y", package])
-            print(f"✓ Removed problematic package: {package}")
-        except:
-            pass
-
-    # Required Python packages
-    python_packages = [
-        ('customtkinter', 'customtkinter', 'customtkinter'),
-        ('Pillow', 'PIL', 'Pillow'),
-        ('requests', 'requests', 'requests'),
-        ('yt_dlp', 'yt_dlp', 'yt-dlp'),
-        ('opencv-python', 'cv2', 'opencv-python'),
-        ('screeninfo', 'screeninfo', 'screeninfo'),
-        ('numpy', 'numpy', 'numpy')
+def install_base_packages(pip_path):
+    """Install essential packages without GUI dependencies"""
+    base_packages = [
+        "customtkinter",
+        "Pillow",
+        "tk",  # Basic tkinter
     ]
 
-    # Install core dependencies
-    for package_name, import_name, install_name in python_packages:
+    for package in base_packages:
         try:
-            # Try to import first
-            module_spec = subprocess.run(
-                [str(venv_python), "-c", f"import {import_name}"],
-                capture_output=True,
-                text=True
+            subprocess.run(
+                [pip_path, "install", "--no-cache-dir", package],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True
             )
+        except subprocess.CalledProcessError:
+            continue
 
-            if module_spec.returncode == 0:
-                print(f"✓ {package_name} is installed")
-            else:
-                print(f"Installing {package_name}...")
-                subprocess.check_call([
-                    str(venv_pip),
-                    "install",
-                    "--no-cache-dir",
-                    install_name
-                ])
-                print(f"✓ {package_name} installed successfully")
-        except subprocess.CalledProcessError as e:
-            print(f"✗ Error installing {package_name}: {str(e)}")
-            sys.exit(1)
-
-    # Handle PyMuPDF installation
+def install_remaining_packages(pip_path):
+    """Install remaining packages with GUI feedback"""
     try:
-        module_spec = subprocess.run(
-            [str(venv_python), "-c", "import fitz"],
-            capture_output=True,
-            text=True
-        )
+        # Now we can safely import GUI packages
+        import tkinter as tk
+        from tkinter import ttk
+        import customtkinter as ctk
 
-        if module_spec.returncode == 0:
-            print("✓ PyMuPDF is already installed correctly")
-        else:
-            print("Installing PyMuPDF...")
-            try:
-                # Try latest stable version first
-                subprocess.check_call([
-                    str(venv_pip),
-                    "install",
-                    "--no-cache-dir",
-                    "PyMuPDF"
-                ])
+        class ProgressDialog:
+            def __init__(self):
+                self.root = ctk.CTk()
+                self.root.title("Installing Dependencies")
+                self.root.geometry("300x150")
 
-                # Verify installation
-                module_spec = subprocess.run(
-                    [str(venv_python), "-c", "import fitz; print(fitz.version[0])"],
-                    capture_output=True,
-                    text=True
+                # Center window
+                screen_width = self.root.winfo_screenwidth()
+                screen_height = self.root.winfo_screenheight()
+                x = (screen_width - 300) // 2
+                y = (screen_height - 150) // 2
+                self.root.geometry(f"+{x}+{y}")
+
+                self.label = ctk.CTkLabel(
+                    self.root,
+                    text="Installing dependencies...",
+                    font=("Arial", 12)
                 )
+                self.label.pack(pady=20)
 
-                if module_spec.returncode == 0:
-                    print(f"✓ PyMuPDF installed successfully (version {module_spec.stdout.strip()})")
-                else:
-                    # If latest version fails, try specific version
-                    print("Trying alternative PyMuPDF installation...")
-                    subprocess.check_call([
-                        str(venv_pip),
-                        "install",
-                        "--no-cache-dir",
-                        "PyMuPDF==1.23.7"  # Known stable version
-                    ])
-                    print(f"✓ PyMuPDF installed successfully (version 1.23.7)")
-            except Exception as e:
-                print(f"✗ Error installing PyMuPDF: {str(e)}")
-                sys.exit(1)
+                self.progress = ctk.CTkProgressBar(self.root)
+                self.progress.pack(pady=10, padx=20, fill="x")
+                self.progress.set(0)
+
+                self.root.update()
+
+            def update(self, progress, text=None):
+                self.progress.set(progress)
+                if text:
+                    self.label.configure(text=text)
+                self.root.update()
+
+            def close(self):
+                self.root.destroy()
+
+        # Create progress dialog
+        dialog = ProgressDialog()
+
+        # Additional packages to install
+        packages = {
+            'requests': 'requests',
+            'yt_dlp': 'yt-dlp',
+            'cv2': 'opencv-python',
+            'screeninfo': 'screeninfo',
+            'numpy': 'numpy',
+            'fitz': 'PyMuPDF==1.23.7'
+        }
+
+        total = len(packages)
+        for i, (import_name, install_name) in enumerate(packages.items(), 1):
+            progress = i / (total + 1)
+            dialog.update(progress, f"Installing {import_name}...")
+
+            try:
+                # Check if package is already installed
+                if not util.find_spec(import_name):
+                    subprocess.run(
+                        [pip_path, "install", "--no-cache-dir", install_name],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        check=True
+                    )
+            except:
+                continue
+
+        dialog.update(1.0, "Installation complete!")
+        dialog.root.after(1000, dialog.close)
+        dialog.root.mainloop()
+
     except Exception as e:
-        print(f"✗ Error verifying PyMuPDF: {str(e)}")
-        sys.exit(1)
+        # If GUI fails, fall back to silent installation
+        for _, install_name in packages.items():
+            try:
+                subprocess.run(
+                    [pip_path, "install", "--no-cache-dir", install_name],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True
+                )
+            except:
+                continue
 
-    # Create required directories
-    os.makedirs('media_files', exist_ok=True)
+def check_and_install_dependencies():
+    """
+    Two-phase dependency installation:
+    1. Install essential GUI packages without GUI feedback
+    2. Install remaining packages with GUI progress dialog
+    """
+    # Suppress standard output
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    sys.stdout = open(os.devnull, 'w')
+    sys.stderr = open(os.devnull, 'w')
 
-    # Update sys.executable to use virtual environment Python
-    sys.executable = str(venv_python)
+    try:
+        # Check internet connection
+        if not check_internet_connection():
+            # Restore output before returning
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+            print("No internet connection. Continuing with available packages.")
+            return True
 
-    print("\n✓ All dependencies are satisfied!")
-    print(f"✓ Using virtual environment at: {venv_path}")
+        # Setup virtual environment
+        python_path, pip_path, venv_created = setup_virtual_env()
+
+        # Phase 1: Install base packages (no GUI feedback)
+        install_base_packages(pip_path)
+
+        # Create media_files directory
+        os.makedirs('media_files', exist_ok=True)
+
+        # Update sys.executable if using venv
+        if venv_created:
+            sys.executable = python_path
+
+        # Restore output for GUI phase
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+
+        # Phase 2: Install remaining packages with GUI feedback
+        install_remaining_packages(pip_path)
+
+        return True
+
+    except Exception as e:
+        # Restore output
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+        print(f"Warning: Some dependencies may be missing. Continuing with available packages.")
+        return True
+
+    finally:
+        # Ensure output is restored
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+
+
+
+
+#------------------------------------------------------------------------------------------
 
 check_and_install_dependencies()
 
@@ -2316,9 +2371,6 @@ class BeamerSlideEditor(ctk.CTk):
         # Configure window
         self.title("BeamerSlide Generator IDE")
         self.geometry("1200x800")
-        # Add terminal after other UI elements
-        self.create_terminal()
-
 
         try:
             # Try to load the logo image
@@ -2355,17 +2407,25 @@ class BeamerSlideEditor(ctk.CTk):
         self.create_footer()
 
         # Initialize variables
-        self.current_file: Optional[str] = None
-        self.slides: List[Dict] = []
-        self.current_slide_index: int = -1
+        self.current_file = None
+        self.slides = []
+        self.current_slide_index = -1
 
+        # Setup keyboard shortcuts
+        self.setup_keyboard_shortcuts()
 
         # Setup Python paths
         setup_python_paths()
 
+        # Add terminal after other UI elements
+        self.create_terminal()
+
         # Adjust grid weights to accommodate terminal
         self.grid_rowconfigure(1, weight=3)  # Main editor
         self.grid_rowconfigure(4, weight=1)  # Terminal
+
+        # Setup output redirection after terminal creation
+        self.setup_output_redirection()
 #--------------------------------------------------------------------------------------------------------------------
     def setup_output_redirection(self):
         """Set up output redirection to terminal"""
@@ -2419,6 +2479,39 @@ class BeamerSlideEditor(ctk.CTk):
             self.write(f"Error getting input: {str(e)}\n", "red")
             return ""
 
+    def navigate_slides(self, event):
+        """Handle keyboard navigation between slides"""
+        if not self.slides:
+            return
+
+        # Save current slide before navigation
+        self.save_current_slide()
+
+        if event.keysym == 'Up':
+            if self.current_slide_index > 0:
+                self.current_slide_index -= 1
+        elif event.keysym == 'Down':
+            if self.current_slide_index < len(self.slides) - 1:
+                self.current_slide_index += 1
+        elif event.keysym == 'Left':
+            if self.current_slide_index > 0:
+                self.current_slide_index -= 1
+        elif event.keysym == 'Right':
+            if self.current_slide_index < len(self.slides) - 1:
+                self.current_slide_index += 1
+
+        # Load the new slide
+        self.load_slide(self.current_slide_index)
+        self.update_slide_list()
+
+        # Ensure the current slide is visible in the list
+        line_number = self.current_slide_index + 1
+        self.slide_list.see(f"{line_number}.0")
+
+        # Update visual highlighting
+        self.highlight_current_slide()
+
+        return "break"  # Prevent default handling
     #----------------------------------------------------------------
     def write_to_terminal(self, text: str, color: str = "white") -> None:
         """Alias for write method to maintain compatibility"""
@@ -2605,18 +2698,19 @@ Created by {self.__author__}
         )
         close_button.pack(pady=20)
 #----------------------------------------------------------------------------------------
-
-
     def create_menu(self) -> None:
         """Create top menu bar with added Get Source option"""
         self.menu_frame = ctk.CTkFrame(self)
         self.menu_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
 
-        # Left side buttons
-        left_buttons = ctk.CTkFrame(self.menu_frame)
-        left_buttons.pack(side="left", padx=5)
+        # Use grid_columnconfigure to make menu expand properly
+        self.menu_frame.grid_columnconfigure(1, weight=1)
 
-       # Add Preamble Editor button
+        # Left side buttons with proper grid configuration
+        left_buttons = ctk.CTkFrame(self.menu_frame)
+        left_buttons.grid(row=0, column=0, sticky="w", padx=5)
+
+        # Add Preamble Editor button
         ctk.CTkButton(left_buttons, text="Edit Preamble",
                      command=self.edit_preamble).pack(side="left", padx=5)
 
@@ -2627,9 +2721,9 @@ Created by {self.__author__}
         ctk.CTkButton(left_buttons, text="Get Source",
                      command=self.get_source_from_tex).pack(side="left", padx=5)
 
-        # Right side buttons (existing code)
+        # Right side buttons with proper grid configuration
         right_buttons = ctk.CTkFrame(self.menu_frame)
-        right_buttons.pack(side="right", padx=5)
+        right_buttons.grid(row=0, column=1, sticky="e", padx=5)
 
         self.highlight_var = ctk.BooleanVar(value=True)
         self.highlight_switch = ctk.CTkSwitch(
@@ -2850,7 +2944,7 @@ Created by {self.__author__}
         return slides
 #--------------------------------------------------------------------------------------
     def create_sidebar(self) -> None:
-        """Create sidebar with slide list and controls with enhanced navigation"""
+        """Create sidebar with slide list and controls including insert slide below"""
         self.sidebar = ctk.CTkFrame(self)
         self.sidebar.grid(row=1, column=0, rowspan=2, sticky="nsew", padx=5, pady=5)
 
@@ -2875,47 +2969,60 @@ Created by {self.__author__}
         self.slide_list.bind('<FocusIn>', self.on_list_focus)
         self.slide_list.bind('<FocusOut>', self.on_list_unfocus)
 
-        # Slide control buttons (keeping existing functionality)
+        # Slide control buttons with enhanced tooltips
         button_data = [
-            ("New Slide", self.new_slide),
-            ("Duplicate Slide", self.duplicate_slide),
-            ("Delete Slide", self.delete_slide),
-            ("Move Up", lambda: self.move_slide(-1)),
-            ("Move Down", lambda: self.move_slide(1))
+            ("New Slide", self.new_slide, "Add a new slide at the end"),
+            ("Insert Below", self.insert_slide_below, "Insert a new slide below current"),
+            ("Duplicate Slide", self.duplicate_slide, "Create a copy of current slide"),
+            ("Delete Slide", self.delete_slide, "Remove current slide"),
+            ("Move Up", lambda: self.move_slide(-1), "Move current slide up"),
+            ("Move Down", lambda: self.move_slide(1), "Move current slide down")
         ]
 
-        for i, (text, command) in enumerate(button_data, start=2):
-            ctk.CTkButton(self.sidebar, text=text,
-                         command=command).grid(row=i, column=0, padx=5, pady=5)
+        for i, (text, command, tooltip) in enumerate(button_data, start=2):
+            btn = ctk.CTkButton(self.sidebar, text=text, command=command)
+            btn.grid(row=i, column=0, padx=5, pady=5)
+            self.create_tooltip(btn, tooltip)
 
-    def navigate_slides(self, event) -> None:
-        """Handle keyboard navigation between slides"""
-        if not self.slides:
-            return "break"
-
-        # Save current slide
+    def insert_slide_below(self) -> None:
+        """Insert a new slide below the current slide"""
+        # Save current slide first
         self.save_current_slide()
 
-        # Calculate new index based on key
-        new_index = self.current_slide_index
-        if event.keysym in ['Up', 'Left']:
-            new_index = max(0, self.current_slide_index - 1)
-        elif event.keysym in ['Down', 'Right']:
-            new_index = min(len(self.slides) - 1, self.current_slide_index + 1)
+        new_slide = {
+            'title': 'New Slide',
+            'media': '',
+            'content': [],
+            'notes': []
+        }
 
-        # Update if changed
-        if new_index != self.current_slide_index:
-            self.current_slide_index = new_index
-            self.load_slide(new_index)
-            self.update_slide_list()
+        # If there are no slides or current_slide_index is invalid
+        if not self.slides or self.current_slide_index < 0:
+            self.slides.append(new_slide)
+            self.current_slide_index = 0
+        else:
+            # Insert after current slide
+            insert_position = self.current_slide_index + 1
+            self.slides.insert(insert_position, new_slide)
+            self.current_slide_index = insert_position
 
-            # Ensure selected slide is visible
-            self.slide_list.see(f"{new_index + 1}.0")
+        # Update UI
+        self.update_slide_list()
+        self.load_slide(self.current_slide_index)
 
-            # Highlight current line
-            self.highlight_current_slide()
+        # Focus title entry for immediate editing
+        self.title_entry.focus_set()
+        self.title_entry.select_range(0, 'end')
 
-        return "break"  # Prevent default handling
+    # Add keyboard shortcut for insert slide below
+    def setup_keyboard_shortcuts(self) -> None:
+        """Setup keyboard shortcuts for slide operations"""
+        self.bind('<Control-n>', lambda e: self.new_slide())          # Ctrl+N for new slide
+        self.bind('<Control-i>', lambda e: self.insert_slide_below()) # Ctrl+I for insert below
+        self.bind('<Control-d>', lambda e: self.duplicate_slide())    # Ctrl+D for duplicate
+        self.bind('<Control-Delete>', lambda e: self.delete_slide())          # Delete for remove slide
+        self.bind('<Control-s>', lambda e: self.save_file())          # Ctrl+S for save
+
 
     def highlight_current_slide(self) -> None:
         """Highlight the currently selected slide in the list"""
