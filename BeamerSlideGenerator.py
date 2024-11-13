@@ -33,20 +33,19 @@ def add_source_citation(content, source_note):
         content.append(f"\\footnote{{\\tiny {source_note}}}")
 
 def format_source_citation(url):
-    """
-    Formats source URLs for citation.
-    """
+
     try:
         parsed = urlparse(url)
         if 'youtube.com' in parsed.netloc or 'youtu.be' in parsed.netloc:
-            return f"YouTube video: {url}"
+            return f"YouTube video: \\url{{{url}}}"
         elif 'github.com' in parsed.netloc:
-            return f"GitHub repository: {url}"
+            return f"GitHub repository: \\url{{{url}}}"
         else:
             base_url = f"{parsed.scheme}://{parsed.netloc}"
-            return f"Source: {base_url} \\href{{{url}}}{{[link]}}"
+            return f"Source: {base_url} \\url{{{url}}}"
     except:
         return f"Source: {url}"
+
 
 def generate_preview_frame(filepath, output_path=None):
     """
@@ -631,8 +630,7 @@ def update_input_file(file_path, url_updates, is_tex_file=False):
 
 
 def generate_latex_code(base_name, filename, first_frame_path, content=None, title=None, playable=False, source_url=None, notes=None):
-    """Enhanced version that handles notes properly"""
-
+    """Enhanced version that properly handles YouTube URLs in citations"""
     escaped_base_name = base_name.replace("_", "\\_") if base_name else "Media"
     media_folder = "media_files"
 
@@ -645,7 +643,7 @@ def generate_latex_code(base_name, filename, first_frame_path, content=None, tit
     else:
         frame_title = f"Media: {escaped_base_name}"
 
-    # Handle no-media case (when \None is specified)
+    # Handle no-media case
     if not filename or filename == "\\None":
         latex_code = f"""
 \\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
@@ -662,21 +660,86 @@ def generate_latex_code(base_name, filename, first_frame_path, content=None, tit
                     item = item.replace("_", "\\_").replace("&", "\\&").replace("#", "\\#")
                     latex_code += f"        \\item {item}\n"
             latex_code += """    \\end{itemize}"""
-            # Add notes if present
-            if notes and notes.strip():
-                latex_code += "\\note{\n\\begin{itemize}\n"
-                for note_line in notes.split('\n'):
-                    if note_line.strip():
-                        # Clean up any existing bullet points
-                        note_text = note_line.lstrip('•- ').strip()
-                        latex_code += f"\\item {note_text}\n"
-                latex_code += "\\end{itemize}\n}\n"
 
         latex_code += """
 \\end{frame}
 
 """
         return latex_code
+
+    # Regular media case with two columns
+    latex_code = f"""
+\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
+    \\vspace{{0.5em}}
+    \\begin{{columns}}
+        \\begin{{column}}{{0.48\\textwidth}}
+            \\centering
+"""
+
+    # Add preview image or media
+    if playable:
+        if first_frame_path and os.path.exists(first_frame_path):
+            latex_code += f"""            \\fbox{{\\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{first_frame_path}}}}}
+"""
+        else:
+            latex_code += "            \\textbf{[Media Preview Not Available]}\n"
+
+        latex_code += f"""
+            \\vspace{{0.5em}}
+            \\footnotesize{{Click to play}}
+            \\movie[externalviewer]{{\\textcolor{{blue}}{{\\underline{{Play}}}}}}{{./{media_folder}/{filename}}}
+"""
+
+    else:
+        # Non-playable media with frame
+        image_path = first_frame_path if first_frame_path else f'{media_folder}/{filename}'
+        latex_code += f"""            \\fbox{{\\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{image_path}}}}}
+"""
+
+    # Add content column
+    latex_code += """        \\end{column}%
+        \\begin{column}{0.48\\textwidth}
+            \\begin{itemize}
+"""
+    if content:
+        for item in content:
+            item = item.strip()
+            if item.startswith('-'):
+                item = item[1:].strip()
+            if not item.lower().startswith(title.lower() if title else ''):
+                item = item.replace("_", "\\_").replace("&", "\\&").replace("#", "\\#")
+                latex_code += f"                \\item {item}\n"
+    latex_code += """            \\end{itemize}"""
+
+    # Add source citation as clickable URL if it's a YouTube video
+    if source_url:
+        latex_code += """
+            \\vspace{0.5em}
+            \\rule{0.9\\textwidth}{0.4pt}
+"""
+        if 'youtube.com' in source_url or 'youtu.be' in source_url:
+            latex_code += f"""            {{\\tiny YouTube video: \\url{{{source_url}}}}}"""
+        else:
+            latex_code += f"""            {{\\tiny Source: \\url{{{source_url}}}}}"""
+
+    latex_code += """
+        \\end{column}
+    \\end{columns}
+"""
+
+    # Add notes if present
+    if notes and notes.strip():
+        latex_code += "    \\note{\n    \\begin{itemize}\n"
+        for note_line in notes.split('\n'):
+            if note_line.strip():
+                note_text = note_line.lstrip('•- ').strip()
+                latex_code += f"        \\item {note_text}\n"
+        latex_code += "    \\end{itemize}\n    }\n"
+
+    latex_code += """\\end{frame}
+
+"""
+    return latex_code
 
     # Regular media case with two columns
     latex_code = f"""
@@ -739,28 +802,27 @@ def generate_latex_code(base_name, filename, first_frame_path, content=None, tit
 
 
 def process_media(url, content=None, title=None, playable=False):
-    """
-    Modified to handle source URLs properly.
-    """
+    """Enhanced version that maintains proper YouTube URL handling"""
     directive_type, media_source, is_playable, original_directive = parse_media_directive(url)
     playable = playable or is_playable
 
     # Track source URL
     source_url = None
-    if directive_type == 'url' and media_source.startswith(('http://', 'https://')):
-        source_url = media_source
-        # Remove any existing source citations from content
-        if content:
-            content = [item for item in content if not ('\\footnote' in item and 'Source:' in item)]
+    if directive_type == 'url':
+        if media_source.startswith(('http://', 'https://')):
+            source_url = media_source
+            # Remove any existing source citations from content
+            if content:
+                content = [item for item in content if not ('\\footnote' in item and 'Source:' in item)]
 
-    # Handle YouTube URLs
+    # Handle YouTube URLs with special attention to source citation
     if directive_type == 'url' and ('youtube.com' in media_source or 'youtu.be' in media_source):
         result = download_youtube_video(media_source)
         if result:
             base_name, filename, filepath = result
             first_frame_path = generate_preview_frame(filepath)
             tex_directive = f"\\play \\file media_files/{filename}"
-            text_directive = f"\\play {media_source}"
+            text_directive = f"\\play {media_source}"  # Keep original URL for text file
 
             return generate_latex_code(
                 base_name,
@@ -769,10 +831,8 @@ def process_media(url, content=None, title=None, playable=False):
                 content,
                 title,
                 True,
-                source_url
+                media_source  # Pass original YouTube URL for citation
             ), (tex_directive, text_directive)
-
-    # [Rest of the function remains similar, but pass source_url to generate_latex_code]
 
 def add_source_citation(content, source_note):
     """
