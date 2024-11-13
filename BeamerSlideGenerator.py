@@ -32,20 +32,6 @@ def add_source_citation(content, source_note):
         # Add new footnote
         content.append(f"\\footnote{{\\tiny {source_note}}}")
 
-def format_source_citation(url):
-
-    try:
-        parsed = urlparse(url)
-        if 'youtube.com' in parsed.netloc or 'youtu.be' in parsed.netloc:
-            return f"YouTube video: \\url{{{url}}}"
-        elif 'github.com' in parsed.netloc:
-            return f"GitHub repository: \\url{{{url}}}"
-        else:
-            base_url = f"{parsed.scheme}://{parsed.netloc}"
-            return f"Source: {base_url} \\url{{{url}}}"
-    except:
-        return f"Source: {url}"
-
 
 def generate_preview_frame(filepath, output_path=None):
     """
@@ -567,79 +553,89 @@ def download_media(url, output_folder='media_files'):
         print(f"Error downloading media from {url}: {str(e)}")
         return None, None, None
 
-def update_input_file(file_path, url_updates, is_tex_file=False):
+
+def process_latex_content(content_line: str) -> str:
     """
-    Updates either tex or text file with appropriate directives.
+    Process content line to properly handle LaTeX math expressions,
+    ensuring underscores work correctly as subscripts in math mode.
+    Also handles other LaTeX commands and special characters.
     """
-    backup_path = file_path + '.backup'
-    try:
-        # Create backup
-        with open(file_path, 'r') as f:
-            original_content = f.readlines()
-        with open(backup_path, 'w') as f:
-            f.writelines(original_content)
+    if not content_line:
+        return content_line
 
-        # Process updates
-        updated_lines = []
-        in_content_block = False
+    result = []
+    in_math = False
+    in_command = False
+    brace_level = 0
+    i = 0
 
-        for line in original_content:
-            line = line.rstrip('\n')
+    while i < len(content_line):
+        char = content_line[i]
 
-            if line.startswith("\\begin{Content}"):
-                in_content_block = True
-                content_parts = line.split("\\begin{Content}", 1)
-                if len(content_parts) > 1 and content_parts[1].strip():
-                    url_part = content_parts[1].strip()
-                    if url_part in url_updates:
-                        # Use appropriate directive based on file type
-                        new_directive = url_updates[url_part][0] if is_tex_file else url_updates[url_part][1]
-                        line = f"\\begin{{Content}} {new_directive}"
-                updated_lines.append(line)
+        # Handle math mode transitions
+        if char == '$':
+            in_math = not in_math
+            result.append(char)
+            i += 1
+            continue
+
+        # Handle LaTeX commands
+        if char == '\\' and i + 1 < len(content_line):
+            next_char = content_line[i + 1]
+            if next_char.isalpha() or next_char in ['[', ']', '$', '{', '}', '_', '^', '%', '&', '#', ' ']:
+                result.extend(['\\', next_char])
+                i += 2
                 continue
 
-            elif in_content_block and (line.startswith("http") or line.startswith("\\play") or line.startswith("\\file")):
-                if line in url_updates:
-                    # Use appropriate directive based on file type
-                    new_directive = url_updates[line][0] if is_tex_file else url_updates[line][1]
-                    updated_lines.append(new_directive)
-                else:
-                    updated_lines.append(line)
-                continue
+        # Handle braces
+        if char == '{':
+            brace_level += 1
+            result.append(char)
+            i += 1
+            continue
+        elif char == '}':
+            brace_level -= 1
+            result.append(char)
+            i += 1
+            continue
 
-            elif line.startswith("\\end{Content}"):
-                in_content_block = False
-                updated_lines.append(line)
-                continue
-
+        # Process characters based on context
+        if in_math or brace_level > 0:
+            # In math mode or within braces, preserve everything
+            result.append(char)
+        else:
+            # Outside math mode, escape special characters
+            if char == '_':
+                result.append('\\_')
+            elif char == '&':
+                result.append('\\&')
+            elif char == '#':
+                result.append('\\#')
+            elif char == '%':
+                result.append('\\%')
+            elif char == '~':
+                result.append('\\textasciitilde{}')
+            elif char == '^':
+                result.append('\\textasciicircum{}')
             else:
-                updated_lines.append(line)
+                result.append(char)
+        i += 1
 
-        # Write updated content
-        with open(file_path, 'w') as f:
-            for line in updated_lines:
-                f.write(line + '\n')
-
-        print(f"\nInput file has been updated with {'local paths' if is_tex_file else 'original URLs'}.")
-        print(f"Original file backed up as: {backup_path}")
-        return True
-
-    except Exception as e:
-        print(f"Error updating file: {str(e)}")
-        return False
-
+    return ''.join(result)
 
 def generate_latex_code(base_name, filename, first_frame_path, content=None, title=None, playable=False, source_url=None, notes=None):
-    """Enhanced version that properly handles YouTube URLs in citations"""
+    """
+    Generate LaTeX code for a slide with proper handling of math expressions and special characters.
+    """
     escaped_base_name = base_name.replace("_", "\\_") if base_name else "Media"
     media_folder = "media_files"
 
-    # Capitalize first letter of each word in title
+    # Process title
     if title:
         words = title.split()
         capitalized_words = [word[0].upper() + word[1:] if word else '' for word in words]
         frame_title = " ".join(capitalized_words)
-        frame_title = frame_title.replace("_", "\\_").replace("&", "\\&").replace("#", "\\#")
+        frame_title = process_latex_content(frame_title)
     else:
         frame_title = f"Media: {escaped_base_name}"
 
@@ -656,10 +652,18 @@ def generate_latex_code(base_name, filename, first_frame_path, content=None, tit
                 item = item.strip()
                 if item.startswith('-'):
                     item = item[1:].strip()
-                if not item.lower().startswith(title.lower() if title else ''):
-                    item = item.replace("_", "\\_").replace("&", "\\&").replace("#", "\\#")
-                    latex_code += f"        \\item {item}\n"
-            latex_code += """    \\end{itemize}"""
+                processed_item = process_latex_content(item)
+                latex_code += f"        \\item {processed_item}\n"
+            latex_code += "    \\end{itemize}"
+
+            # Add notes if present
+            if notes and notes.strip():
+                latex_code += "\n    \\note{\n    \\begin{itemize}\n"
+                for note_line in notes.split('\n'):
+                    if note_line.strip():
+                        processed_note = process_latex_content(note_line.lstrip('•- ').strip())
+                        latex_code += f"        \\item {processed_note}\n"
+                latex_code += "    \\end{itemize}\n    }"
 
         latex_code += """
 \\end{frame}
@@ -691,12 +695,11 @@ def generate_latex_code(base_name, filename, first_frame_path, content=None, tit
 """
 
     else:
-        # Non-playable media with frame
         image_path = first_frame_path if first_frame_path else f'{media_folder}/{filename}'
         latex_code += f"""            \\fbox{{\\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{image_path}}}}}
 """
 
-    # Add content column
+    # Add content column with proper math handling
     latex_code += """        \\end{column}%
         \\begin{column}{0.48\\textwidth}
             \\begin{itemize}
@@ -706,12 +709,11 @@ def generate_latex_code(base_name, filename, first_frame_path, content=None, tit
             item = item.strip()
             if item.startswith('-'):
                 item = item[1:].strip()
-            if not item.lower().startswith(title.lower() if title else ''):
-                item = item.replace("_", "\\_").replace("&", "\\&").replace("#", "\\#")
-                latex_code += f"                \\item {item}\n"
-    latex_code += """            \\end{itemize}"""
+            processed_item = process_latex_content(item)
+            latex_code += f"                \\item {processed_item}\n"
+    latex_code += "            \\end{itemize}"
 
-    # Add source citation as clickable URL if it's a YouTube video
+    # Add source citation
     if source_url:
         latex_code += """
             \\vspace{0.5em}
@@ -727,78 +729,50 @@ def generate_latex_code(base_name, filename, first_frame_path, content=None, tit
     \\end{columns}
 """
 
-    # Add notes if present
+    # Add notes with proper math handling
     if notes and notes.strip():
         latex_code += "    \\note{\n    \\begin{itemize}\n"
         for note_line in notes.split('\n'):
             if note_line.strip():
-                note_text = note_line.lstrip('•- ').strip()
-                latex_code += f"        \\item {note_text}\n"
-        latex_code += "    \\end{itemize}\n    }\n"
+                processed_note = process_latex_content(note_line.lstrip('•- ').strip())
+                latex_code += f"        \\item {processed_note}\n"
+        latex_code += "    \\end{itemize}\n    }"
 
     latex_code += """\\end{frame}
 
 """
     return latex_code
 
-    # Regular media case with two columns
-    latex_code = f"""
-\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-    \\vspace{{0.5em}}
-    \\begin{{columns}}
-        \\begin{{column}}{{0.48\\textwidth}}
-            \\centering
-"""
-
-    # Add preview image or media
-    if playable:
-        if first_frame_path and os.path.exists(first_frame_path):
-            latex_code += f"""            \\fbox{{\\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{first_frame_path}}}}}
-"""
+def format_source_citation(url):
+    """
+    Format source URLs for citation with proper LaTeX escaping.
+    """
+    try:
+        parsed = urlparse(url)
+        if 'youtube.com' in parsed.netloc or 'youtu.be' in parsed.netloc:
+            return f"YouTube video: \\url{{{url}}}"
+        elif 'github.com' in parsed.netloc:
+            return f"GitHub repository: \\url{{{url}}}"
         else:
-            latex_code += "            \\textbf{[Media Preview Not Available]}\n"
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+            return f"Source: {base_url} \\url{{{url}}}"
+    except:
+        return f"Source: {url}"
 
-        latex_code += f"""
-            \\vspace{{0.5em}}
-            \\footnotesize{{Click to play}}
-            \\movie[externalviewer]{{\\textcolor{{blue}}{{\\underline{{Play}}}}}}{{./{media_folder}/{filename}}}
-"""
-
-    else:
-        # Non-playable media with frame
-        image_path = first_frame_path if first_frame_path else f'{media_folder}/{filename}'
-        latex_code += f"""            \\fbox{{\\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{image_path}}}}}
-"""
-
-    # Add content column
-    latex_code += """        \\end{column}%
-        \\begin{column}{0.48\\textwidth}
-            \\begin{itemize}
-"""
-    if content:
-        for item in content:
-            item = item.strip()
-            if item.startswith('-'):
-                item = item[1:].strip()
-            if not item.lower().startswith(title.lower() if title else ''):
-                item = item.replace("_", "\\_").replace("&", "\\&").replace("#", "\\#")
-                latex_code += f"                \\item {item}\n"
-    latex_code += """            \\end{itemize}"""
-
-    # Add source citation if URL exists
-    if source_url:
-        latex_code += f"""
-            \\vspace{{0.5em}}
-            \\rule{{0.9\\textwidth}}{{0.4pt}}
-            {{\\tiny Source: {source_url}}}"""
-
-    latex_code += """
-        \\end{column}
-    \\end{columns}
-\\end{frame}
-
-"""
-    return latex_code
+def process_content_items(content_items):
+    """
+    Process a list of content items, handling math expressions and special characters correctly.
+    """
+    processed_items = []
+    for item in content_items:
+        if item.strip():
+            # Ensure item starts with bullet point if needed
+            if not item.strip().startswith('-'):
+                item = f"- {item.strip()}"
+            # Process the content
+            processed_item = process_latex_content(item)
+            processed_items.append(processed_item)
+    return processed_items
 
 
 def process_media(url, content=None, title=None, playable=False):
