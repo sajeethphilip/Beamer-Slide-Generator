@@ -101,7 +101,7 @@ def generate_preview_frame(filepath, output_path=None):
 
 def get_beamer_preamble(title, subtitle, author, institution, short_institute, date):
     """
-    Returns the correct Beamer preamble with shadow text support
+    Returns the correct Beamer preamble with fixed brace matching and proper shadow text support
     """
     preamble = f"""\\documentclass[aspectratio=169]{{beamer}}
 \\usepackage{{hyperref}}
@@ -134,20 +134,6 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
               text=white] {{#2}};
     \\end{{tikzpicture}}%
 }}
-
-% Set the logo to appear on all slides
-\\logo{{\\includegraphics[width=1cm]{{logo.png}}}}
-\\usepackage{{url}}
-\\usepackage[export]{{adjustbox}}
-
-% Add these to your preamble if not already present
-\\usetikzlibrary{{shapes.geometric, positioning, arrows.meta, backgrounds, fit}}
-
-% Redefine the frame to have smaller margins
-\\setbeamersize{{text margin left=5pt,text margin right=5pt}}
-
-% Centering frame titles
-\\setbeamertemplate{{frametitle}}[default][center]
 
 % Set up a dark theme
 \\usetheme{{Madrid}}
@@ -184,7 +170,6 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 \\makeatother
 
 % Modify footline template to use short institution
-\\makeatletter
 \\setbeamertemplate{{footline}}{{%
   \\leavevmode%
   \\hbox{{%
@@ -200,8 +185,19 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
     \\end{{beamercolorbox}}}}%
   \\vskip0pt%
 }}
-\\makeatother
 
+% Additional packages and settings
+\\usepackage{{url}}
+\\usepackage[export]{{adjustbox}}
+\\usetikzlibrary{{shapes.geometric, positioning, arrows.meta, backgrounds, fit}}
+
+% Redefine the frame to have smaller margins
+\\setbeamersize{{text margin left=5pt,text margin right=5pt}}
+
+% Centering frame titles
+\\setbeamertemplate{{frametitle}}[default][center]
+
+% Set the title
 \\title{{{title}}}
 {f'\\subtitle{{{subtitle}}}' if subtitle else ''}
 \\author{{{author}}}
@@ -209,7 +205,11 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 \\date{{{date}}}
 
 \\begin{{document}}
-\\maketitle
+
+\\begin{{frame}}
+\\titlepage
+\\end{{frame}}
+
 """
     return preamble
 
