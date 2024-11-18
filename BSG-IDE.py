@@ -27,14 +27,15 @@ def check_internet_connection():
         return False
 
 def setup_virtual_env():
-    """Setup and activate virtual environment"""
+    """Setup and activate virtual environment with improved error handling"""
     try:
         home_dir = Path.home()
         venv_path = home_dir / 'my_python'
 
         # Create venv if it doesn't exist
         if not venv_path.exists():
-            venv.create(venv_path, with_pip=True)
+            print(f"Creating virtual environment at {venv_path}")
+            venv.create(venv_path, with_pip=True, clear=True)
 
         # Get paths based on platform
         if platform.system() == "Windows":
@@ -44,8 +45,28 @@ def setup_virtual_env():
             venv_python = venv_path / "bin" / "python"
             venv_pip = venv_path / "bin" / "pip"
 
+        # Verify the virtual environment is working
+        if not venv_python.exists() or not venv_pip.exists():
+            print("Virtual environment files not found, recreating...")
+            shutil.rmtree(venv_path, ignore_errors=True)
+            venv.create(venv_path, with_pip=True, clear=True)
+
+        # Test virtual environment
+        try:
+            subprocess.run(
+                [str(venv_python), "-c", "import sys; print(sys.prefix)"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True
+            )
+        except subprocess.CalledProcessError:
+            print("Virtual environment test failed, falling back to system Python")
+            return sys.executable, "pip", False
+
         return str(venv_python), str(venv_pip), True
+
     except Exception as e:
+        print(f"Error setting up virtual environment: {str(e)}")
         return sys.executable, "pip", False
 
 def install_base_packages(pip_path):
@@ -159,11 +180,9 @@ def install_remaining_packages(pip_path):
 
 def check_and_install_dependencies():
     """
-    Two-phase dependency installation:
-    1. Install essential GUI packages without GUI feedback
-    2. Install remaining packages with GUI progress dialog
+    Two-phase dependency installation with improved virtual environment handling
     """
-    # Suppress standard output
+    # Suppress standard output during initial installation
     original_stdout = sys.stdout
     original_stderr = sys.stderr
     sys.stdout = open(os.devnull, 'w')
@@ -172,7 +191,6 @@ def check_and_install_dependencies():
     try:
         # Check internet connection
         if not check_internet_connection():
-            # Restore output before returning
             sys.stdout = original_stdout
             sys.stderr = original_stderr
             print("No internet connection. Continuing with available packages.")
@@ -182,21 +200,107 @@ def check_and_install_dependencies():
         python_path, pip_path, venv_created = setup_virtual_env()
 
         # Phase 1: Install base packages (no GUI feedback)
-        install_base_packages(pip_path)
+        base_packages = {
+            "customtkinter": "5.2.2",
+            "Pillow": None,
+            "tk": None
+        }
+
+        # First, upgrade pip in the virtual environment
+        try:
+            subprocess.run(
+                [pip_path, "install", "--upgrade", "pip"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True
+            )
+        except Exception as e:
+            print(f"Error upgrading pip: {e}")
+
+        # Install base packages in virtual environment
+        for package, version in base_packages.items():
+            try:
+                package_spec = f"{package}=={version}" if version else package
+                # Do not use --user flag in virtual environment
+                subprocess.run(
+                    [pip_path, "install", "--no-cache-dir", package_spec],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True
+                )
+                print(f"✓ Installed {package_spec}")
+            except subprocess.CalledProcessError as e:
+                print(f"Error installing {package}: {e}")
+                # Try alternative installation without version constraint
+                try:
+                    subprocess.run(
+                        [pip_path, "install", "--no-cache-dir", package.split('==')[0]],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        check=True
+                    )
+                    print(f"✓ Installed {package} (latest version)")
+                except subprocess.CalledProcessError as e2:
+                    print(f"Alternative installation failed for {package}: {e2}")
+                    continue
 
         # Create media_files directory
         os.makedirs('media_files', exist_ok=True)
 
-        # Update sys.executable if using venv
-        if venv_created:
-            sys.executable = python_path
-
-        # Restore output for GUI phase
+        # Restore output for verification
         sys.stdout = original_stdout
         sys.stderr = original_stderr
 
-        # Phase 2: Install remaining packages with GUI feedback
-        install_remaining_packages(pip_path)
+        # Verify customtkinter installation
+        try:
+            # Add virtual environment site-packages to Python path
+            if venv_created:
+                import site
+                venv_site_packages = os.path.join(os.path.dirname(pip_path), '..', 'lib',
+                                                f'python{sys.version_info.major}.{sys.version_info.minor}',
+                                                'site-packages')
+                sys.path.insert(0, venv_site_packages)
+
+            import customtkinter
+            print("✓ customtkinter installed successfully")
+
+            # Phase 2: Install remaining packages with GUI feedback
+            try:
+                import tkinter as tk
+                from tkinter import ttk
+                install_remaining_packages(pip_path)
+            except ImportError as e:
+                print(f"Error importing GUI packages for phase 2: {e}")
+                # Fall back to silent installation of remaining packages
+                packages = {
+                    'requests': 'requests',
+                    'yt_dlp': 'yt-dlp',
+                    'cv2': 'opencv-python',
+                    'screeninfo': 'screeninfo',
+                    'numpy': 'numpy',
+                    'fitz': 'PyMuPDF==1.23.7'
+                }
+
+                for import_name, install_name in packages.items():
+                    try:
+                        if not util.find_spec(import_name):
+                            subprocess.run(
+                                [pip_path, "install", "--no-cache-dir", install_name],
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                check=True
+                            )
+                            print(f"✓ Installed {install_name}")
+                    except:
+                        continue
+
+        except ImportError:
+            print("! Warning: customtkinter not found after installation")
+            # Print the current sys.path for debugging
+            print("\nCurrent Python path:")
+            for p in sys.path:
+                print(f"  {p}")
+            return False
 
         return True
 
@@ -205,6 +309,7 @@ def check_and_install_dependencies():
         sys.stdout = original_stdout
         sys.stderr = original_stderr
         print(f"Warning: Some dependencies may be missing. Continuing with available packages.")
+        print(f"Error details: {str(e)}")
         return True
 
     finally:
@@ -476,9 +581,32 @@ def import_required_packages():
         traceback.print_exc()
         sys.exit(1)
 
+def create_launcher_script(install_dir, bin_dir):
+    """Create launcher script that properly activates virtual environment"""
+    launcher_content = f"""#!/bin/bash
+# Activate virtual environment
+source ~/my_python/bin/activate
+
+# Set Python path
+export PYTHONPATH="{install_dir}:$PYTHONPATH"
+
+# Run the application
+python3 "{install_dir}/BSG-IDE.py" "$@"
+
+# Deactivate virtual environment
+deactivate
+"""
+
+    launcher_path = bin_dir / 'bsg-ide'
+    launcher_path.write_text(launcher_content)
+    launcher_path.chmod(0o755)
+
+    return launcher_path
+
 def fix_installation():
-    """Ensure BSG-IDE is properly installed and executable"""
+    """Fix installation with proper environment setup"""
     try:
+        # Get installation paths
         home = Path.home()
         local_bin = home / '.local' / 'bin'
         local_lib = home / '.local' / 'lib' / 'bsg-ide'
@@ -503,18 +631,9 @@ def fix_installation():
                 shutil.copy2(src, local_lib / file)
                 print(f"Copied {file} to {local_lib}")
 
-        # Create executable script
-        executable = """#!/bin/bash
-export PYTHONPATH="$HOME/.local/lib/bsg-ide:$PYTHONPATH"
-python3 "$HOME/.local/lib/bsg-ide/BSG-IDE.py" "$@"
-"""
-
-        executable_path = local_bin / 'bsg-ide'
-        with open(executable_path, 'w') as f:
-            f.write(executable)
-
-        # Make it executable
-        executable_path.chmod(0o755)
+        # Create launcher script
+        launcher_path = create_launcher_script(local_lib, local_bin)
+        print(f"Created launcher script at {launcher_path}")
 
         # Create desktop entry
         desktop_entry = f"""[Desktop Entry]
@@ -522,67 +641,30 @@ Version=1.0
 Type=Application
 Name=BSG-IDE
 Comment=Beamer Slide Generator IDE
-Exec={executable_path}
+Exec={launcher_path}
 Icon=bsg-ide
 Terminal=false
 Categories=Office;Development;Education;
 Keywords=presentation;latex;beamer;slides;
 """
-
         desktop_dir = home / '.local' / 'share' / 'applications'
         os.makedirs(desktop_dir, exist_ok=True)
         desktop_file = desktop_dir / 'bsg-ide.desktop'
-        with open(desktop_file, 'w') as f:
-            f.write(desktop_entry)
-
-        # Make desktop entry executable
+        desktop_file.write_text(desktop_entry)
         desktop_file.chmod(0o755)
-
-        # Update shell RC file
-        shell_rc = home / '.bashrc'
-        if (home / '.zshrc').exists():
-            shell_rc = home / '.zshrc'
-
-        rc_content = f"""
-# BSG-IDE Path
-export PATH="$HOME/.local/bin:$PATH"
-export PYTHONPATH="$HOME/.local/lib/bsg-ide:$PYTHONPATH"
-"""
-
-        # Check if already in RC file
-        if shell_rc.exists():
-            current_content = shell_rc.read_text()
-            if 'BSG-IDE Path' not in current_content:
-                with open(shell_rc, 'a') as f:
-                    f.write(rc_content)
 
         # Verify installation
         print("\nVerifying installation...")
-        verify_paths = {
-            'Executable': executable_path,
-            'Library': local_lib,
-            'Desktop Entry': desktop_file
-        }
-
-        all_good = True
-        for name, path in verify_paths.items():
-            if path.exists():
-                print(f"✓ {name:12}: Found at {path}")
-            else:
-                print(f"✗ {name:12}: Missing from {path}")
-                all_good = False
-
-        if all_good:
-            print("\nInstallation successful!")
-            print("\nTo complete setup, please run:")
-            print(f"source {shell_rc}")
-            print("\nOr restart your terminal session.")
+        if check_and_install_dependencies():
+            print("\nInstallation fixed successfully!")
+            print("\nYou can now run BSG-IDE by:")
+            print("1. Using the application menu")
+            print("2. Running 'bsg-ide' in terminal")
             return True
-
         return False
 
     except Exception as e:
-        print(f"Error during installation: {str(e)}")
+        print(f"Error during installation fix: {str(e)}")
         traceback.print_exc()
         return False
 
@@ -4989,7 +5071,7 @@ Installation completed successfully:
         return False
 
 def main():
-    """Main entry point with installation verification"""
+    """Main entry point with improved environment handling"""
     try:
         import argparse
 
@@ -5003,17 +5085,32 @@ def main():
             fix_installation()
             return
 
-        # Check if properly installed
-        if not Path(Path.home() / '.local' / 'bin' / 'bsg-ide').exists():
-            print("BSG-IDE installation appears to be incomplete.")
-            response = input("Would you like to fix the installation? [Y/n] ").lower()
-            if response != 'n':
-                fix_installation()
-                print("\nPlease restart BSG-IDE after installation.")
-                return
+        # Check virtual environment and dependencies
+        venv_python, venv_pip, venv_created = setup_virtual_env()
 
-        # Normal startup
-        #check_and_install_dependencies()
+        if venv_created:
+            # Add virtual environment site-packages to Python path
+            venv_site_packages = Path(venv_python).parent.parent / 'lib' / f'python{sys.version_info.major}.{sys.version_info.minor}' / 'site-packages'
+            if venv_site_packages.exists():
+                sys.path.insert(0, str(venv_site_packages))
+                # Also add to PYTHONPATH environment variable
+                os.environ['PYTHONPATH'] = f"{str(venv_site_packages)}:{os.environ.get('PYTHONPATH', '')}"
+
+        # Verify customtkinter is available
+        try:
+            import customtkinter
+        except ImportError:
+            print("CustomTkinter not found. Running dependency check...")
+            if check_and_install_dependencies():
+                # Try importing again after installation
+                try:
+                    import customtkinter
+                except ImportError:
+                    print("Error: Could not import customtkinter even after installation.")
+                    print("Please try running with --fix flag: python3 BSG-IDE.py --fix")
+                    return
+
+        # Now start the application
         app = BeamerSlideEditor()
         app.mainloop()
 
@@ -5021,8 +5118,17 @@ def main():
         print(f"Error in main: {str(e)}")
         traceback.print_exc()
 
-
-#----------------------------------------------------------------------------
-
+        # Additional debug information
+        print("\nDebug Information:")
+        print(f"Python executable: {sys.executable}")
+        print(f"Python path:")
+        for p in sys.path:
+            print(f"  {p}")
+        print("\nEnvironment Variables:")
+        print(f"PYTHONPATH: {os.environ.get('PYTHONPATH', 'Not set')}")
+        print(f"VIRTUAL_ENV: {os.environ.get('VIRTUAL_ENV', 'Not set')}")
+#-------------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
+    # Ensure working directory is script directory
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
     main()
