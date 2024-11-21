@@ -13,7 +13,7 @@ from PIL import Image
 from urllib.parse import urlparse, unquote
 from pathlib import Path
 import mimetypes
-
+output_dir = ""
 #--------------------------------------------------------------------------------------------------------
 def set_terminal_io(term_io):
     """Set the terminal I/O object and verify it's working"""
@@ -53,9 +53,9 @@ def generate_preview_frame(filepath, output_path=None):
 
         # Default output path if none provided
         if output_path is None:
-            base_name = os.path.splitext(os.path.basename(filepath))[0]
-            output_path = f"media_files/{base_name}_preview.png"
-
+                global output_dir
+                base_name = os.path.splitext(os.path.basename(filepath))[0]
+                output_path = os.path.join(output_dir, f"{base_name}_preview.png")
         # Get file extension
         _, ext = os.path.splitext(filepath)
         ext = ext.lower()
@@ -248,6 +248,9 @@ def create_new_input_file(file_path):
     """
     Interactively creates a new input file with slide content and proper preamble.
     """
+    global output_dir
+    output_dir = os.path.dirname(os.path.abspath(file_path))
+    os.chdir(output_dir)
     print("\nPresentation Setup:")
     print("-----------------")
     title = input("Title: ").strip()
@@ -298,9 +301,10 @@ def create_new_input_file(file_path):
         if choice == '1':
             url = input("Enter URL: ").strip()
         elif choice == '2':
-            print("\nAvailable files in media_files folder:")
+            print("\nAvailable files in media folder:")
+            media_dir = os.path.join(os.path.dirname(os.path.abspath(file_path)), 'media')
             try:
-                files = os.listdir('media_files')
+                files = os.listdir(media_dir)
                 for i, file in enumerate(files, 1):
                     print(f"{i}. {file}")
                 file_choice = input("Enter file number or name: ").strip()
@@ -308,7 +312,7 @@ def create_new_input_file(file_path):
                     chosen_file = files[int(file_choice) - 1]
                 else:
                     chosen_file = file_choice
-                url = f"\\file {chosen_file}"
+                url = f"\\file {{./media/{chosen_file}}}"
             except Exception as e:
                 print(f"Error accessing media_files: {str(e)}")
                 url = "\\None"
@@ -779,8 +783,10 @@ def verify_media_file(filepath):
         return base_filepath
 
     # Try to find the file with any extension
+    global output_dir
     base_name = os.path.splitext(os.path.basename(filepath))[0]
-    base_path = os.path.join('media_files', base_name)
+    output_dir = os.path.dirname(os.path.abspath(file_path))  # Get the directory of the input file
+    base_path = os.path.join(output_dir,'media_files', base_name)
     import glob
     possible_files = glob.glob(base_path + '.*')
     if possible_files:

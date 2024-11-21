@@ -17,7 +17,7 @@ from pathlib import Path
 import site
 import socket
 from importlib import util
-
+global working_folder
 def check_internet_connection():
     """Check internet connection without external dependencies"""
     try:
@@ -4057,6 +4057,14 @@ Created by {self.__author__}
         )
         if filename:
             self.load_file(filename)
+            global working_folder
+            # Change to tex file directory
+            working_folder= os.path.dirname(filename) or '.'
+            os.chdir(working_folder)
+
+            # Update working directory in terminal
+            self.terminal.set_working_directory(working_folder)
+
 #-----------------------------------------------------------------------------
     def save_file(self) -> None:
         """Save presentation preserving custom preamble"""
