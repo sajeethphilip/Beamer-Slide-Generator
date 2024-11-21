@@ -2601,13 +2601,16 @@ class BeamerSlideEditor(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
         # Create UI components
-        self.create_menu()
+        self.setup_top_menu()
         self.create_sidebar()
         self.create_main_editor()
         self.create_toolbar()
         self.create_context_menu()
         self.create_footer()
-
+        # Add terminal after other UI elements
+        self.create_terminal()
+        # Setup output redirection after terminal creation
+        self.setup_output_redirection()
         # Initialize variables
         self.current_file = None
         self.slides = []
@@ -2619,8 +2622,6 @@ class BeamerSlideEditor(ctk.CTk):
         # Setup Python paths
         setup_python_paths()
 
-        # Add terminal after other UI elements
-        self.create_terminal()
 
         # Adjust grid weights to accommodate terminal
         self.grid_rowconfigure(1, weight=3)  # Main editor
@@ -2644,9 +2645,26 @@ class BeamerSlideEditor(ctk.CTk):
                 self.content_editor.insert('end', f"{line}\n")
 
         elif action == "request_media":
-            dialog = MediaSelectionDialog(self, data['title'], data['content'])
-            self.wait_window(dialog)
-            return dialog.result if dialog.result else "\\None"
+            # Show guidance message
+            messagebox.showwarning(
+                "Media Required",
+                f"Please select media for slide '{data['title']}' using the media entry options.\n\n" +
+                "You can:\n" +
+                "• Click 'Local File' to browse media files\n" +
+                "• Click 'YouTube' to add a video\n" +
+                "• Click 'Search Images' to find new media\n" +
+                "• Click 'No Media' for a text-only slide"
+            )
+
+            # Focus and highlight the media entry
+            self.media_entry.configure(border_color="#4ECDC4")
+            self.media_entry.focus_set()
+
+            # Open search immediately if content suggests images might be useful
+            query = construct_search_query(data['title'], data['content'])
+            open_google_image_search(query)
+
+            return "\\None"  # Return None directive - user will update via IDE
 
         elif action == "error":
             self.write_to_terminal(f"Error: {data['message']}\n", "red")
@@ -2743,11 +2761,14 @@ class BeamerSlideEditor(ctk.CTk):
 
 
     def create_terminal(self) -> None:
-        """Create interactive terminal with output redirection"""
+        """Create terminal initially hidden"""
         # Create terminal instance
         self.terminal = InteractiveTerminal(self, initial_directory=os.getcwd())
         self.terminal.grid(row=4, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
-        self.grid_rowconfigure(4, weight=1)  # Make terminal expandable
+        self.grid_rowconfigure(4, weight=0)  # Initially no weight
+
+        # Hide terminal initially
+        self.terminal.grid_remove()
 
         # Set up redirections
         sys.stdout = SimpleRedirector(self.terminal, "white")
@@ -2755,6 +2776,31 @@ class BeamerSlideEditor(ctk.CTk):
 
         # Store process reference
         self.current_process = None
+
+    def toggle_terminal(self) -> None:
+        """Toggle terminal visibility"""
+        self.terminal_visible = not self.terminal_visible
+
+        if self.terminal_visible:
+            # Show terminal
+            self.terminal.grid()
+            self.grid_rowconfigure(4, weight=1)  # Give weight when visible
+            self.terminal_button.configure(text="▼ Hide Terminal")
+
+            # Optionally resize window to accommodate terminal
+            current_height = self.winfo_height()
+            if current_height < 800:  # Minimum height with terminal
+                new_height = min(800, self.winfo_screenheight() - 100)
+                self.geometry(f"{self.winfo_width()}x{new_height}")
+        else:
+            # Hide terminal
+            self.terminal.grid_remove()
+            self.grid_rowconfigure(4, weight=0)  # Remove weight when hidden
+            self.terminal_button.configure(text="▲ Show Terminal")
+
+            # Optionally resize window back
+            if self.winfo_height() > 600:  # Minimum height without terminal
+                self.geometry(f"{self.winfo_width()}x600")
 
 
     def flush(self):
@@ -2780,14 +2826,28 @@ class BeamerSlideEditor(ctk.CTk):
 
 #--------------------------------------------------------------------------------------------------------------------
     def create_footer(self) -> None:
-        """Create footer with institution info, logo, and links"""
-        # Main footer frame with dark theme
+        """Create footer with terminal toggle and institution info"""
+        # Footer frame with dark theme
         self.footer = ctk.CTkFrame(self)
         self.footer.grid(row=3, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
 
         # Left side - Logo and Institution name
         left_frame = ctk.CTkFrame(self.footer, fg_color="transparent")
         left_frame.pack(side="left", padx=10)
+
+        # Add terminal toggle button
+        self.terminal_visible = False
+        self.terminal_button = ctk.CTkButton(
+            left_frame,
+            text="▲ Show Terminal",  # Will toggle between Show/Hide
+            command=self.toggle_terminal,
+            width=120,
+            height=24,
+            fg_color="#2F3542",
+            hover_color="#404859"
+        )
+        self.terminal_button.pack(side="left", padx=10)
+
 
         # Logo (image or ASCII)
         if self.has_logo:
@@ -2922,39 +2982,48 @@ Created by {self.__author__}
         )
         close_button.pack(pady=20)
 #----------------------------------------------------------------------------------------
-    def create_menu(self) -> None:
-        """Create top menu bar with added Get Source option"""
+    def setup_top_menu(self) -> None:
+        """Create top menu bar with proper spacing and visibility"""
+        # Main menu container
         self.menu_frame = ctk.CTkFrame(self)
         self.menu_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
 
-        # Use grid_columnconfigure to make menu expand properly
-        self.menu_frame.grid_columnconfigure(1, weight=1)
+        # Configure menu frame grid properly
+        self.menu_frame.grid_columnconfigure(1, weight=1)  # Make middle section expandable
 
-        # Left side buttons with proper grid configuration
-        left_buttons = ctk.CTkFrame(self.menu_frame)
+        # Left side buttons with fixed minimum widths
+        left_buttons = ctk.CTkFrame(self.menu_frame, fg_color="transparent")
         left_buttons.grid(row=0, column=0, sticky="w", padx=5)
 
-        # Add Preamble Editor button
-        ctk.CTkButton(left_buttons, text="Edit Preamble",
-                     command=self.edit_preamble).pack(side="left", padx=5)
+        # Add menu buttons with minimum width
+        menu_buttons = [
+            ("Edit Preamble", self.edit_preamble, "Edit LaTeX preamble"),
+            ("Presentation Settings", self.show_settings_dialog, "Configure presentation settings"),
+            ("Get Source", self.get_source_from_tex, "Extract source from TEX file")
+        ]
 
-        ctk.CTkButton(left_buttons, text="Presentation Settings",
-                     command=self.show_settings_dialog).pack(side="left", padx=5)
+        for i, (text, command, tooltip) in enumerate(menu_buttons):
+            btn = ctk.CTkButton(
+                left_buttons,
+                text=text,
+                command=command,
+                width=130  # Fixed minimum width for buttons
+            )
+            btn.pack(side="left", padx=5)
+            self.create_tooltip(btn, tooltip)
 
-        # Add Get Source button
-        ctk.CTkButton(left_buttons, text="Get Source",
-                     command=self.get_source_from_tex).pack(side="left", padx=5)
-
-        # Right side buttons with proper grid configuration
-        right_buttons = ctk.CTkFrame(self.menu_frame)
+        # Right side buttons
+        right_buttons = ctk.CTkFrame(self.menu_frame, fg_color="transparent")
         right_buttons.grid(row=0, column=1, sticky="e", padx=5)
 
+        # Add syntax highlighting switch
         self.highlight_var = ctk.BooleanVar(value=True)
         self.highlight_switch = ctk.CTkSwitch(
             right_buttons,
             text="Syntax Highlighting",
             variable=self.highlight_var,
-            command=self.toggle_highlighting
+            command=self.toggle_highlighting,
+            width=150  # Fixed minimum width for switch
         )
         self.highlight_switch.pack(side="right", padx=5)
 

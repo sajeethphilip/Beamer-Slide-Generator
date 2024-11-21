@@ -10,6 +10,7 @@ import time
 import requests
 import webbrowser
 from PIL import Image
+import customtkinter as ctk
 from urllib.parse import urlparse, unquote
 from pathlib import Path
 import mimetypes
@@ -889,103 +890,67 @@ def process_media(url, content=None, title=None, playable=False, slide_index=Non
 
     return handle_missing_media(url, content, title, playable)
 
+def update_text_file(file_path, line_number, new_directive):
+    """Update the text file with new directive"""
+    if not file_path or not line_number:
+        return
+
+    try:
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+
+        # Find the correct position to insert the directive
+        if line_number - 1 < len(lines):
+            current_line = lines[line_number - 1].strip()
+
+            # Check if the line starts with \begin{Content}
+            if current_line.startswith("\\begin{Content}"):
+                # Replace everything after \begin{Content} or add new directive
+                lines[line_number - 1] = f"\\begin{{Content}} {new_directive}\n"
+            else:
+                # Replace the entire line
+                lines[line_number - 1] = f"{new_directive}\n"
+
+            # Write the updated content back to file
+            with open(file_path, 'w') as f:
+                f.writelines(lines)
+
+            if terminal_io:
+                terminal_io.write(f"✓ File updated successfully at line {line_number}\n", "green")
+
+    except Exception as e:
+        if terminal_io:
+            terminal_io.write(f"Error updating file: {str(e)}\n", "red")
+
 
 def handle_missing_media(original_url, content, title, playable, file_path=None, line_number=None):
-    """Enhanced version that auto-updates text file for \\None option"""
+    """Simplified version that redirects to IDE's media interface"""
     global terminal_io
 
-    if not terminal_io:
+    if not terminal_io or not hasattr(terminal_io, 'editor'):
         return handle_missing_media_fallback(original_url, content, title, playable)
 
-    search_query = construct_search_query(title, content)
+    editor = terminal_io.editor
 
-    # Show context from the text file if available
-    if file_path and line_number:
-        try:
-            with open(file_path, 'r') as f:
-                lines = f.readlines()
+    # Show guidance message
+    messagebox.showwarning(
+        "Media Required",
+        f"Please select media for slide '{title}' using the media entry options above.\n\n" +
+        "You can:\n" +
+        "• Click 'Local File' to browse media files\n" +
+        "• Click 'YouTube' to add a video\n" +
+        "• Click 'Search Images' to find new media\n" +
+        "• Click 'No Media' for a text-only slide",
+        parent=editor
+    )
 
-            # Show context (5 lines before and after)
-            start_line = max(0, line_number - 5)
-            end_line = min(len(lines), line_number + 5)
+    # Highlight the media entry to draw attention
+    editor.media_entry.configure(border_color="#4ECDC4")
+    editor.media_entry.focus_set()
 
-            terminal_io.write("\nCurrent context in file:\n", "yellow")
-            terminal_io.write("-" * 50 + "\n", "white")
-
-            for i in range(start_line, end_line):
-                if i == line_number - 1:  # Current line (0-based index)
-                    terminal_io.write(f"➜ {i+1:4d} | {lines[i].rstrip()}\n", "green")
-                else:
-                    terminal_io.write(f"  {i+1:4d} | {lines[i].rstrip()}\n", "white")
-
-            terminal_io.write("-" * 50 + "\n", "white")
-            terminal_io.write("Update needed at line {}\n".format(line_number), "yellow")
-
-        except Exception as e:
-            terminal_io.write(f"Error showing file context: {str(e)}\n", "red")
-
-    terminal_io.write("\nPlease choose one of the following options:\n")
-    terminal_io.write("1. Enter a new URL\n")
-    terminal_io.write("2. Use an existing file from media_files folder\n")
-    terminal_io.write("3. Create slide without media\n")
-
-    choice = terminal_io.terminal_input("Your choice (1/2/3): ")
-
-    if choice !='3':
-            print(f"\nOpening Google Image search for: {search_query}")
-            open_google_image_search(search_query)
-
-
-    if choice == '1':
-        terminal_io.write("\nEnter URL (paste will work): ", "yellow")
-        new_url = terminal_io.terminal_input("Enter URL: ").strip()
-        if new_url:
-            if 'youtube.com' in new_url or 'youtu.be' in new_url:
-                result = download_youtube_video(new_url)
-                if result:
-                    base_name, filename, filepath = result
-                    tex_directive = f"\\play \\file media_files/{filename}"
-                    text_directive = f"\\play {new_url}" if playable else new_url
-                    update_text_file(file_path, line_number, text_directive)
-                    return generate_latex_code(base_name, filename, filename, content, title, True), (tex_directive, text_directive)
-
-    elif choice == '2':
-        terminal_io.write("\nAvailable files in media_files folder:\n")
-        try:
-            files = os.listdir('media_files')
-            for i, file in enumerate(files, 1):
-                terminal_io.write(f"{i}. {file}\n")
-
-            file_choice = terminal_io.terminal_input("Enter file number or name: ").strip()
-            if file_choice.isdigit() and 1 <= int(file_choice) <= len(files):
-                chosen_file = files[int(file_choice) - 1]
-            else:
-                chosen_file = file_choice
-
-            file_directive = f"\\file media_files/{chosen_file}"
-            if playable:
-                file_directive = f"\\play {file_directive}"
-            update_text_file(file_path, line_number, file_directive)
-            return generate_latex_code(
-                os.path.splitext(chosen_file)[0],
-                chosen_file,
-                chosen_file,
-                content,
-                title,
-                playable
-            ), (file_directive, file_directive)
-
-        except Exception as e:
-            terminal_io.write(f"Error accessing media_files: {str(e)}\n", "red")
-
-    elif choice == '3':
-        # Automatically update the text file with \None
-        if file_path and line_number:
-            update_text_file(file_path, line_number, "\\None")
-            terminal_io.write("✓ File updated with \\None directive\n", "green")
-
-    # Default to no media
+    # Return None directive for now - user will update via IDE
     return generate_latex_code(None, None, None, content, title, False), ("\\None", "\\None")
+
 
 def handle_missing_media_fallback(original_url, content, title, playable):
     """
@@ -1089,35 +1054,7 @@ def handle_missing_media_fallback(original_url, content, title, playable):
     latex_code = generate_latex_code(None, None, None, content, title, False)
     return latex_code, ("\\None", "\\None")
 
-def update_text_file(file_path, line_number, new_directive):
-    """Update the text file with new directive"""
-    if not file_path or not line_number:
-        return
 
-    try:
-        with open(file_path, 'r') as f:
-            lines = f.readlines()
-
-        # Find the correct position to insert the directive
-        if line_number - 1 < len(lines):
-            current_line = lines[line_number - 1].strip()
-
-            # Check if the line starts with \begin{Content}
-            if current_line.startswith("\\begin{Content}"):
-                # Replace everything after \begin{Content} or add new directive
-                lines[line_number - 1] = f"\\begin{{Content}} {new_directive}\n"
-            else:
-                # Replace the entire line
-                lines[line_number - 1] = f"{new_directive}\n"
-
-            # Write the updated content back to file
-            with open(file_path, 'w') as f:
-                f.writelines(lines)
-
-            terminal_io.write(f"✓ File updated successfully at line {line_number}\n", "green")
-
-    except Exception as e:
-        terminal_io.write(f"Error updating file: {str(e)}\n", "red")
 
 
 # Initialize terminal_io as None - will be set by IDE
