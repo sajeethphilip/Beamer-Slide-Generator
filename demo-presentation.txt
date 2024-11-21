@@ -7,29 +7,50 @@
 \pgfplotsset{compat=1.18}
 \usepackage{animate}
 \usepackage{multimedia}
-% Set the logo to appear on all slides
-\logo{\includegraphics[width=1cm]{logo.png}}
-\usepackage{url}
-\usepackage[export]{adjustbox}
-% Add these to your preamble if not already present
-\usetikzlibrary{shapes.geometric, positioning, arrows.meta, backgrounds, fit}
-% Redefine the frame to have smaller margins
-\setbeamersize{text margin left=5pt,text margin right=5pt}
-% Centering frame titles
-\setbeamertemplate{frametitle}[default][center]
+
+% TikZ libraries for shadow effects
+\usetikzlibrary{shadows.blur}
+
+% Custom command for shadowed text
+\newcommand{\shadowtext}[2][2pt]{%
+    \begin{tikzpicture}[baseline]
+        \node[blur shadow={shadow blur steps=5,shadow xshift=0pt,shadow yshift=-#1,
+              shadow opacity=0.75}, text=white] {#2};
+    \end{tikzpicture}%
+}
+
+% Glowing text effect
+\newcommand{\glowtext}[2][myblue]{%
+    \begin{tikzpicture}[baseline]
+        \node[circle, inner sep=1pt,
+              blur shadow={shadow blur steps=10,shadow xshift=0pt,
+              shadow yshift=0pt,shadow blur radius=5pt,
+              shadow opacity=0.5,shadow color=#1},
+              text=white] {#2};
+    \end{tikzpicture}%
+}
+
 % Set up a dark theme
 \usetheme{Madrid}
 \usecolortheme{owl}
+
 % Custom colors
 \definecolor{myyellow}{RGB}{255,210,0}
 \definecolor{myorange}{RGB}{255,130,0}
 \definecolor{mygreen}{RGB}{0,200,100}
 \definecolor{myblue}{RGB}{0,130,255}
 \definecolor{mypink}{RGB}{255,105,180}
+
+% Colors for glow effects
+\definecolor{glowblue}{RGB}{0,150,255}
+\definecolor{glowyellow}{RGB}{255,223,0}
+\definecolor{glowgreen}{RGB}{0,255,128}
+
 % Define new commands for highlighting
 \newcommand{\hlbias}[1]{\textcolor{myblue}{\textbf{#1}}}
 \newcommand{\hlvariance}[1]{\textcolor{mypink}{\textbf{#1}}}
 \newcommand{\hltotal}[1]{\textcolor{myyellow}{\textbf{#1}}}
+
 % Customize beamer colors
 \setbeamercolor{normal text}{fg=white}
 \setbeamercolor{structure}{fg=myyellow}
@@ -44,7 +65,6 @@
 \makeatother
 
 % Modify footline template to use short institution
-\makeatletter
 \setbeamertemplate{footline}{%
   \leavevmode%
   \hbox{%
@@ -60,16 +80,31 @@
     \end{beamercolorbox}}%
   \vskip0pt%
 }
-\makeatother
 
-\title{What Can Be Done with \textcolor{green}{Beamer Slide Generator}?}
+% Additional packages and settings
+\usepackage{url}
+\usepackage[export]{adjustbox}
+\usetikzlibrary{shapes.geometric, positioning, arrows.meta, backgrounds, fit}
+
+% Redefine the frame to have smaller margins
+\setbeamersize{text margin left=5pt,text margin right=5pt}
+
+% Centering frame titles
+\setbeamertemplate{frametitle}[default][center]
+
+% Set the title
+\title{What Can Be Done with BSG-IDE?}
 \subtitle{Demo}
 \author{Ninan Sajeeth Philip}
-\institute{\textcolor{mygreen}{Artificial Intelligence Research and Intelligent Systems (airis4D),\\Thelliyoor 689544, Kerala, India.\\\url{http:///airis4d.com}}}
+\institute{\textcolor{mygreen}{Artificial Intelligence Research and Intelligent Systems (airis4D)}}
 \date{\today}
 
 \begin{document}
-\maketitle
+
+\begin{frame}
+\titlepage
+\end{frame}
+
 \title An Introduction to Overleaf
 \begin{Content} \play https://www.youtube.com/watch?v=58CoXgze71Y
 - Overleaf is a complete DTP platform in LaTeX widely used by the academic community
@@ -86,7 +121,7 @@
 \end{Content}
 
 \title How did I generate this Slide?
-\begin{Content} \file  BSG_live.png
+\begin{Content} \None
 - I just called \textcolor[RGB]{255,165,0}{python BeamerSlideGenerator.py}
 - Selected option 2 and entered the text file:  demo-presentation.txt
 - Press enter, and everything is ready. Finally you only need to run \textcolor[RGB]{255,165,0}{pdflatex demo-presentation.tex}
@@ -95,11 +130,11 @@
 
 \title How did I generate this Slide?
 \begin{Content} \None
-You need not worry about creating the text file. That is the good news. You give a new file name, say \textcolor[RGB]{255,165,0}{some_filename.txt},after selecting the option 2.
-It will guide you through even suggestive pages on your browser related to the topic of your slide.
-You can follow the instructions. Copy and paste  and play (use play  command) YouTube video links by selecting option 1 in the submenu, or add your own files by selecting option 2.
-No worries, the links will be automatically cited so that you won't be blamed for IP violation.
-Try it and let me know
+- You need not worry about creating the text file. That is the good news. You give a new file name, say \textcolor[RGB]{255,165,0}{some\_filename.txt},after selecting the option 2.
+- It will guide you through even suggestive pages on your browser related to the topic of your slide.
+- You can follow the instructions. Copy and paste  and play (use play  command) YouTube video links by selecting option 1 in the submenu, or add your own files by selecting option 2.
+- No worries, the links will be automatically cited so that you won't be blamed for IP violation.
+- Try it and let me know
 \end{Content}
 
 \end{document}

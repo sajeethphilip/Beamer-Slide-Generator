@@ -342,15 +342,20 @@ from PIL import Image
 import traceback
 import webbrowser
 
-#----------------------------------------------BSGTerminal ------------------------------------
+#----------------------------------------------Interactive Terminal ------------------------------------
 class InteractiveTerminal(ctk.CTkFrame):
-    """Interactive terminal with proper CTkTextbox handling"""
+    """Interactive terminal with proper input capture and validation"""
     def __init__(self, master, initial_directory=None, **kwargs):
         super().__init__(master, **kwargs)
 
         # Initialize variables
         self.working_dir = initial_directory or os.getcwd()
         self.command_queue = queue.Queue()
+        self.input_queue = queue.Queue()
+        self.waiting_for_input = False
+        self.input_response = None
+        self.input_event = threading.Event()
+        self.current_prompt = None
 
         # Create UI
         self._create_ui()
@@ -361,7 +366,7 @@ class InteractiveTerminal(ctk.CTkFrame):
         self.process_thread.start()
 
     def _create_ui(self):
-        """Create terminal UI"""
+        """Create terminal UI with improved input handling"""
         # Header
         header = ctk.CTkFrame(self)
         header.pack(fill="x", padx=2, pady=2)
@@ -387,93 +392,169 @@ class InteractiveTerminal(ctk.CTkFrame):
         self.display._textbox.tag_configure("green", foreground="green")
         self.display._textbox.tag_configure("yellow", foreground="yellow")
         self.display._textbox.tag_configure("white", foreground="white")
+        self.display._textbox.tag_configure("prompt", foreground="cyan")
+        self.display._textbox.tag_configure("input", foreground="white")
 
-        # Input handling
+        # Enhanced input handling
         self.display.bind("<Return>", self._handle_input)
+        self.display.bind("<Key>", self._handle_key)
+        self.display.bind("<BackSpace>", self._handle_backspace)
 
         # Initial prompt
         self.show_prompt()
 
-    def write(self, text, color="white"):
-        """Write text to terminal"""
-        try:
-            # Insert text directly with color tag
-            self.display._textbox.insert("end", text, color)
-            self.display.see("end")
-            self.update_idletasks()
-        except Exception as e:
-            print(f"Write error: {e}", file=sys.__stdout__)
+    def _get_input_start(self):
+        """Get the starting position of current input"""
+        if self.waiting_for_input:
+            # Find the last prompt position
+            last_prompt = self.display._textbox.search(
+                self.current_prompt or "$ ",
+                "1.0",
+                stopindex="end",
+                backwards=True
+            )
+            if last_prompt:
+                return f"{last_prompt}+{len(self.current_prompt or '$ ')}c"
+        return "insert"
 
-    def clear(self):
-        """Clear terminal content"""
-        # Clear text directly
-        self.display._textbox.delete("1.0", "end")
-        self.show_prompt()
+    def _handle_key(self, event):
+        """Handle regular key input"""
+        if self.waiting_for_input:
+            if event.char and ord(event.char) >= 32:  # Printable characters
+                self.display._textbox.insert("insert", event.char)
+                return "break"
+        return None
+
+    def _handle_backspace(self, event):
+        """Handle backspace key"""
+        if self.waiting_for_input:
+            input_start = self._get_input_start()
+            if self.display._textbox.compare("insert", ">", input_start):
+                self.display._textbox.delete("insert-1c", "insert")
+            return "break"
+        return None
+
+    def terminal_input(self, prompt: str) -> str:
+        """Get input synchronously using keyboard event handler"""
+        try:
+            self.current_prompt = prompt
+            self.waiting_for_input = True
+            self.input_done = False  # Flag to track input completion
+            self.input_result = None  # Store input result
+
+            # Show prompt
+            self.write(prompt, "yellow")
+
+            # Focus the display
+            self.display.focus_set()
+
+            # Wait for input with active event handling
+            while not self.input_done:
+                self.update()  # Process events
+                self.master.update()  # Allow window updates
+
+            # Get result and reset state
+            result = self.input_result
+            self.waiting_for_input = False
+            self.current_prompt = None
+            self.input_done = False
+            self.input_result = None
+
+            return result if result is not None else ""
+
+        except Exception as e:
+            self.write(f"\nError getting input: {str(e)}\n", "red")
+            return ""
 
     def _handle_input(self, event):
-        """Handle user input"""
+        """Handle Return key for input completion"""
         try:
-            # Get current line
+            if self.waiting_for_input:
+                # Get current line
+                current_line = self.display._textbox.get("insert linestart", "insert lineend")
+
+                # Extract input after prompt
+                if self.current_prompt:
+                    input_text = current_line[len(self.current_prompt):].strip()
+                else:
+                    input_text = current_line.strip()
+
+                # Store result and signal completion
+                self.input_result = input_text
+                self.input_done = True
+
+                # Add newline for visual feedback
+                self.write("\n")
+                return "break"
+
+            # Handle regular command input
             current_line = self.display._textbox.get("insert linestart", "insert lineend")
             if current_line.startswith("$ "):
                 command = current_line[2:]
                 if command.strip():
                     self.command_queue.put(command)
+                self.write("\n")
+                self.show_prompt()
+                return "break"
 
-            # Add newline
-            self.write("\n")
-
-            return "break"
         except Exception as e:
             self.write(f"\nInput error: {str(e)}\n", "red")
+
+        return "break"
+
+    def write(self, text, color="white"):
+        """Write text to terminal with proper scroll"""
+        try:
+            # Insert text with color tag
+            self.display._textbox.insert("end", text, color)
+            self.display.see("end")
+            self.update_idletasks()
+
+            # Move cursor to end
+            self.display._textbox.mark_set("insert", "end")
+
+        except Exception as e:
+            print(f"Write error: {e}", file=sys.__stdout__)
+
+    def clear(self):
+        """Clear terminal content"""
+        self.display._textbox.delete("1.0", "end")
+        self.show_prompt()
 
     def _process_commands(self):
         """Process commands in background"""
         while self.running:
             try:
-                # Get command with timeout
                 command = self.command_queue.get(timeout=0.1)
-
-                # Handle cd command
                 if command.startswith("cd "):
                     path = command[3:].strip()
                     self._change_directory(path)
-                    continue
-
-                # Execute command
-                try:
-                    process = subprocess.Popen(
-                        command,
-                        shell=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        cwd=self.working_dir,
-                        text=True
-                    )
-
-                    # Read output
-                    out, err = process.communicate()
-
-                    # Write output in main thread
-                    if out:
-                        self.after(0, lambda: self.write(out))
-                    if err:
-                        self.after(0, lambda: self.write(err, "red"))
-
-                except Exception as e:
-                    self.after(0, lambda: self.write(f"\nError: {str(e)}\n", "red"))
-
-                # Show new prompt
-                self.after(0, self.show_prompt)
-
+                else:
+                    try:
+                        process = subprocess.Popen(
+                            command,
+                            shell=True,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            cwd=self.working_dir,
+                            text=True
+                        )
+                        out, err = process.communicate()
+                        if out:
+                            self.after(0, lambda: self.write(out))
+                        if err:
+                            self.after(0, lambda: self.write(err, "red"))
+                    except Exception as e:
+                        self.after(0, lambda: self.write(f"\nError: {str(e)}\n", "red"))
             except queue.Empty:
                 continue
             except Exception as e:
                 print(f"Command processing error: {e}", file=sys.__stdout__)
 
     def show_prompt(self):
-        """Show command prompt"""
-        self.write("\n$ ")
+        """Show command prompt if not waiting for input"""
+        if not self.waiting_for_input:
+            self.write("\n$ ", "prompt")
 
     def set_working_directory(self, directory):
         """Set working directory"""
@@ -481,6 +562,17 @@ class InteractiveTerminal(ctk.CTkFrame):
             self.working_dir = directory
             os.chdir(directory)
             self.dir_label.configure(text=f"📁 {self.working_dir}")
+    def _change_directory(self, path):
+        """Change working directory"""
+        try:
+            os.chdir(path)
+            self.working_dir = os.getcwd()
+            self.dir_label.configure(text=f"📁 {self.working_dir}")
+            self.write(f"Changed directory to: {self.working_dir}\n", "green")
+        except Exception as e:
+            self.write(f"Error changing directory: {str(e)}\n", "red")
+
+#------------------------------------------End Interactive Terminal -----------------------------------------
 
 class SimpleRedirector:
     """Output redirector"""
@@ -2425,6 +2517,28 @@ class NotesToggleFrame(ctk.CTkFrame):
             return "\\setbeameroption{show notes on second screen=right}"
 
 
+class TerminalIO:
+    """Improved terminal I/O handler for BSG-IDE integration"""
+    def __init__(self, editor):
+        self.editor = editor
+
+    def write(self, text, color="white"):
+        """Write to terminal with color"""
+        if hasattr(self.editor, 'terminal'):
+            self.editor.terminal.write(text, color)
+
+    def terminal_input(self, prompt):
+        """Get input from terminal with proper synchronization"""
+        if hasattr(self.editor, 'terminal'):
+            # Use the terminal's input method directly
+            text = self.editor.terminal.terminal_input(prompt)
+            # Write back the input for visual feedback
+            self.editor.terminal.write(text + "\n", "green")
+            return text
+        else:
+            # Fallback to standard input
+            text = input(prompt)
+            return text
 
 
 #------------------------------------------------------------------------------------------
@@ -2449,6 +2563,12 @@ class BeamerSlideEditor(ctk.CTk):
         self.__author__ = "Ninan Sajeeth Philip"
         self.__license__ = "Creative Commons"
         self.logo_ascii = AIRIS4D_ASCII_LOGO
+        # Create terminal I/O interface
+        self.terminal_io = TerminalIO(self)
+
+        # Set the terminal I/O in BeamerSlideGenerator
+        from BeamerSlideGenerator import set_terminal_io
+        set_terminal_io(self.terminal_io)
 
         # Configure window
         self.title("BeamerSlide Generator IDE")
@@ -2508,6 +2628,28 @@ class BeamerSlideEditor(ctk.CTk):
 
         # Setup output redirection after terminal creation
         self.setup_output_redirection()
+
+#--------------------------------------------------------------------------------
+    def ide_callback(self, action, data):
+        """Handle callbacks from file processing"""
+        if action == "update_current_slide":
+            self.current_slide_index = data['index']
+            self.title_entry.delete(0, 'end')
+            self.title_entry.insert(0, data['title'])
+            self.update_slide_list()
+
+        elif action == "update_content":
+            self.content_editor.delete('1.0', 'end')
+            for line in data['content']:
+                self.content_editor.insert('end', f"{line}\n")
+
+        elif action == "request_media":
+            dialog = MediaSelectionDialog(self, data['title'], data['content'])
+            self.wait_window(dialog)
+            return dialog.result if dialog.result else "\\None"
+
+        elif action == "error":
+            self.write_to_terminal(f"Error: {data['message']}\n", "red")
 #--------------------------------------------------------------------------------------------------------------------
     def setup_output_redirection(self):
         """Set up output redirection to terminal"""
@@ -3992,70 +4134,36 @@ Created by {self.__author__}
             return ""  # Return empty string for \None directive
         return line
 
-    def convert_to_tex(self) -> None:
-        """Convert text to TeX using BeamerSlideGenerator and add notes configuration"""
+    def convert_to_tex(self):
+        """Convert text to TeX with real-time updates"""
         if not self.current_file:
             messagebox.showwarning("Warning", "Please save your file first!")
             return
 
         try:
-            # Save current state first
             self.save_file()
-
-            # Get base filename without extension
             base_filename = os.path.splitext(self.current_file)[0]
             tex_file = base_filename + '.tex'
 
-            # Clear terminal and show progress
             self.clear_terminal()
             self.write("Converting text to TeX...\n")
 
-            # Import process_input_file from BeamerSlideGenerator
             from BeamerSlideGenerator import process_input_file
+            processed, failed, errors = process_input_file(
+                self.current_file,
+                tex_file,
+                ide_callback=self.ide_callback
+            )
 
-            # Process the input file to create tex
-            process_input_file(self.current_file, tex_file)
-
-            # Check if tex file was created
-            if os.path.exists(tex_file):
-                # Read the generated tex file
-                with open(tex_file, 'r', encoding='utf-8') as f:
-                    content = f.read()
-
-                # Get notes configuration based on mode
-                mode = self.notes_mode.get()
-                notes_config = {
-                    "slides": "\\setbeameroption{hide notes}",
-                    "notes": "\\setbeameroption{show only notes}",
-                    "both": "\\setbeameroption{show notes on second screen=right}"
-                }[mode]
-
-                # Find position to insert notes configuration
-                doc_pos = content.find("\\begin{document}")
-                if doc_pos != -1:
-                    # Prepare notes configuration
-                    notes_setup = (
-                        "% Notes configuration\n"
-                        "\\usepackage{pgfpages}\n"
-                        f"{notes_config}\n"
-                        "\\setbeamertemplate{note page}{\\pagecolor{yellow!5}\\insertnote}\n\n"
-                    )
-
-                    # Insert notes configuration before \begin{document}
-                    modified_content = content[:doc_pos] + notes_setup + content[doc_pos:]
-
-                    # Write modified content back to file
-                    with open(tex_file, 'w', encoding='utf-8') as f:
-                        f.write(modified_content)
-
-                self.write("✓ Text to TeX conversion successful\n", "green")
-                messagebox.showinfo("Success", "TeX file generated successfully!")
+            if errors:
+                for error in errors:
+                    self.write(f"Error: {error}\n", "red")
             else:
-                raise Exception("TeX file was not created")
+                self.write("✓ Conversion completed successfully\n", "green")
+                self.write(f"Processed: {processed}, Failed: {failed}\n")
 
         except Exception as e:
             self.write(f"✗ Error in conversion: {str(e)}\n", "red")
-            self.write(f"Error details: {traceback.format_exc()}\n", "red")
             messagebox.showerror("Error", f"Error converting to TeX:\n{str(e)}")
 
     def get_custom_preamble(self) -> str:

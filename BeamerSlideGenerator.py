@@ -15,6 +15,14 @@ from pathlib import Path
 import mimetypes
 
 #--------------------------------------------------------------------------------------------------------
+def set_terminal_io(term_io):
+    """Set the terminal I/O object and verify it's working"""
+    global terminal_io
+    terminal_io = term_io
+    # Verify terminal_io is working
+    if terminal_io:
+        terminal_io.write("Terminal I/O initialized\n", "green")
+#--------------------------------------------------------------------------------------------------------
 def add_source_citation(content, source_note):
     """
     Adds source citation to content, either as new footnote or appending to existing one.
@@ -623,124 +631,92 @@ def process_latex_content(content_line: str) -> str:
 
     return ''.join(result)
 
-def generate_latex_code(base_name, filename, first_frame_path, content=None, title=None, playable=False, source_url=None, notes=None):
-    """
-    Generate LaTeX code for a slide with proper handling of math expressions and special characters.
-    """
-    escaped_base_name = base_name.replace("_", "\\_") if base_name else "Media"
-    media_folder = "media_files"
+def generate_latex_code(base_name, filename, first_frame_path, content=None, title=None, playable=False, source_url=None):
+    '''
+    Generate LaTeX code for a slide with proper handling of all cases
+    Args:
+        base_name (str): Base name for media identification
+        filename (str): Media filename or \\None
+        first_frame_path (str): Path to preview image for media
+        content (list): List of content items for the slide
+        title (str): Slide title
+        playable (bool): Whether media is playable
+        source_url (str): Source URL for citations
+    Returns:
+        str: Complete LaTeX code for the slide
+    '''
+
 
     # Process title
     if title:
-        words = title.split()
-        capitalized_words = [word[0].upper() + word[1:] if word else '' for word in words]
-        frame_title = " ".join(capitalized_words)
-        frame_title = process_latex_content(frame_title)
+        frame_title = process_latex_content(title)
     else:
-        frame_title = f"Media: {escaped_base_name}"
+        base_name_escaped = process_latex_content(base_name if base_name else 'Untitled')
+        frame_title = f"Media: {base_name_escaped}"
 
-    # Handle no-media case
-    if not filename or filename == "\\None":
-        latex_code = f"""
-\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-"""
+    latex_code = f"\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}\n"
+    latex_code += "    \\vspace{0.5em}\n"
+
+    if filename == "\\None":
         if content:
-            latex_code += """    \\vspace{0.5em}
-    \\begin{itemize}
-"""
+            latex_code += "    \\begin{itemize}\n"
             for item in content:
-                item = item.strip()
+                item = str(item).strip()
                 if item.startswith('-'):
                     item = item[1:].strip()
                 processed_item = process_latex_content(item)
                 latex_code += f"        \\item {processed_item}\n"
-            latex_code += "    \\end{itemize}"
-
-            # Add notes if present
-            if notes and notes.strip():
-                latex_code += "\n    \\note{\n    \\begin{itemize}\n"
-                for note_line in notes.split('\n'):
-                    if note_line.strip():
-                        processed_note = process_latex_content(note_line.lstrip('•- ').strip())
-                        latex_code += f"        \\item {processed_note}\n"
-                latex_code += "    \\end{itemize}\n    }"
-
-        latex_code += """
-\\end{frame}
-
-"""
-        return latex_code
-
-    # Regular media case with two columns
-    latex_code = f"""
-\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-    \\vspace{{0.5em}}
-    \\begin{{columns}}
-        \\begin{{column}}{{0.48\\textwidth}}
-            \\centering
-"""
-
-    # Add preview image or media
-    if playable:
-        if first_frame_path and os.path.exists(first_frame_path):
-            latex_code += f"""            \\fbox{{\\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{first_frame_path}}}}}
-"""
-        else:
-            latex_code += "            \\textbf{[Media Preview Not Available]}\n"
-
-        latex_code += f"""
-            \\vspace{{0.5em}}
-            \\footnotesize{{Click to play}}
-            \\movie[externalviewer]{{\\textcolor{{blue}}{{\\underline{{Play}}}}}}{{./{media_folder}/{filename}}}
-"""
-
+            latex_code += "    \\end{itemize}\n"
     else:
-        image_path = first_frame_path if first_frame_path else f'{media_folder}/{filename}'
-        latex_code += f"""            \\fbox{{\\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{image_path}}}}}
-"""
+        latex_code += "    \\begin{columns}\n"
+        latex_code += "        \\begin{column}{0.48\\textwidth}\n"
+        latex_code += "            \\centering\n"
 
-    # Add content column with proper math handling
-    latex_code += """        \\end{column}%
-        \\begin{column}{0.48\\textwidth}
-            \\begin{itemize}
-"""
-    if content:
-        for item in content:
-            item = item.strip()
-            if item.startswith('-'):
-                item = item[1:].strip()
-            processed_item = process_latex_content(item)
-            latex_code += f"                \\item {processed_item}\n"
-    latex_code += "            \\end{itemize}"
+        if playable and first_frame_path and os.path.exists(first_frame_path):
+            # Process preview path with proper escaping
+            preview_filename = process_latex_content(os.path.basename(first_frame_path))
+            preview_path = f"media\\_files/{preview_filename}"
+            latex_code += f"            \\fbox{{\\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{preview_path}}}}}\n\n"
 
-    # Add source citation
-    if source_url:
-        latex_code += """
-            \\vspace{0.5em}
-            \\rule{0.9\\textwidth}{0.4pt}
-"""
-        if 'youtube.com' in source_url or 'youtu.be' in source_url:
-            latex_code += f"""            {{\\tiny YouTube video: \\url{{{source_url}}}}}"""
+            latex_code += "            \\vspace{0.5em}\n"
+            latex_code += "            \\footnotesize{Click to play}\n"
+
+            # Process movie path with proper escaping
+            movie_filename = process_latex_content(os.path.basename(filename))
+            movie_path = f"media\\_files/{movie_filename}"
+            latex_code += f"            \\movie[externalviewer]{{\\textcolor{{blue}}{{\\underline{{Play}}}}}}{{{movie_path}}}\n"
         else:
-            latex_code += f"""            {{\\tiny Source: \\url{{{source_url}}}}}"""
+            # Process static image with proper escaping
+            image_source = first_frame_path if first_frame_path else filename
+            image_filename = process_latex_content(os.path.basename(image_source))
+            image_path = f"media\\_files/{image_filename}"
+            latex_code += f"            \\fbox{{\\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{image_path}}}}}\n"
 
-    latex_code += """
-        \\end{column}
-    \\end{columns}
-"""
+        latex_code += "        \\end{column}%\n"
+        latex_code += "        \\begin{column}{0.48\\textwidth}\n"
 
-    # Add notes with proper math handling
-    if notes and notes.strip():
-        latex_code += "    \\note{\n    \\begin{itemize}\n"
-        for note_line in notes.split('\n'):
-            if note_line.strip():
-                processed_note = process_latex_content(note_line.lstrip('•- ').strip())
-                latex_code += f"        \\item {processed_note}\n"
-        latex_code += "    \\end{itemize}\n    }"
+        if content:
+            latex_code += "            \\begin{itemize}\n"
+            for item in content:
+                item = str(item).strip()
+                if item.startswith('-'):
+                    item = item[1:].strip()
+                processed_item = process_latex_content(item)
+                latex_code += f"                \\item {processed_item}\n"
+            latex_code += "            \\end{itemize}\n"
 
-    latex_code += """\\end{frame}
+        if source_url:
+            latex_code += "            \\vspace{0.5em}\n"
+            latex_code += "            \\rule{0.9\\textwidth}{0.4pt}\n"
+            if 'youtube.com' in source_url or 'youtu.be' in source_url:
+                latex_code += f"            {{\\tiny YouTube video: \\url{{{source_url}}}}}\n"
+            else:
+                latex_code += f"            {{\\tiny Source: \\url{{{source_url}}}}}\n"
 
-"""
+        latex_code += "        \\end{column}\n"
+        latex_code += "    \\end{columns}\n"
+
+    latex_code += "\\end{frame}\n\n"
     return latex_code
 
 def format_source_citation(url):
@@ -760,53 +736,19 @@ def format_source_citation(url):
         return f"Source: {url}"
 
 def process_content_items(content_items):
-    """
-    Process a list of content items, handling math expressions and special characters correctly.
-    """
+    """Process content items with proper None handling"""
     processed_items = []
-    for item in content_items:
-        if item.strip():
-            # Ensure item starts with bullet point if needed
-            if not item.strip().startswith('-'):
-                item = f"- {item.strip()}"
-            # Process the content
-            processed_item = process_latex_content(item)
-            processed_items.append(processed_item)
+    if content_items:
+        for item in content_items:
+            if item:  # Check if item is not None and not empty
+                # Ensure item starts with bullet point if needed
+                if not str(item).strip().startswith('-'):
+                    item = f"- {str(item).strip()}"
+                # Process the content
+                processed_item = process_latex_content(item)
+                processed_items.append(processed_item)
     return processed_items
 
-
-def process_media(url, content=None, title=None, playable=False):
-    """Enhanced version that maintains proper YouTube URL handling"""
-    directive_type, media_source, is_playable, original_directive = parse_media_directive(url)
-    playable = playable or is_playable
-
-    # Track source URL
-    source_url = None
-    if directive_type == 'url':
-        if media_source.startswith(('http://', 'https://')):
-            source_url = media_source
-            # Remove any existing source citations from content
-            if content:
-                content = [item for item in content if not ('\\footnote' in item and 'Source:' in item)]
-
-    # Handle YouTube URLs with special attention to source citation
-    if directive_type == 'url' and ('youtube.com' in media_source or 'youtu.be' in media_source):
-        result = download_youtube_video(media_source)
-        if result:
-            base_name, filename, filepath = result
-            first_frame_path = generate_preview_frame(filepath)
-            tex_directive = f"\\play \\file media_files/{filename}"
-            text_directive = f"\\play {media_source}"  # Keep original URL for text file
-
-            return generate_latex_code(
-                base_name,
-                filename,
-                first_frame_path,
-                content,
-                title,
-                True,
-                media_source  # Pass original YouTube URL for citation
-            ), (tex_directive, text_directive)
 
 def add_source_citation(content, source_note):
     """
@@ -847,62 +789,57 @@ def verify_media_file(filepath):
     print(f"Warning: Media file not found: {filepath}")
     return None
 
-def process_media(url, content=None, title=None, playable=False):
-    """
-    Enhanced version that maintains source URLs.
-    """
+def process_media(url, content=None, title=None, playable=False, slide_index=None, callback=None):
+    """Process media with all required handling steps"""
     directive_type, media_source, is_playable, original_directive = parse_media_directive(url)
     playable = playable or is_playable
     source_url = None
 
-    # Extract source URL for YouTube or other URLs
-    if directive_type == 'url':
-        if 'youtube.com' in media_source or 'youtu.be' in media_source:
-            source_url = media_source.strip()
+    # Handle empty/missing media case
+    if not url or not directive_type:
+        if callback and slide_index is not None:
+            callback(slide_index)
+        return handle_missing_media(url, content, title, playable)
 
-    if directive_type == 'none':
-        return generate_latex_code(None, None, None, content, title, False, None), "\\None"
+    # Handle explicit \None directive
+    if url.strip() == "\\None":
+        return generate_latex_code(None, "\\None", None, content, title, False), "\\None"
 
-    elif directive_type == 'file':
-        if os.path.exists(media_source):
-            base_name = os.path.splitext(os.path.basename(media_source))[0]
-            first_frame_path = None
-            if playable:
-                first_frame_path = generate_preview_frame(media_source)
-            return generate_latex_code(
-                base_name,
-                os.path.basename(media_source),
-                first_frame_path or media_source,
-                content, title, playable, None
-            ), original_directive
-        else:
-            print(f"\nWarning: Local file not found: {media_source}")
-            return handle_missing_media(url, content, title, playable)
+    # Handle URL type media
+    elif directive_type == 'url':
+        if media_source.startswith(('http://', 'https://')):
+            source_url = media_source
+            if content:
+                content = [item for item in content if not ('\\footnote' in item and 'Source:' in item)]
 
-    else:  # Regular URL case
-        valid, message = validate_url(media_source)
-        if not valid:
-            print(f"\nWarning: Original URL failed: {message}")
-            return handle_missing_media(url, content, title, playable)
-
-        # Handle YouTube videos
+        # Process YouTube URLs
         if 'youtube.com' in media_source or 'youtu.be' in media_source:
             result = download_youtube_video(media_source)
             if result:
                 base_name, filename, filepath = result
                 first_frame_path = generate_preview_frame(filepath)
-                new_directive = f"\\play \\file media_files/{filename}"
+                media_path = f"media_files/{filename}"
+                tex_directive = f"\\play \\file {media_path}"
+                text_directive = f"\\play {media_source}"
+
                 return generate_latex_code(
                     base_name,
-                    filename,
+                    media_path,
                     first_frame_path,
                     content,
                     title,
                     True,
-                    source_url
-                ), new_directive
+                    media_source
+                ), (tex_directive, text_directive)
 
-        # Handle other media
+        # Handle other URLs
+        valid, message = validate_url(media_source)
+        if not valid:
+            print(f"\nWarning: Original URL failed: {message}")
+            if callback and slide_index is not None:
+                callback(slide_index)
+            return handle_missing_media(url, content, title, playable)
+
         base_name, filename, first_frame_path = download_media(media_source)
         if base_name and filename:
             if playable:
@@ -915,7 +852,7 @@ def process_media(url, content=None, title=None, playable=False):
                 new_directive = f"\\play \\file media_files/{filename}" if playable else f"\\file media_files/{filename}"
                 return generate_latex_code(
                     base_name,
-                    filename,
+                    media_path,
                     first_frame_path,
                     content,
                     title,
@@ -923,11 +860,131 @@ def process_media(url, content=None, title=None, playable=False):
                     source_url
                 ), new_directive
 
-        return handle_missing_media(url, content, title, playable)
+    # Handle local file
+    elif directive_type == 'file':
+        if os.path.exists(media_source):
+            base_name = os.path.splitext(os.path.basename(media_source))[0]
+            first_frame_path = None
+            if playable:
+                first_frame_path = generate_preview_frame(media_source)
+            return generate_latex_code(
+                base_name,
+                os.path.basename(media_source),
+                first_frame_path or media_source,
+                content,
+                title,
+                playable
+            ), original_directive
+        else:
+            print(f"\nWarning: Local file not found: {media_source}")
+            if callback and slide_index is not None:
+                callback(slide_index)
+            return handle_missing_media(url, content, title, playable)
 
-def handle_missing_media(original_url, content, title, playable):
+    return handle_missing_media(url, content, title, playable)
+
+
+def handle_missing_media(original_url, content, title, playable, file_path=None, line_number=None):
+    """Enhanced version that auto-updates text file for \\None option"""
+    global terminal_io
+
+    if not terminal_io:
+        return handle_missing_media_fallback(original_url, content, title, playable)
+
+    search_query = construct_search_query(title, content)
+
+    # Show context from the text file if available
+    if file_path and line_number:
+        try:
+            with open(file_path, 'r') as f:
+                lines = f.readlines()
+
+            # Show context (5 lines before and after)
+            start_line = max(0, line_number - 5)
+            end_line = min(len(lines), line_number + 5)
+
+            terminal_io.write("\nCurrent context in file:\n", "yellow")
+            terminal_io.write("-" * 50 + "\n", "white")
+
+            for i in range(start_line, end_line):
+                if i == line_number - 1:  # Current line (0-based index)
+                    terminal_io.write(f"➜ {i+1:4d} | {lines[i].rstrip()}\n", "green")
+                else:
+                    terminal_io.write(f"  {i+1:4d} | {lines[i].rstrip()}\n", "white")
+
+            terminal_io.write("-" * 50 + "\n", "white")
+            terminal_io.write("Update needed at line {}\n".format(line_number), "yellow")
+
+        except Exception as e:
+            terminal_io.write(f"Error showing file context: {str(e)}\n", "red")
+
+    terminal_io.write("\nPlease choose one of the following options:\n")
+    terminal_io.write("1. Enter a new URL\n")
+    terminal_io.write("2. Use an existing file from media_files folder\n")
+    terminal_io.write("3. Create slide without media\n")
+
+    choice = terminal_io.terminal_input("Your choice (1/2/3): ")
+
+    if choice !='3':
+            print(f"\nOpening Google Image search for: {search_query}")
+            open_google_image_search(search_query)
+
+
+    if choice == '1':
+        terminal_io.write("\nEnter URL (paste will work): ", "yellow")
+        new_url = terminal_io.terminal_input("Enter URL: ").strip()
+        if new_url:
+            if 'youtube.com' in new_url or 'youtu.be' in new_url:
+                result = download_youtube_video(new_url)
+                if result:
+                    base_name, filename, filepath = result
+                    tex_directive = f"\\play \\file media_files/{filename}"
+                    text_directive = f"\\play {new_url}" if playable else new_url
+                    update_text_file(file_path, line_number, text_directive)
+                    return generate_latex_code(base_name, filename, filename, content, title, True), (tex_directive, text_directive)
+
+    elif choice == '2':
+        terminal_io.write("\nAvailable files in media_files folder:\n")
+        try:
+            files = os.listdir('media_files')
+            for i, file in enumerate(files, 1):
+                terminal_io.write(f"{i}. {file}\n")
+
+            file_choice = terminal_io.terminal_input("Enter file number or name: ").strip()
+            if file_choice.isdigit() and 1 <= int(file_choice) <= len(files):
+                chosen_file = files[int(file_choice) - 1]
+            else:
+                chosen_file = file_choice
+
+            file_directive = f"\\file media_files/{chosen_file}"
+            if playable:
+                file_directive = f"\\play {file_directive}"
+            update_text_file(file_path, line_number, file_directive)
+            return generate_latex_code(
+                os.path.splitext(chosen_file)[0],
+                chosen_file,
+                chosen_file,
+                content,
+                title,
+                playable
+            ), (file_directive, file_directive)
+
+        except Exception as e:
+            terminal_io.write(f"Error accessing media_files: {str(e)}\n", "red")
+
+    elif choice == '3':
+        # Automatically update the text file with \None
+        if file_path and line_number:
+            update_text_file(file_path, line_number, "\\None")
+            terminal_io.write("✓ File updated with \\None directive\n", "green")
+
+    # Default to no media
+    return generate_latex_code(None, None, None, content, title, False), ("\\None", "\\None")
+
+def handle_missing_media_fallback(original_url, content, title, playable):
     """
-    Enhanced version that properly handles URL updates in both tex and text files.
+    Original implementation using standard I/O for fallback.
+    Returns tuple of (latex_code, directives) where directives can be a single string or tuple of (tex_directive, text_directive)
     """
     search_query = construct_search_query(title, content)
     print(f"\nOpening Google Image search for: {search_query}")
@@ -950,8 +1007,17 @@ def handle_missing_media(original_url, content, title, playable):
                     tex_directive = f"\\play \\file media_files/{filename}"
                     # For text file - use new URL with play directive if original had it
                     text_directive = f"\\play {new_url}" if playable else new_url
-                    latex_code = generate_latex_code(base_name, filename, filename, content, title, True)
+                    latex_code = generate_latex_code(
+                        base_name,
+                        filename,
+                        filepath,
+                        content,
+                        title,
+                        True,
+                        new_url  # Pass URL for citation
+                    )
                     return latex_code, (tex_directive, text_directive)
+
             # Process other URLs
             valid, message = validate_url(new_url)
             if valid:
@@ -970,7 +1036,8 @@ def handle_missing_media(original_url, content, title, playable):
                         first_frame_path,
                         content,
                         title,
-                        playable
+                        playable,
+                        new_url  # Pass URL for citation
                     ), (tex_directive, text_directive)
 
     elif choice == '2':
@@ -985,23 +1052,71 @@ def handle_missing_media(original_url, content, title, playable):
             else:
                 chosen_file = file_choice
 
+            # Verify file exists
+            if not os.path.exists(os.path.join('media_files', chosen_file)):
+                print(f"Error: File {chosen_file} not found in media_files directory")
+                return generate_latex_code(None, None, None, content, title, False), ("\\None", "\\None")
+
             # Use same file directive for both tex and text files
             file_directive = f"\\file media_files/{chosen_file}"
             if playable:
                 file_directive = f"\\play {file_directive}"
+
+            # Generate preview for video files if needed
+            first_frame_path = None
+            if playable:
+                first_frame_path = generate_preview_frame(os.path.join('media_files', chosen_file))
+
             return generate_latex_code(
                 os.path.splitext(chosen_file)[0],
                 chosen_file,
-                chosen_file,
+                first_frame_path or chosen_file,
                 content,
                 title,
                 playable
             ), (file_directive, file_directive)  # Same directive for both files
         except Exception as e:
             print(f"Error accessing media_files: {str(e)}")
+            return generate_latex_code(None, None, None, content, title, False), ("\\None", "\\None")
 
-    # Default to no media
-    return generate_latex_code(None, None, None, content, title, False), ("\\None", "\\None")
+    # Default to no media (choice 3 or any invalid input)
+    latex_code = generate_latex_code(None, None, None, content, title, False)
+    return latex_code, ("\\None", "\\None")
+
+def update_text_file(file_path, line_number, new_directive):
+    """Update the text file with new directive"""
+    if not file_path or not line_number:
+        return
+
+    try:
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+
+        # Find the correct position to insert the directive
+        if line_number - 1 < len(lines):
+            current_line = lines[line_number - 1].strip()
+
+            # Check if the line starts with \begin{Content}
+            if current_line.startswith("\\begin{Content}"):
+                # Replace everything after \begin{Content} or add new directive
+                lines[line_number - 1] = f"\\begin{{Content}} {new_directive}\n"
+            else:
+                # Replace the entire line
+                lines[line_number - 1] = f"{new_directive}\n"
+
+            # Write the updated content back to file
+            with open(file_path, 'w') as f:
+                f.writelines(lines)
+
+            terminal_io.write(f"✓ File updated successfully at line {line_number}\n", "green")
+
+    except Exception as e:
+        terminal_io.write(f"Error updating file: {str(e)}\n", "red")
+
+
+# Initialize terminal_io as None - will be set by IDE
+terminal_io = None
+
 
 
 def update_text_file_with_video(file_path, old_url, new_filepath):
@@ -1193,8 +1308,8 @@ def parse_media_directive(directive_string):
 
     return directive_type, media_source, playable, original_directive
 
-def process_input_file(file_path, output_filename='movie.tex'):
-    """Process input file to convert to TeX format"""
+def process_input_file(file_path, output_filename='movie.tex', ide_callback=None):
+    """Process input file to convert to TeX format with proper handling of all elements"""
     url_updates = {}
     errors = []
     processed = 0
@@ -1203,198 +1318,168 @@ def process_input_file(file_path, output_filename='movie.tex'):
     try:
         with open(file_path, 'r') as f:
             lines = f.readlines()
-    except Exception as e:
-        print(f"Error reading input file: {str(e)}")
-        return
 
-    # Get preamble information first
-    has_preamble, preamble_lines, content_lines, has_titlepage, has_maketitle = detect_preamble(lines)
+        # Get preamble information first
+        has_preamble, preamble_lines, content_lines, has_titlepage, has_maketitle = detect_preamble(lines)
 
-    # Initialize the output .tex file
-    try:
+        # Initialize the output .tex file
         with open(output_filename, 'w') as f:
             if has_preamble:
-                # Just copy the preamble as is
                 f.writelines(preamble_lines)
-
                 if not has_maketitle:
                     f.write("\\maketitle\n")
                 if not has_titlepage:
                     f.write("\\begin{frame}\n\\titlepage\n\\end{frame}\n\n")
             else:
-                # Basic preamble without notes configuration
-                f.write("""\\documentclass[12pt]{beamer}
-\\usepackage{graphicx}
-\\usepackage{multimedia}
+                f.write("\\documentclass[12pt]{beamer}\n\\usepackage{graphicx}\n\\usepackage{multimedia}\n\n\\begin{document}\n\n")
 
-\\begin{document}
+        i = 0
+        title = None
+        content = []
+        current_url = None
+        current_notes = []
+        latex_code = ""
+        current_slide_index = 0
 
-""")
-    except Exception as e:
-        print(f"Error creating output file: {str(e)}")
-        return
+        while i < len(content_lines):
+            try:
+                line = content_lines[i].strip()
 
-    i = 0
-    title = None
-    content = []
-    current_url = None
-    latex_code = ""
-    current_notes = []
-
-    # Process content lines
-    while i < len(content_lines):
-        try:
-            line = content_lines[i].strip()
-
-            if not line:
-                i += 1
-                continue
-
-            if line.startswith("\\title"):
-                title = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else "Slide"
-                i += 1
-                continue
-
-            if line.startswith("\\begin{Content}"):
-                content = []
-                current_notes = []  # Reset notes for new slide
-                if len(line) > len("\\begin{Content}"):
-                    current_url = line[len("\\begin{Content}"):].strip()
-                else:
+                if not line:
                     i += 1
-                    if i < len(content_lines):
-                        current_url = content_lines[i].strip()
+                    continue
+
+                if line.startswith("\\title"):
+                    title = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else "Slide"
+                    if ide_callback:
+                        ide_callback("update_current_slide", {'index': current_slide_index, 'title': title})
+                    i += 1
+                    continue
+
+                if line.startswith("\\begin{Content}"):
+                    content = []
+                    current_notes = []
+                    if len(line) > len("\\begin{Content}"):
+                        current_url = line[len("\\begin{Content}"):].strip()
                     else:
-                        current_url = None
-                i += 1
-                continue
-
-            if line.startswith("\\end{Content}"):
-                if not current_url:
-                    print(f"\nNo URL provided for slide with title: {title}")
-                    search_query = construct_search_query(title, content)
-                    print(f"Opening Google Image search for: {search_query}")
-                    open_google_image_search(search_query)
-
-                    print("\nPlease choose one of the following options:")
-                    print("1. Enter a new URL")
-                    print("2. Use an existing file from media_files folder")
-                    print("3. Create slide without media")
-                    choice = input("Your choice (1/2/3): ").strip()
-
-                    if choice == '1':
-                        current_url = input("Enter URL: ").strip()
-                    elif choice == '2':
-                        print("\nAvailable files in media_files folder:")
-                        files = os.listdir('media_files')
-                        for idx, file in enumerate(files, 1):
-                            print(f"{idx}. {file}")
-                        file_choice = input("Enter file number or name: ").strip()
-                        if file_choice.isdigit() and 1 <= int(file_choice) <= len(files):
-                            chosen_file = files[int(file_choice) - 1]
+                        i += 1
+                        if i < len(content_lines):
+                            current_url = content_lines[i].strip()
                         else:
-                            chosen_file = file_choice
-                        current_url = f"\\file media_files/{chosen_file}"
+                            current_url = None
+                    i += 1
+                    continue
+
+                if line.startswith("\\end{Content}"):
+                    # Handle missing or invalid URL (but respect \None)
+                    if not current_url or (current_url != "\\None" and not current_url.startswith("\\file") and not validate_url(current_url)[0]):
+                        if ide_callback:
+                            response = ide_callback("request_media", {
+                                'title': title,
+                                'content': content,
+                                'slide_index': current_slide_index
+                            })
+                            if response:
+                                current_url = response
+                            elif current_url != "\\None":  # Preserve explicit \None
+                                current_url = "\\None"
+
+                    # Look ahead for Notes block
+                    j = i + 1
+                    while j < len(content_lines):
+                        next_line = content_lines[j].strip()
+                        if next_line.startswith("\\begin{Notes}"):
+                            j += 1  # Skip the begin Notes line
+                            while j < len(content_lines):
+                                note_line = content_lines[j].strip()
+                                if note_line.startswith("\\end{Notes}"):
+                                    break
+                                if note_line:
+                                    current_notes.append(note_line)
+                                j += 1
+                        elif next_line.startswith("\\title") or next_line.startswith("\\begin{Content}"):
+                            break
+                        j += 1
+
+                    # Process media and generate slide
+                    latex_code, new_directive = process_media(
+                        current_url if current_url else "\\None",
+                        content,
+                        title,
+                        False,
+                        slide_index=current_slide_index,
+                        callback=ide_callback
+                    )
+
+                    if latex_code:
+                        # Remove frame end if present for notes addition
+                        frame_end = latex_code.rfind('\\end{frame}')
+                        if frame_end != -1:
+                            latex_code = latex_code[:frame_end]
+
+                        # Add notes if present
+                        if current_notes:
+                            latex_code += "\n    % Presentation notes\n"
+                            for note in current_notes:
+                                latex_code += f"    \\note{{{note}}}\n"
+
+                        # Add frame end
+                        latex_code += "\\end{frame}\n\n"
+
+                        with open(output_filename, 'a') as f:
+                            f.write(latex_code)
+                        processed += 1
+
+                        if new_directive and current_url and new_directive != current_url:
+                            if current_url.startswith("\\play "):
+                                url_updates[current_url.replace("\\play ", "").strip()] = new_directive
+                            else:
+                                url_updates[current_url] = new_directive
                     else:
-                        current_url = "\\None"
+                        failed += 1
+                        if ide_callback:
+                            ide_callback("error", {'message': f"Failed to process slide {current_slide_index + 1}"})
 
-                # Look ahead for Notes block
-                j = i + 1
-                while j < len(content_lines):
-                    next_line = content_lines[j].strip()
-                    if next_line.startswith("\\begin{Notes}"):
-                        j += 1  # Skip the begin Notes line
-                        while j < len(content_lines):
-                            note_line = content_lines[j].strip()
-                            if note_line.startswith("\\end{Notes}"):
-                                break
-                            if note_line:
-                                current_notes.append(note_line)
-                            j += 1
-                    elif next_line.startswith("\\title") or next_line.startswith("\\begin{Content}"):
-                        break
-                    j += 1
+                    content = []
+                    current_notes = []
+                    current_slide_index += 1
+                    i += 1
+                    continue
 
-                # Generate slide content
-                latex_code, new_directive = process_media(
-                    current_url if current_url else "\\None",
-                    content,
-                    title,
-                    False
-                )
+                elif not line.startswith(("\\begin{Notes}", "\\end{Notes}")):
+                    content.append(line)
+                    if ide_callback:
+                        ide_callback("update_content", {'index': current_slide_index, 'content': content})
 
-                if latex_code:
-                    # Remove frame end if present
-                    frame_end = latex_code.rfind('\\end{frame}')
-                    if frame_end != -1:
-                        latex_code = latex_code[:frame_end]
-
-                    # Add notes if present
-                    if current_notes:
-                        for note in current_notes:
-                            latex_code += f"\\note[item]{{{note.strip()}}}\n"
-
-                    # Add frame end
-                    latex_code += "\\end{frame}\n\n"
-
-                    with open(output_filename, 'a') as f:
-                        f.write(latex_code)
-                    processed += 1
-
-                    if new_directive and current_url and new_directive != current_url:
-                        if current_url.startswith("\\play "):
-                            url_updates[current_url.replace("\\play ", "").strip()] = new_directive
-                        else:
-                            url_updates[current_url] = new_directive
-                else:
-                    failed += 1
-
-                content = []
-                current_notes = []
-                title = None
-                current_url = None
                 i += 1
-                continue
 
-            elif not line.startswith(("\\begin{Notes}", "\\end{Notes}")):
-                content.append(line)
+            except Exception as e:
+                failed += 1
+                error_msg = f"Error processing slide {processed + failed}:\n"
+                error_msg += f"Title: {title}\n"
+                if content:
+                    error_msg += f"Content:\n{''.join(['  ' + l + '\n' for l in content])}"
+                error_msg += f"Error: {str(e)}\n"
+                errors.append(error_msg)
+                print(f"\nWarning: Error in slide processing: {str(e)}")
+                i += 1
 
-            i += 1
+        # Write document end
+        with open(output_filename, 'a') as f:
+            f.write("\\end{document}")
 
-        except Exception as e:
-            failed += 1
-            error_msg = f"Error processing slide {processed + failed}:\n"
-            error_msg += f"Title: {title}\n"
-            if content:
-                error_msg += f"Content:\n{''.join(['  ' + l + '\n' for l in content])}"
-            error_msg += f"Error: {str(e)}\n"
-            errors.append(error_msg)
-            print(f"\nWarning: Error in slide processing: {str(e)}")
-            i += 1
-
-    # Write document end
-    with open(output_filename, 'a') as f:
-        f.write("\\end{document}")
-
-    if url_updates:
-        update_input_file(file_path, url_updates, is_tex_file=False)
-        update_input_file(output_filename, url_updates, is_tex_file=True)
-
-    print(f"\nProcessing complete:")
-    print(f"Successfully processed slides: {processed}")
-    print(f"Failed slides: {failed}")
-
-    if errors:
-        print("\nError Report:")
-        for i, error in enumerate(errors, 1):
-            print(f"\nError {i}:")
-            print(error)
-
-    if processed > 0:
-        print(f"\nOutput written to: {output_filename}")
         if url_updates:
-            print("Both source file and output file have been updated with new media paths.")
+            update_input_file(file_path, url_updates, is_tex_file=False)
+            update_input_file(output_filename, url_updates, is_tex_file=True)
 
+        return processed, failed, errors
+
+    except Exception as e:
+        error_msg = f"General processing error: {str(e)}"
+        errors.append(error_msg)
+        if ide_callback:
+            ide_callback("error", {'message': error_msg})
+        return 0, 1, errors
 
 def main():
     """
