@@ -2641,28 +2641,17 @@ class BeamerSlideEditor(ctk.CTk):
 
         elif action == "update_content":
             self.content_editor.delete('1.0', 'end')
-            for line in data['content']:
+            for line in data['content'] and data['content'] !='\end{document}':
                 self.content_editor.insert('end', f"{line}\n")
 
         elif action == "request_media":
             # Show guidance message
-            messagebox.showwarning(
-                "Media Required",
-                f"Please select media for slide '{data['title']}' using the media entry options.\n\n" +
-                "You can:\n" +
-                "• Click 'Local File' to browse media files\n" +
-                "• Click 'YouTube' to add a video\n" +
-                "• Click 'Search Images' to find new media\n" +
-                "• Click 'No Media' for a text-only slide"
-            )
+
+            self.write_to_terminal("f Media Required  for slide '{data['title']}' " )
 
             # Focus and highlight the media entry
             self.media_entry.configure(border_color="#4ECDC4")
             self.media_entry.focus_set()
-
-            # Open search immediately if content suggests images might be useful
-            query = construct_search_query(data['title'], data['content'])
-            open_google_image_search(query)
 
             return "\\None"  # Return None directive - user will update via IDE
 

@@ -924,7 +924,7 @@ def update_text_file(file_path, line_number, new_directive):
 
 
 def handle_missing_media(original_url, content, title, playable, file_path=None, line_number=None):
-    """Simplified version that redirects to IDE's media interface"""
+    """Enhanced version that uses FileThumbnailBrowser for media selection"""
     global terminal_io
 
     if not terminal_io or not hasattr(terminal_io, 'editor'):
@@ -932,24 +932,60 @@ def handle_missing_media(original_url, content, title, playable, file_path=None,
 
     editor = terminal_io.editor
 
-    # Show guidance message
+    # Show warning popup
     messagebox.showwarning(
         "Media Required",
-        f"Please select media for slide '{title}' using the media entry options above.\n\n" +
-        "You can:\n" +
-        "• Click 'Local File' to browse media files\n" +
-        "• Click 'YouTube' to add a video\n" +
-        "• Click 'Search Images' to find new media\n" +
-        "• Click 'No Media' for a text-only slide",
+        f"Please select media for slide '{title}'",
         parent=editor
     )
 
-    # Highlight the media entry to draw attention
-    editor.media_entry.configure(border_color="#4ECDC4")
-    editor.media_entry.focus_set()
+    try:
+        # Create and show the file browser
+        def handle_selection(media_path):
+            if media_path:
+                # Determine if file should be played based on extension
+                ext = os.path.splitext(media_path)[1].lower()
+                video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.gif'}
+                is_video = ext in video_extensions
 
-    # Return None directive for now - user will update via IDE
-    return generate_latex_code(None, None, None, content, title, False), ("\\None", "\\None")
+                # Create the appropriate directive
+                if is_video:
+                    result = f"\\play \\file {media_path}"
+                else:
+                    result = f"\\file {media_path}"
+
+                # Update the text file if needed
+                if file_path and line_number:
+                    update_text_file(file_path, line_number, result)
+
+                return result
+            return "\\None"
+
+        # Show the thumbnail browser
+        browser = FileThumbnailBrowser(
+            editor,
+            initial_dir="media_files",
+            callback=handle_selection
+        )
+        browser.transient(editor)
+        browser.grab_set()
+        editor.wait_window(browser)
+
+        # Get the result from the browser
+        result = browser.result if hasattr(browser, 'result') else "\\None"
+
+        # Generate appropriate LaTeX code
+        if result == "\\None":
+            latex_code = generate_latex_code(None, None, None, content, title, False)
+            return latex_code, (result, result)
+        else:
+            latex_code, directives = process_media(result, content, title, playable)
+            return latex_code, directives
+
+    except Exception as e:
+        print(f"Error handling media selection: {str(e)}")
+        return handle_missing_media_fallback(original_url, content, title, playable)
+
 
 
 def handle_missing_media_fallback(original_url, content, title, playable):
