@@ -4058,7 +4058,7 @@ Created by {self.__author__}
         if filename:
             self.load_file(filename)
             global working_folder
-            # Change to tex file directory
+            # Change to tet file directory
             working_folder= os.path.dirname(filename) or '.'
             os.chdir(working_folder)
 
@@ -4075,6 +4075,13 @@ Created by {self.__author__}
             )
             if filename:
                 self.current_file = filename
+                global working_folder
+                # Change to tet file directory
+                working_folder= os.path.dirname(filename) or '.'
+                os.chdir(working_folder)
+
+                # Update working directory in terminal
+                self.terminal.set_working_directory(working_folder)
             else:
                 return
 
