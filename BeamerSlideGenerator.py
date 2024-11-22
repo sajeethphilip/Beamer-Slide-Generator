@@ -4,13 +4,15 @@ BeamerSlideGenerator.py
 A tool for generating Beamer presentation slides with multimedia content.
 Supports local files, URL downloads, and content-only slides.
 """
-
+import math
 import os,re
 import time
 import requests
 import webbrowser
 from PIL import Image
 import customtkinter as ctk
+from tkinter import messagebox
+import tkinter as tk
 from urllib.parse import urlparse, unquote
 from pathlib import Path
 import mimetypes
@@ -658,18 +660,8 @@ def process_latex_content(content_line: str) -> str:
     return ''.join(result)
 
 def generate_latex_code(base_name, filename, first_frame_path, content=None, title=None, playable=False, source_url=None, layout=None):
-    """
-    Generate LaTeX code with support for all media layouts.
-    Args:
-        base_name (str): Base name for media identification
-        filename (str): Media filename or \\None
-        first_frame_path (str): Path to preview image for media
-        content (list): List of content items for the slide
-        title (str): Slide title
-        playable (bool): Whether media is playable
-        source_url (str): Source URL for citations
-        layout (str): Layout type (fullframe, watermark, pip, overlay, or None)
-    """
+    """Generate LaTeX code with support for all media layouts."""
+
     # Process title
     if title:
         frame_title = process_latex_content(title)
@@ -677,156 +669,226 @@ def generate_latex_code(base_name, filename, first_frame_path, content=None, tit
         base_name_escaped = process_latex_content(base_name if base_name else 'Untitled')
         frame_title = f"Media: {base_name_escaped}"
 
-    # Special handling for full frame layout
-    if layout == 'fullframe':
-        latex_code = f"\\begin{{frame}}[plain]\n"
-        if filename and filename != "\\None":
-            latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
-            latex_code += "        \\node[at=(current page.center)] {\n"
-            latex_code += f"            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{filename}}}\n"
-            latex_code += "        };\n"
-            latex_code += "    \\end{tikzpicture}\n"
+    # Handle no media case first
+    if not filename or filename == "\\None":
+        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
+    \\vspace{{0.5em}}
+    \\begin{{itemize}}
+        {generate_content_items(content)}
+    \\end{{itemize}}
+\\end{{frame}}\n"""
+        return latex_code
 
-        # Add overlay content if any
-        if content:
-            latex_code += "    \\vspace{1em}\n"
-            latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
-            latex_code += "        \\node[at=(current page.center)] {\n"
-            latex_code += "            \\begin{minipage}{0.8\\paperwidth}\n"
-            latex_code += "            \\color{white}\\begin{itemize}\n"
-            for item in content:
-                if item.strip():
-                    item = str(item).strip()
-                    if item.startswith('-'):
-                        item = item[1:].strip()
-                    processed_item = process_latex_content(item)
-                    latex_code += f"                \\item {processed_item}\n"
-            latex_code += "            \\end{itemize}\n"
-            latex_code += "            \\end{minipage}\n"
-            latex_code += "        };\n"
-            latex_code += "    \\end{tikzpicture}\n"
+    # Generate layout based on directive
+    latex_code = ""
 
-    # Watermark layout
-    elif layout == 'watermark':
-        latex_code = f"\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}\n"
-        if filename and filename != "\\None":
-            latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
-            latex_code += "        \\node[at=(current page.center),opacity=0.15] {\n"
-            latex_code += f"            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{filename}}}\n"
-            latex_code += "        };\n"
-            latex_code += "    \\end{tikzpicture}\n"
+    if layout == 'watermark':
+        latex_code = f"""\\begin{{frame}}{{{frame_title if title else ''}}}
+    \\begin{{tikzpicture}}[remember picture,overlay]
+        \\node[opacity=0.15] at (current page.center) {{%
+            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{filename}}}%
+        }};
+    \\end{{tikzpicture}}
+    \\begin{{itemize}}
+        {generate_content_items(content)}
+    \\end{{itemize}}"""
 
-        if content:
-            latex_code += "    \\begin{itemize}\n"
-            for item in content:
-                if item.strip():
-                    item = str(item).strip()
-                    if item.startswith('-'):
-                        item = item[1:].strip()
-                    processed_item = process_latex_content(item)
-                    latex_code += f"        \\item {processed_item}\n"
-            latex_code += "    \\end{itemize}\n"
+    elif layout == 'fullframe':
+        latex_code = f"""\\begin{{frame}}[plain]
+    \\begin{{tikzpicture}}[remember picture,overlay]
+        \\node at (current page.center) {{%
+            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{filename}}}%
+        }};
+        \\node[text width=0.8\\paperwidth,align=center,text=white] at (current page.center) {{
+            \\Large\\textbf{{{frame_title}}}\\\\[1em]
+            \\begin{{itemize}}
+                {generate_content_items(content, color='white')}
+            \\end{{itemize}}
+        }};
+    \\end{{tikzpicture}}"""
 
-    # Picture-in-Picture layout
     elif layout == 'pip':
-        latex_code = f"\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}\n"
-        if content:
-            latex_code += "    \\begin{itemize}\n"
-            for item in content:
-                if item.strip():
-                    item = str(item).strip()
-                    if item.startswith('-'):
-                        item = item[1:].strip()
-                    processed_item = process_latex_content(item)
-                    latex_code += f"        \\item {processed_item}\n"
-            latex_code += "    \\end{itemize}\n"
+        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
+    \\begin{{columns}}[T]
+        \\begin{{column}}{{0.7\\textwidth}}
+            \\begin{{itemize}}
+                {generate_content_items(content)}
+            \\end{{itemize}}
+        \\end{{column}}
+        \\begin{{column}}{{0.28\\textwidth}}
+            \\vspace{{1em}}
+            \\includegraphics[width=\\textwidth,keepaspectratio]{{{filename}}}
+        \\end{{column}}
+    \\end{{columns}}"""
 
-        if filename and filename != "\\None":
-            latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
-            latex_code += "        \\node[anchor=south east, inner sep=0pt] at ($(current page.south east)+(-0.5cm,0.5cm)$) {\n"
-            latex_code += f"            \\includegraphics[width=0.3\\paperwidth,keepaspectratio]{{{filename}}}\n"
-            latex_code += "        };\n"
-            latex_code += "    \\end{tikzpicture}\n"
+    elif layout == 'split':
+        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
+    \\begin{{columns}}[T]
+        \\begin{{column}}{{0.48\\textwidth}}
+            \\includegraphics[width=\\textwidth,keepaspectratio]{{{filename}}}
+        \\end{{column}}
+        \\begin{{column}}{{0.48\\textwidth}}
+            \\begin{{itemize}}
+                {generate_content_items(content)}
+            \\end{{itemize}}
+        \\end{{column}}
+    \\end{{columns}}"""
 
-    # Overlay layout
+    elif layout == 'highlight':
+        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
+    \\begin{{center}}
+        \\includegraphics[width=0.8\\textwidth,height=0.6\\textheight,keepaspectratio]{{{filename}}}
+    \\end{{center}}
+    \\vspace{{0.5em}}
+    \\begin{{itemize}}
+        {generate_content_items(content)}
+    \\end{{itemize}}"""
+
+    elif layout == 'background':
+        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
+    \\begin{{tikzpicture}}[remember picture,overlay]
+        \\node[opacity=0.1] at (current page.center) {{%
+            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{filename}}}%
+        }};
+    \\end{{tikzpicture}}
+    \\begin{{itemize}}
+        {generate_content_items(content)}
+    \\end{{itemize}}"""
+
+    elif layout == 'topbottom':
+        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
+    \\vspace{{-0.5em}}
+    \\begin{{center}}
+        \\includegraphics[width=0.8\\textwidth,height=0.45\\textheight,keepaspectratio]{{{filename}}}
+    \\end{{center}}
+    \\vspace{{0.5em}}
+    \\begin{{itemize}}
+        {generate_content_items(content)}
+    \\end{{itemize}}"""
+
     elif layout == 'overlay':
-        latex_code = f"\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}\n"
-        if filename and filename != "\\None":
-            latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
-            latex_code += "        \\node[at=(current page.center), opacity=0.3] {\n"
-            latex_code += f"            \\includegraphics[width=0.9\\paperwidth,height=0.8\\paperheight,keepaspectratio]{{{filename}}}\n"
-            latex_code += "        };\n"
-            latex_code += "    \\end{tikzpicture}\n"
+        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
+    \\begin{{tikzpicture}}[remember picture,overlay]
+        \\node[opacity=0.3] at (current page.center) {{%
+            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{filename}}}%
+        }};
+        \\node[text width=0.8\\paperwidth,align=center,text=white] at (current page.center) {{
+            \\begin{{itemize}}
+                {generate_content_items(content, color='white')}
+            \\end{{itemize}}
+        }};
+    \\end{{tikzpicture}}"""
 
+    elif layout == 'corner':
+        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
+    \\begin{{itemize}}
+        {generate_content_items(content)}
+    \\end{{itemize}}
+    \\begin{{tikzpicture}}[remember picture,overlay]
+        \\node[anchor=south east] at (current page.south east) {{%
+            \\includegraphics[width=0.2\\textwidth,keepaspectratio]{{{filename}}}%
+        }};
+    \\end{{tikzpicture}}"""
+
+    elif layout == 'mosaic':
+        images = [img.strip() for img in filename.split(',')]
+        # Calculate grid dimensions based on number of images
+        grid_size = int(math.ceil(math.sqrt(len(images))))  # Square root rounded up
+        rows = grid_size+1
+        cols = grid_size+1
+        print(rows,cols)
+        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
+        \\begin{{center}}
+        \\begin{{tikzpicture}}
+           \\matrix [column sep=0.2cm, row sep=0.2cm] {{"""
+
+        for i in range(rows):
+           for j in range(cols):
+               idx = i * cols + j
+               if idx < len(images):
+                   latex_code += f"""
+               \\node {{ \\includegraphics[width={0.8/grid_size}\\textwidth,height={0.7/grid_size}\\textheight,keepaspectratio]{{{images[idx]}}} }}; """
+                   if j < cols - 1:
+                       latex_code += "&"
+           latex_code += "\\\\"
+
+        latex_code += """
+        };
+    \\end{tikzpicture}
+    \\end{center}"""
         if content:
-            latex_code += "    \\vspace{1em}\n"
-            latex_code += "    \\begin{itemize}\n"
-            for item in content:
-                if item.strip():
-                    item = str(item).strip()
-                    if item.startswith('-'):
-                        item = item[1:].strip()
-                    processed_item = process_latex_content(item)
-                    latex_code += f"        \\item {processed_item}\n"
-            latex_code += "    \\end{itemize}\n"
+            latex_code += """
+    \\vspace{0.5em}
+    \\begin{itemize}
+        """ + generate_content_items(content) + """
+    \\end{itemize}"""
 
-    # Default side-by-side layout
     else:
-        latex_code = f"\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}\n"
-        latex_code += "    \\vspace{0.5em}\n"
-
-        if filename == "\\None":
-            if content:
-                latex_code += "    \\begin{itemize}\n"
-                for item in content:
-                    if item.strip():
-                        item = str(item).strip()
-                        if item.startswith('-'):
-                            item = item[1:].strip()
-                        processed_item = process_latex_content(item)
-                        latex_code += f"        \\item {processed_item}\n"
-                latex_code += "    \\end{itemize}\n"
+        # Default side-by-side layout for standard media
+        if playable and first_frame_path:
+            latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
+    \\begin{{columns}}[T]
+        \\begin{{column}}{{0.48\\textwidth}}
+            \\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{first_frame_path}}}
+            \\begin{{center}}
+                \\vspace{{0.3em}}
+                \\footnotesize{{Click to play}}\\\\
+                \\movie[externalviewer]{{\\textcolor{{blue}}{{\\underline{{Play}}}}}}{{{filename}}}
+            \\end{{center}}
+        \\end{{column}}
+        \\begin{{column}}{{0.48\\textwidth}}
+            \\begin{{itemize}}
+                {generate_content_items(content)}
+            \\end{{itemize}}
+        \\end{{column}}
+    \\end{{columns}}"""
         else:
-            latex_code += "    \\begin{columns}\n"
-            latex_code += "        \\begin{column}{0.48\\textwidth}\n"
-            latex_code += "            \\centering\n"
-
-            if playable and first_frame_path and os.path.exists(first_frame_path):
-                latex_code += f"            \\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{first_frame_path}}}\n"
-                latex_code += "            \\vspace{0.5em}\n"
-                latex_code += "            \\footnotesize{Click to play}\n"
-                latex_code += f"            \\movie[externalviewer]{{\\textcolor{{blue}}{{\\underline{{Play}}}}}}{{{filename}}}\n"
-            else:
-                latex_code += f"            \\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{filename}}}\n"
-
-            latex_code += "        \\end{column}%\n"
-            latex_code += "        \\begin{column}{0.48\\textwidth}\n"
-
-            if content:
-                latex_code += "            \\begin{itemize}\n"
-                for item in content:
-                    if item.strip():
-                        item = str(item).strip()
-                        if item.startswith('-'):
-                            item = item[1:].strip()
-                        processed_item = process_latex_content(item)
-                        latex_code += f"                \\item {processed_item}\n"
-                latex_code += "            \\end{itemize}\n"
-
-            latex_code += "        \\end{column}\n"
-            latex_code += "    \\end{columns}\n"
+            latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
+    \\begin{{columns}}[T]
+        \\begin{{column}}{{0.48\\textwidth}}
+            \\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{filename}}}
+        \\end{{column}}
+        \\begin{{column}}{{0.48\\textwidth}}
+            \\begin{{itemize}}
+                {generate_content_items(content)}
+            \\end{{itemize}}
+        \\end{{column}}
+    \\end{{columns}}"""
 
     # Add source citation if available
     if source_url:
-        latex_code += "    \\vspace{0.3em}\n"
-        latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
-        latex_code += "        \\node[anchor=south,font=\\tiny] at (current page.south) {\n"
-        latex_code += f"            Source: \\url{{{source_url}}}\n"
-        latex_code += "        };\n"
-        latex_code += "    \\end{tikzpicture}\n"
+        latex_code += generate_source_citation(source_url)
 
-    latex_code += "\\end{frame}\n\n"
+    latex_code += "\n\\end{frame}\n"
     return latex_code
+
+def generate_source_citation(source_url):
+    """Generate LaTeX code for source citation"""
+    return f"""
+    \\vspace{{0.3em}}
+    \\begin{{tikzpicture}}[remember picture,overlay]
+        \\node[anchor=south,font=\\tiny] at (current page.south) {{
+            Source: \\url{{{source_url}}}
+        }};
+    \\end{{tikzpicture}}"""
+
+def generate_content_items(content, color=None):
+    """Generate formatted content items with optional color"""
+    if not content:
+        return ""
+
+    items = []
+    for item in content:
+        if item.strip():
+            item = str(item).strip()
+            if item.startswith('-'):
+                item = item[1:].strip()
+            processed_item = process_latex_content(item)
+            if color:
+                processed_item = f"{{\\color{{{color}}}{processed_item}}}"
+            items.append(f"\\item {processed_item}")
+
+    return '\n        '.join(items)
 
 def format_source_citation(url):
     """
@@ -901,8 +963,7 @@ def verify_media_file(filepath):
     return None
 
 def process_media(url, content=None, title=None, playable=False, slide_index=None, callback=None):
-    """Process media with all supported types (local, URL, watermark, full frame, etc).
-    Returns: (latex_code, directive)"""
+    """Process media with graceful handling of missing files"""
     try:
         directive_type, media_source, is_playable, original_directive = parse_media_directive(url)
         playable = playable or is_playable
@@ -910,128 +971,41 @@ def process_media(url, content=None, title=None, playable=False, slide_index=Non
 
         # Handle empty/None case
         if not url or not directive_type:
-            if callback and slide_index is not None:
-                callback(slide_index)
             return handle_missing_media(url, content, title, playable)
 
         # Handle explicit \None directive
         if url.strip() == "\\None":
             return generate_latex_code(None, "\\None", None, content, title, False), "\\None"
 
-        # Handle watermark directive
-        if directive_type == 'watermark':
-            latex_code = f"""\\begin{{frame}}{{{title if title else ''}}}
-    \\begin{{tikzpicture}}[remember picture,overlay]
-        \\node[opacity=0.15] at (current page.center) {{%
-            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{media_source}}}%
-        }};
-    \\end{{tikzpicture}}"""
-            if content:
-                latex_code += "\n    \\begin{itemize}\n"
-                for item in content:
-                    if item.strip():
-                        item = item.lstrip('- ').strip()
-                        latex_code += f"        \\item {item}\n"
-                latex_code += "    \\end{itemize}"
-            latex_code += "\n\\end{frame}\n"
-            return latex_code, original_directive
+        # Check if media file exists for file directives
+        if directive_type == 'file':
+            media_path = media_source
+            if not os.path.exists(media_path):
+                media_path = os.path.join('media_files', os.path.basename(media_path))
+                if not os.path.exists(media_path):
+                    # Skip web search and prompts in GUI mode
+                    return handle_missing_media(url, content, title, playable)
 
-        # Handle full frame directive
-        if directive_type == 'fullframe':
-            latex_code = f"""\\begin{{frame}}[plain]
-    \\begin{{tikzpicture}}[remember picture,overlay]
-        \\node at (current page.center) {{%
-            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{media_source}}}%
-        }};"""
-            if content:
-                latex_code += f"""
-        \\node[text width=0.8\\paperwidth,align=center,text=white]
-             at (current page.center) {{
-            \\Large\\textbf{{{title if title else ''}}}\\\\[1em]
-            \\begin{{itemize}}"""
-                for item in content:
-                    if item.strip():
-                        item = item.lstrip('- ').strip()
-                        latex_code += f"\n                \\item {item}"
-                latex_code += "\n            \\end{itemize}\n        };"
-            latex_code += "\n    \\end{tikzpicture}\n\\end{frame}\n"
-            return latex_code, original_directive
+            media_source = media_path
 
-        # Handle URL type media
-        if directive_type == 'url':
-            if media_source.startswith(('http://', 'https://')):
-                source_url = media_source
-                if content:
-                    content = [item for item in content if not ('\\footnote' in item and 'Source:' in item)]
-
-            # Process YouTube URLs
-            if 'youtube.com' in media_source or 'youtu.be' in media_source:
-                result = download_youtube_video(media_source)
-                if result:
-                    base_name, filename, filepath = result
-                    first_frame_path = generate_preview_frame(filepath)
-                    media_path = f"media_files/{filename}"
-                    tex_directive = f"\\play \\file {media_path}"
-                    text_directive = f"\\play {media_source}"
-
-                    return generate_latex_code(
-                        base_name,
-                        media_path,
-                        first_frame_path,
-                        content,
-                        title,
-                        True,
-                        source_url
-                    ), (tex_directive, text_directive)
-
-            # Handle other URLs
-            valid, message = validate_url(media_source)
-            if not valid:
-                if callback and slide_index is not None:
-                    callback(slide_index)
+        # For URL type, skip web search if in GUI mode
+        if directive_type == 'url' and terminal_io and hasattr(terminal_io, 'editor'):
+            if not media_source or not media_source.startswith(('http://', 'https://')):
                 return handle_missing_media(url, content, title, playable)
 
-            base_name, filename, first_frame_path = download_media(media_source)
-            if base_name and filename:
-                if playable:
-                    first_frame_path = generate_preview_frame(os.path.join('media_files', filename))
-                elif first_frame_path:
-                    first_frame_path = verify_media_file(first_frame_path)
+        # Generate LaTeX code
+        latex_code = generate_latex_code(
+            os.path.splitext(os.path.basename(media_source))[0] if media_source else None,
+            media_source,
+            None,
+            content,
+            title,
+            playable,
+            source_url,
+            directive_type
+        )
 
-                media_path = verify_media_file(os.path.join('media_files', filename))
-                if media_path:
-                    new_directive = f"\\play \\file media_files/{filename}" if playable else f"\\file media_files/{filename}"
-                    return generate_latex_code(
-                        base_name,
-                        media_path,
-                        first_frame_path,
-                        content,
-                        title,
-                        playable,
-                        source_url
-                    ), new_directive
-
-        # Handle local file
-        elif directive_type == 'file':
-            if os.path.exists(media_source):
-                base_name = os.path.splitext(os.path.basename(media_source))[0]
-                first_frame_path = None
-                if playable:
-                    first_frame_path = generate_preview_frame(media_source)
-                return generate_latex_code(
-                    base_name,
-                    os.path.basename(media_source),
-                    first_frame_path or media_source,
-                    content,
-                    title,
-                    playable
-                ), original_directive
-            else:
-                if callback and slide_index is not None:
-                    callback(slide_index)
-                return handle_missing_media(url, content, title, playable)
-
-        return handle_missing_media(url, content, title, playable)
+        return latex_code, original_directive
 
     except Exception as e:
         print(f"Error processing media: {str(e)}")
@@ -1071,68 +1045,26 @@ def update_text_file(file_path, line_number, new_directive):
             terminal_io.write(f"Error updating file: {str(e)}\n", "red")
 
 
-def handle_missing_media(original_url, content, title, playable, file_path=None, line_number=None):
-    """Enhanced version that uses FileThumbnailBrowser for media selection"""
-    global terminal_io
-
-    if not terminal_io or not hasattr(terminal_io, 'editor'):
-        return handle_missing_media_fallback(original_url, content, title, playable)
-
-    editor = terminal_io.editor
-
-    # Show warning popup
-    messagebox.showwarning(
-        "Media Required",
-        f"Please select media for slide '{title}'",
-        parent=editor
-    )
-
+def handle_missing_media(original_url, content, title, playable):
+    """Handle missing media gracefully in GUI mode by defaulting to \\None"""
     try:
-        # Create and show the file browser
-        def handle_selection(media_path):
-            if media_path:
-                # Determine if file should be played based on extension
-                ext = os.path.splitext(media_path)[1].lower()
-                video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.gif'}
-                is_video = ext in video_extensions
+        # Check if we're in GUI mode (IDE)
+        in_gui_mode = terminal_io and hasattr(terminal_io, 'editor')
 
-                # Create the appropriate directive
-                if is_video:
-                    result = f"\\play \\file {media_path}"
-                else:
-                    result = f"\\file {media_path}"
-
-                # Update the text file if needed
-                if file_path and line_number:
-                    update_text_file(file_path, line_number, result)
-
-                return result
-            return "\\None"
-
-        # Show the thumbnail browser
-        browser = FileThumbnailBrowser(
-            editor,
-            initial_dir="media_files",
-            callback=handle_selection
-        )
-        browser.transient(editor)
-        browser.grab_set()
-        editor.wait_window(browser)
-
-        # Get the result from the browser
-        result = browser.result if hasattr(browser, 'result') else "\\None"
-
-        # Generate appropriate LaTeX code
-        if result == "\\None":
-            latex_code = generate_latex_code(None, None, None, content, title, False)
-            return latex_code, (result, result)
+        if in_gui_mode:
+            # In GUI mode, silently default to \None
+            latex_code = generate_latex_code(None, "\\None", None, content, title, False)
+            return latex_code, ("\\None", "\\None")
         else:
-            latex_code, directives = process_media(result, content, title, playable)
-            return latex_code, directives
+            # In terminal mode, use the original interactive behavior
+            return handle_missing_media_fallback(original_url, content, title, playable)
 
     except Exception as e:
-        print(f"Error handling media selection: {str(e)}")
-        return handle_missing_media_fallback(original_url, content, title, playable)
+        print(f"Error handling missing media: {str(e)}")
+        # Default to \None in case of any error
+        latex_code = generate_latex_code(None, "\\None", None, content, title, False)
+        return latex_code, ("\\None", "\\None")
+
 
 
 
@@ -1404,22 +1336,32 @@ def parse_media_directive(directive_string):
         if not directive_string or directive_string == '\\None':
             return 'none', None, False, original_directive
 
-        # Handle watermark directive
-        if directive_string.startswith('\\wm'):
-            return 'watermark', directive_string.split('\\wm', 1)[1].strip(), False, original_directive
-
-        # Handle full frame directive
-        if directive_string.startswith('\\ff'):
-            return 'fullframe', directive_string.split('\\ff', 1)[1].strip(), False, original_directive
+        # Define directive mappings
+        directives = {
+            '\\wm': 'watermark',
+            '\\ff': 'fullframe',
+            '\\pip': 'pip',
+            '\\split': 'split',
+            '\\hl': 'highlight',
+            '\\bg': 'background',
+            '\\tb': 'topbottom',
+            '\\ol': 'overlay',
+            '\\corner': 'corner',
+            '\\mosaic': 'mosaic'
+        }
 
         # Split the string to handle multiple parts
         parts = directive_string.split()
 
-        # Initialize variables
+        # Check for layout directives first
+        if parts and parts[0] in directives:
+            return directives[parts[0]], ' '.join(parts[1:]), False, original_directive
+
+        # Initialize variables for other directives
         directive_type = 'url'  # default type
         media_source = directive_string  # default to full string
 
-        # Process the parts
+        # Process standard directives
         for i, part in enumerate(parts):
             if part.startswith('\\'):
                 if part == '\\play':
@@ -1428,6 +1370,9 @@ def parse_media_directive(directive_string):
                         remaining_parts = parts[i + 1:]
                         if remaining_parts[0] == '\\file':
                             directive_type = 'file'
+                            media_source = ' '.join(remaining_parts[1:])
+                        elif remaining_parts[0] == '\\url':
+                            directive_type = 'url'
                             media_source = ' '.join(remaining_parts[1:])
                         else:
                             media_source = ' '.join(remaining_parts)
@@ -1451,6 +1396,31 @@ def parse_media_directive(directive_string):
             parts = media_source.split(maxsplit=1)
             if len(parts) > 1:
                 media_source = parts[1]
+
+        # Handle special URLs
+        if directive_type == 'url' and media_source.startswith(('http://', 'https://')):
+            # Special handling for known video platforms
+            if any(domain in media_source.lower() for domain in ['youtube.com', 'youtu.be', 'vimeo.com']):
+                playable = True
+
+        # Handle local file paths
+        if directive_type == 'file':
+            # Check if it's a video file
+            if media_source.lower().endswith(('.mp4', '.avi', '.mov', '.webm', '.mkv')):
+                playable = True
+            # Ensure proper path format
+            media_source = media_source.replace('\\', '/')
+            if not media_source.startswith('media_files/') and not media_source.startswith('./'):
+                media_source = f"media_files/{media_source}"
+
+        # Special handling for mosaic directive
+        if directive_type == 'mosaic':
+            # Ensure all image paths are properly formatted
+            images = [img.strip() for img in media_source.split(',')]
+            media_source = ','.join(
+                f"media_files/{img}" if not img.startswith(('media_files/', './')) else img
+                for img in images
+            )
 
         return directive_type, media_source, playable, original_directive
 
