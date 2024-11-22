@@ -2641,7 +2641,7 @@ class BeamerSlideEditor(ctk.CTk):
 
         elif action == "update_content":
             self.content_editor.delete('1.0', 'end')
-            for line in data['content'] and data['content'] !='\end{document}':
+            for line in data['content']:
                 self.content_editor.insert('end', f"{line}\n")
 
         elif action == "request_media":
@@ -4593,9 +4593,11 @@ Created by {self.__author__}
 
         self.content_editor.delete('1.0', 'end')
         for item in slide['content']:
-            if not item.startswith('-'):
-                item = f"- {item}"
-            self.content_editor.insert('end', f"{item}\n")
+            # Skip end document marker
+            if '\\end{document}' not in item:
+                if not item.startswith('-'):
+                    item = f"- {item}"
+                self.content_editor.insert('end', f"{item}\n")
 
         self.notes_editor.delete('1.0', 'end')
         if 'notes' in slide:

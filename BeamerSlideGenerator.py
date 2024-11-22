@@ -1301,6 +1301,9 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
         # Get preamble information first
         has_preamble, preamble_lines, content_lines, has_titlepage, has_maketitle = detect_preamble(lines)
 
+        # Filter out end document marker from content lines
+        content_lines = [line for line in content_lines if '\\end{document}' not in line]
+
         # Initialize the output .tex file
         with open(output_filename, 'w') as f:
             if has_preamble:
@@ -1331,7 +1334,11 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                 if line.startswith("\\title"):
                     title = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else "Slide"
                     if ide_callback:
+                        # Don't send end document marker in callback
+                        filtered_content = [c for c in content if '\\end{document}' not in c]
                         ide_callback("update_current_slide", {'index': current_slide_index, 'title': title})
+                        if filtered_content:  # Only send update if there's content
+                            ide_callback("update_content", {'content': filtered_content})
                     i += 1
                     continue
 
@@ -1350,6 +1357,9 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                     continue
 
                 if line.startswith("\\end{Content}"):
+                    # Filter out end document marker from content
+                    content = [c for c in content if '\\end{document}' not in c]
+
                     # Handle missing or invalid URL (but respect \None)
                     if not current_url or (current_url != "\\None" and not current_url.startswith("\\file") and not validate_url(current_url)[0]):
                         if ide_callback:
@@ -1362,23 +1372,6 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                                 current_url = response
                             elif current_url != "\\None":  # Preserve explicit \None
                                 current_url = "\\None"
-
-                    # Look ahead for Notes block
-                    j = i + 1
-                    while j < len(content_lines):
-                        next_line = content_lines[j].strip()
-                        if next_line.startswith("\\begin{Notes}"):
-                            j += 1  # Skip the begin Notes line
-                            while j < len(content_lines):
-                                note_line = content_lines[j].strip()
-                                if note_line.startswith("\\end{Notes}"):
-                                    break
-                                if note_line:
-                                    current_notes.append(note_line)
-                                j += 1
-                        elif next_line.startswith("\\title") or next_line.startswith("\\begin{Content}"):
-                            break
-                        j += 1
 
                     # Process media and generate slide
                     latex_code, new_directive = process_media(
@@ -1426,9 +1419,11 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                     continue
 
                 elif not line.startswith(("\\begin{Notes}", "\\end{Notes}")):
-                    content.append(line)
-                    if ide_callback:
-                        ide_callback("update_content", {'index': current_slide_index, 'content': content})
+                    # Skip end document marker in content
+                    if '\\end{document}' not in line:
+                        content.append(line)
+                        if ide_callback:
+                            ide_callback("update_content", {'index': current_slide_index, 'content': content})
 
                 i += 1
 
@@ -1443,7 +1438,7 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                 print(f"\nWarning: Error in slide processing: {str(e)}")
                 i += 1
 
-        # Write document end
+        # Write document end after all slides are processed
         with open(output_filename, 'a') as f:
             f.write("\\end{document}")
 
