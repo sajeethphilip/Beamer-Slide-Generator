@@ -41,6 +41,27 @@ def add_source_citation(content, source_note):
         # Add new footnote
         content.append(f"\\footnote{{\\tiny {source_note}}}")
 
+def verify_required_packages(preamble_content: str) -> list:
+    """
+    Verify required packages are present in preamble.
+    Returns list of missing packages.
+    """
+    required_packages = {
+        'tikz': '\\usepackage{tikz}',
+        'graphicx': '\\usepackage{graphicx}',
+        'multimedia': '\\usepackage{multimedia}',
+        'adjustbox': '\\usepackage[export]{adjustbox}',
+        'pgfplots': '\\usepackage{pgfplots}',
+        'calc': '\\usetikzlibrary{calc}',
+        'overlay-beamer-styles': '\\usetikzlibrary{overlay-beamer-styles}'
+    }
+
+    missing = []
+    for package, command in required_packages.items():
+        if command not in preamble_content:
+            missing.append(package)
+
+    return missing
 
 def generate_preview_frame(filepath, output_path=None):
     """
@@ -636,9 +657,9 @@ def process_latex_content(content_line: str) -> str:
 
     return ''.join(result)
 
-def generate_latex_code(base_name, filename, first_frame_path, content=None, title=None, playable=False, source_url=None):
-    '''
-    Generate LaTeX code for a slide with proper handling of all cases
+def generate_latex_code(base_name, filename, first_frame_path, content=None, title=None, playable=False, source_url=None, layout=None):
+    """
+    Generate LaTeX code with support for all media layouts.
     Args:
         base_name (str): Base name for media identification
         filename (str): Media filename or \\None
@@ -647,11 +668,8 @@ def generate_latex_code(base_name, filename, first_frame_path, content=None, tit
         title (str): Slide title
         playable (bool): Whether media is playable
         source_url (str): Source URL for citations
-    Returns:
-        str: Complete LaTeX code for the slide
-    '''
-
-
+        layout (str): Layout type (fullframe, watermark, pip, overlay, or None)
+    """
     # Process title
     if title:
         frame_title = process_latex_content(title)
@@ -659,67 +677,153 @@ def generate_latex_code(base_name, filename, first_frame_path, content=None, tit
         base_name_escaped = process_latex_content(base_name if base_name else 'Untitled')
         frame_title = f"Media: {base_name_escaped}"
 
-    latex_code = f"\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}\n"
-    latex_code += "    \\vspace{0.5em}\n"
+    # Special handling for full frame layout
+    if layout == 'fullframe':
+        latex_code = f"\\begin{{frame}}[plain]\n"
+        if filename and filename != "\\None":
+            latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
+            latex_code += "        \\node[at=(current page.center)] {\n"
+            latex_code += f"            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{filename}}}\n"
+            latex_code += "        };\n"
+            latex_code += "    \\end{tikzpicture}\n"
 
-    if filename == "\\None":
+        # Add overlay content if any
+        if content:
+            latex_code += "    \\vspace{1em}\n"
+            latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
+            latex_code += "        \\node[at=(current page.center)] {\n"
+            latex_code += "            \\begin{minipage}{0.8\\paperwidth}\n"
+            latex_code += "            \\color{white}\\begin{itemize}\n"
+            for item in content:
+                if item.strip():
+                    item = str(item).strip()
+                    if item.startswith('-'):
+                        item = item[1:].strip()
+                    processed_item = process_latex_content(item)
+                    latex_code += f"                \\item {processed_item}\n"
+            latex_code += "            \\end{itemize}\n"
+            latex_code += "            \\end{minipage}\n"
+            latex_code += "        };\n"
+            latex_code += "    \\end{tikzpicture}\n"
+
+    # Watermark layout
+    elif layout == 'watermark':
+        latex_code = f"\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}\n"
+        if filename and filename != "\\None":
+            latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
+            latex_code += "        \\node[at=(current page.center),opacity=0.15] {\n"
+            latex_code += f"            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{filename}}}\n"
+            latex_code += "        };\n"
+            latex_code += "    \\end{tikzpicture}\n"
+
         if content:
             latex_code += "    \\begin{itemize}\n"
             for item in content:
-                item = str(item).strip()
-                if item.startswith('-'):
-                    item = item[1:].strip()
-                processed_item = process_latex_content(item)
-                latex_code += f"        \\item {processed_item}\n"
+                if item.strip():
+                    item = str(item).strip()
+                    if item.startswith('-'):
+                        item = item[1:].strip()
+                    processed_item = process_latex_content(item)
+                    latex_code += f"        \\item {processed_item}\n"
             latex_code += "    \\end{itemize}\n"
-    else:
-        latex_code += "    \\begin{columns}\n"
-        latex_code += "        \\begin{column}{0.48\\textwidth}\n"
-        latex_code += "            \\centering\n"
 
-        if playable and first_frame_path and os.path.exists(first_frame_path):
-            # Process preview path with proper escaping
-            preview_filename = process_latex_content(os.path.basename(first_frame_path))
-            preview_path = f"media\\_files/{preview_filename}"
-            latex_code += f"            \\fbox{{\\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{preview_path}}}}}\n\n"
+    # Picture-in-Picture layout
+    elif layout == 'pip':
+        latex_code = f"\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}\n"
+        if content:
+            latex_code += "    \\begin{itemize}\n"
+            for item in content:
+                if item.strip():
+                    item = str(item).strip()
+                    if item.startswith('-'):
+                        item = item[1:].strip()
+                    processed_item = process_latex_content(item)
+                    latex_code += f"        \\item {processed_item}\n"
+            latex_code += "    \\end{itemize}\n"
 
-            latex_code += "            \\vspace{0.5em}\n"
-            latex_code += "            \\footnotesize{Click to play}\n"
+        if filename and filename != "\\None":
+            latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
+            latex_code += "        \\node[anchor=south east, inner sep=0pt] at ($(current page.south east)+(-0.5cm,0.5cm)$) {\n"
+            latex_code += f"            \\includegraphics[width=0.3\\paperwidth,keepaspectratio]{{{filename}}}\n"
+            latex_code += "        };\n"
+            latex_code += "    \\end{tikzpicture}\n"
 
-            # Process movie path with proper escaping
-            movie_filename = process_latex_content(os.path.basename(filename))
-            movie_path = f"media\\_files/{movie_filename}"
-            latex_code += f"            \\movie[externalviewer]{{\\textcolor{{blue}}{{\\underline{{Play}}}}}}{{{movie_path}}}\n"
-        else:
-            # Process static image with proper escaping
-            image_source = first_frame_path if first_frame_path else filename
-            image_filename = process_latex_content(os.path.basename(image_source))
-            image_path = f"media\\_files/{image_filename}"
-            latex_code += f"            \\fbox{{\\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{image_path}}}}}\n"
-
-        latex_code += "        \\end{column}%\n"
-        latex_code += "        \\begin{column}{0.48\\textwidth}\n"
+    # Overlay layout
+    elif layout == 'overlay':
+        latex_code = f"\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}\n"
+        if filename and filename != "\\None":
+            latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
+            latex_code += "        \\node[at=(current page.center), opacity=0.3] {\n"
+            latex_code += f"            \\includegraphics[width=0.9\\paperwidth,height=0.8\\paperheight,keepaspectratio]{{{filename}}}\n"
+            latex_code += "        };\n"
+            latex_code += "    \\end{tikzpicture}\n"
 
         if content:
-            latex_code += "            \\begin{itemize}\n"
+            latex_code += "    \\vspace{1em}\n"
+            latex_code += "    \\begin{itemize}\n"
             for item in content:
-                item = str(item).strip()
-                if item.startswith('-'):
-                    item = item[1:].strip()
-                processed_item = process_latex_content(item)
-                latex_code += f"                \\item {processed_item}\n"
-            latex_code += "            \\end{itemize}\n"
+                if item.strip():
+                    item = str(item).strip()
+                    if item.startswith('-'):
+                        item = item[1:].strip()
+                    processed_item = process_latex_content(item)
+                    latex_code += f"        \\item {processed_item}\n"
+            latex_code += "    \\end{itemize}\n"
 
-        if source_url:
-            latex_code += "            \\vspace{0.5em}\n"
-            latex_code += "            \\rule{0.9\\textwidth}{0.4pt}\n"
-            if 'youtube.com' in source_url or 'youtu.be' in source_url:
-                latex_code += f"            {{\\tiny YouTube video: \\url{{{source_url}}}}}\n"
+    # Default side-by-side layout
+    else:
+        latex_code = f"\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}\n"
+        latex_code += "    \\vspace{0.5em}\n"
+
+        if filename == "\\None":
+            if content:
+                latex_code += "    \\begin{itemize}\n"
+                for item in content:
+                    if item.strip():
+                        item = str(item).strip()
+                        if item.startswith('-'):
+                            item = item[1:].strip()
+                        processed_item = process_latex_content(item)
+                        latex_code += f"        \\item {processed_item}\n"
+                latex_code += "    \\end{itemize}\n"
+        else:
+            latex_code += "    \\begin{columns}\n"
+            latex_code += "        \\begin{column}{0.48\\textwidth}\n"
+            latex_code += "            \\centering\n"
+
+            if playable and first_frame_path and os.path.exists(first_frame_path):
+                latex_code += f"            \\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{first_frame_path}}}\n"
+                latex_code += "            \\vspace{0.5em}\n"
+                latex_code += "            \\footnotesize{Click to play}\n"
+                latex_code += f"            \\movie[externalviewer]{{\\textcolor{{blue}}{{\\underline{{Play}}}}}}{{{filename}}}\n"
             else:
-                latex_code += f"            {{\\tiny Source: \\url{{{source_url}}}}}\n"
+                latex_code += f"            \\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{filename}}}\n"
 
-        latex_code += "        \\end{column}\n"
-        latex_code += "    \\end{columns}\n"
+            latex_code += "        \\end{column}%\n"
+            latex_code += "        \\begin{column}{0.48\\textwidth}\n"
+
+            if content:
+                latex_code += "            \\begin{itemize}\n"
+                for item in content:
+                    if item.strip():
+                        item = str(item).strip()
+                        if item.startswith('-'):
+                            item = item[1:].strip()
+                        processed_item = process_latex_content(item)
+                        latex_code += f"                \\item {processed_item}\n"
+                latex_code += "            \\end{itemize}\n"
+
+            latex_code += "        \\end{column}\n"
+            latex_code += "    \\end{columns}\n"
+
+    # Add source citation if available
+    if source_url:
+        latex_code += "    \\vspace{0.3em}\n"
+        latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
+        latex_code += "        \\node[anchor=south,font=\\tiny] at (current page.south) {\n"
+        latex_code += f"            Source: \\url{{{source_url}}}\n"
+        latex_code += "        };\n"
+        latex_code += "    \\end{tikzpicture}\n"
 
     latex_code += "\\end{frame}\n\n"
     return latex_code
@@ -797,98 +901,142 @@ def verify_media_file(filepath):
     return None
 
 def process_media(url, content=None, title=None, playable=False, slide_index=None, callback=None):
-    """Process media with all required handling steps"""
-    directive_type, media_source, is_playable, original_directive = parse_media_directive(url)
-    playable = playable or is_playable
-    source_url = None
+    """Process media with all supported types (local, URL, watermark, full frame, etc).
+    Returns: (latex_code, directive)"""
+    try:
+        directive_type, media_source, is_playable, original_directive = parse_media_directive(url)
+        playable = playable or is_playable
+        source_url = None
 
-    # Handle empty/missing media case
-    if not url or not directive_type:
-        if callback and slide_index is not None:
-            callback(slide_index)
+        # Handle empty/None case
+        if not url or not directive_type:
+            if callback and slide_index is not None:
+                callback(slide_index)
+            return handle_missing_media(url, content, title, playable)
+
+        # Handle explicit \None directive
+        if url.strip() == "\\None":
+            return generate_latex_code(None, "\\None", None, content, title, False), "\\None"
+
+        # Handle watermark directive
+        if directive_type == 'watermark':
+            latex_code = f"""\\begin{{frame}}{{{title if title else ''}}}
+    \\begin{{tikzpicture}}[remember picture,overlay]
+        \\node[opacity=0.15] at (current page.center) {{%
+            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{media_source}}}%
+        }};
+    \\end{{tikzpicture}}"""
+            if content:
+                latex_code += "\n    \\begin{itemize}\n"
+                for item in content:
+                    if item.strip():
+                        item = item.lstrip('- ').strip()
+                        latex_code += f"        \\item {item}\n"
+                latex_code += "    \\end{itemize}"
+            latex_code += "\n\\end{frame}\n"
+            return latex_code, original_directive
+
+        # Handle full frame directive
+        if directive_type == 'fullframe':
+            latex_code = f"""\\begin{{frame}}[plain]
+    \\begin{{tikzpicture}}[remember picture,overlay]
+        \\node at (current page.center) {{%
+            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{media_source}}}%
+        }};"""
+            if content:
+                latex_code += f"""
+        \\node[text width=0.8\\paperwidth,align=center,text=white]
+             at (current page.center) {{
+            \\Large\\textbf{{{title if title else ''}}}\\\\[1em]
+            \\begin{{itemize}}"""
+                for item in content:
+                    if item.strip():
+                        item = item.lstrip('- ').strip()
+                        latex_code += f"\n                \\item {item}"
+                latex_code += "\n            \\end{itemize}\n        };"
+            latex_code += "\n    \\end{tikzpicture}\n\\end{frame}\n"
+            return latex_code, original_directive
+
+        # Handle URL type media
+        if directive_type == 'url':
+            if media_source.startswith(('http://', 'https://')):
+                source_url = media_source
+                if content:
+                    content = [item for item in content if not ('\\footnote' in item and 'Source:' in item)]
+
+            # Process YouTube URLs
+            if 'youtube.com' in media_source or 'youtu.be' in media_source:
+                result = download_youtube_video(media_source)
+                if result:
+                    base_name, filename, filepath = result
+                    first_frame_path = generate_preview_frame(filepath)
+                    media_path = f"media_files/{filename}"
+                    tex_directive = f"\\play \\file {media_path}"
+                    text_directive = f"\\play {media_source}"
+
+                    return generate_latex_code(
+                        base_name,
+                        media_path,
+                        first_frame_path,
+                        content,
+                        title,
+                        True,
+                        source_url
+                    ), (tex_directive, text_directive)
+
+            # Handle other URLs
+            valid, message = validate_url(media_source)
+            if not valid:
+                if callback and slide_index is not None:
+                    callback(slide_index)
+                return handle_missing_media(url, content, title, playable)
+
+            base_name, filename, first_frame_path = download_media(media_source)
+            if base_name and filename:
+                if playable:
+                    first_frame_path = generate_preview_frame(os.path.join('media_files', filename))
+                elif first_frame_path:
+                    first_frame_path = verify_media_file(first_frame_path)
+
+                media_path = verify_media_file(os.path.join('media_files', filename))
+                if media_path:
+                    new_directive = f"\\play \\file media_files/{filename}" if playable else f"\\file media_files/{filename}"
+                    return generate_latex_code(
+                        base_name,
+                        media_path,
+                        first_frame_path,
+                        content,
+                        title,
+                        playable,
+                        source_url
+                    ), new_directive
+
+        # Handle local file
+        elif directive_type == 'file':
+            if os.path.exists(media_source):
+                base_name = os.path.splitext(os.path.basename(media_source))[0]
+                first_frame_path = None
+                if playable:
+                    first_frame_path = generate_preview_frame(media_source)
+                return generate_latex_code(
+                    base_name,
+                    os.path.basename(media_source),
+                    first_frame_path or media_source,
+                    content,
+                    title,
+                    playable
+                ), original_directive
+            else:
+                if callback and slide_index is not None:
+                    callback(slide_index)
+                return handle_missing_media(url, content, title, playable)
+
         return handle_missing_media(url, content, title, playable)
 
-    # Handle explicit \None directive
-    if url.strip() == "\\None":
-        return generate_latex_code(None, "\\None", None, content, title, False), "\\None"
+    except Exception as e:
+        print(f"Error processing media: {str(e)}")
+        return handle_missing_media(url, content, title, playable)
 
-    # Handle URL type media
-    elif directive_type == 'url':
-        if media_source.startswith(('http://', 'https://')):
-            source_url = media_source
-            if content:
-                content = [item for item in content if not ('\\footnote' in item and 'Source:' in item)]
-
-        # Process YouTube URLs
-        if 'youtube.com' in media_source or 'youtu.be' in media_source:
-            result = download_youtube_video(media_source)
-            if result:
-                base_name, filename, filepath = result
-                first_frame_path = generate_preview_frame(filepath)
-                media_path = f"media_files/{filename}"
-                tex_directive = f"\\play \\file {media_path}"
-                text_directive = f"\\play {media_source}"
-
-                return generate_latex_code(
-                    base_name,
-                    media_path,
-                    first_frame_path,
-                    content,
-                    title,
-                    True,
-                    media_source
-                ), (tex_directive, text_directive)
-
-        # Handle other URLs
-        valid, message = validate_url(media_source)
-        if not valid:
-            print(f"\nWarning: Original URL failed: {message}")
-            if callback and slide_index is not None:
-                callback(slide_index)
-            return handle_missing_media(url, content, title, playable)
-
-        base_name, filename, first_frame_path = download_media(media_source)
-        if base_name and filename:
-            if playable:
-                first_frame_path = generate_preview_frame(os.path.join('media_files', filename))
-            elif first_frame_path:
-                first_frame_path = verify_media_file(first_frame_path)
-
-            media_path = verify_media_file(os.path.join('media_files', filename))
-            if media_path:
-                new_directive = f"\\play \\file media_files/{filename}" if playable else f"\\file media_files/{filename}"
-                return generate_latex_code(
-                    base_name,
-                    media_path,
-                    first_frame_path,
-                    content,
-                    title,
-                    playable,
-                    source_url
-                ), new_directive
-
-    # Handle local file
-    elif directive_type == 'file':
-        if os.path.exists(media_source):
-            base_name = os.path.splitext(os.path.basename(media_source))[0]
-            first_frame_path = None
-            if playable:
-                first_frame_path = generate_preview_frame(media_source)
-            return generate_latex_code(
-                base_name,
-                os.path.basename(media_source),
-                first_frame_path or media_source,
-                content,
-                title,
-                playable
-            ), original_directive
-        else:
-            print(f"\nWarning: Local file not found: {media_source}")
-            if callback and slide_index is not None:
-                callback(slide_index)
-            return handle_missing_media(url, content, title, playable)
-
-    return handle_missing_media(url, content, title, playable)
 
 def update_text_file(file_path, line_number, new_directive):
     """Update the text file with new directive"""
@@ -1245,47 +1393,71 @@ def update_input_file(file_path, url_updates, is_tex_file=False):
 
 
 def parse_media_directive(directive_string):
-    """
-    Enhanced parser to handle play directives with both URLs and local files.
-    Returns tuple of (directive_type, media_source, playable, original_directive)
-    """
-    directive_string = directive_string.strip()
-    playable = False
-    original_directive = directive_string
+    """Parse media directive string into components.
+    Returns: (directive_type, media_source, playable, original_directive)"""
+    try:
+        directive_string = directive_string.strip()
+        playable = False
+        original_directive = directive_string
 
-    # Handle empty or None cases
-    if not directive_string or directive_string == '\\None':
-        return 'none', None, False, original_directive
+        # Handle empty or None cases
+        if not directive_string or directive_string == '\\None':
+            return 'none', None, False, original_directive
 
-    # Split the string to handle multiple parts
-    parts = directive_string.split()
+        # Handle watermark directive
+        if directive_string.startswith('\\wm'):
+            return 'watermark', directive_string.split('\\wm', 1)[1].strip(), False, original_directive
 
-    # Initialize variables
-    directive_type = 'url'  # default type
-    media_source = directive_string  # default to full string
+        # Handle full frame directive
+        if directive_string.startswith('\\ff'):
+            return 'fullframe', directive_string.split('\\ff', 1)[1].strip(), False, original_directive
 
-    # Process the parts
-    for i, part in enumerate(parts):
-        if part.startswith('\\'):
-            if part == '\\play':
-                playable = True
-                if i < len(parts) - 1:
-                    remaining_parts = parts[i + 1:]
-                    if remaining_parts[0] == '\\file':
-                        directive_type = 'file'
-                        media_source = ' '.join(remaining_parts[1:])
-                    else:
-                        media_source = ' '.join(remaining_parts)
-                break
-            elif part == '\\file':
-                directive_type = 'file'
-                if i < len(parts) - 1:
-                    media_source = ' '.join(parts[i + 1:])
-                break
-            elif part == '\\None':
-                return 'none', None, False, original_directive
+        # Split the string to handle multiple parts
+        parts = directive_string.split()
 
-    return directive_type, media_source, playable, original_directive
+        # Initialize variables
+        directive_type = 'url'  # default type
+        media_source = directive_string  # default to full string
+
+        # Process the parts
+        for i, part in enumerate(parts):
+            if part.startswith('\\'):
+                if part == '\\play':
+                    playable = True
+                    if i < len(parts) - 1:
+                        remaining_parts = parts[i + 1:]
+                        if remaining_parts[0] == '\\file':
+                            directive_type = 'file'
+                            media_source = ' '.join(remaining_parts[1:])
+                        else:
+                            media_source = ' '.join(remaining_parts)
+                    break
+                elif part == '\\file':
+                    directive_type = 'file'
+                    if i < len(parts) - 1:
+                        media_source = ' '.join(parts[i + 1:])
+                    break
+                elif part == '\\None':
+                    return 'none', None, False, original_directive
+                elif part == '\\url':
+                    directive_type = 'url'
+                    if i < len(parts) - 1:
+                        media_source = ' '.join(parts[i + 1:])
+                    break
+
+        # Clean up media source
+        if media_source and media_source.startswith('\\'):
+            # Remove any leading \ and command name
+            parts = media_source.split(maxsplit=1)
+            if len(parts) > 1:
+                media_source = parts[1]
+
+        return directive_type, media_source, playable, original_directive
+
+    except Exception as e:
+        print(f"Error parsing media directive: {str(e)}")
+        return 'none', None, False, directive_string
+
 
 def process_input_file(file_path, output_filename='movie.tex', ide_callback=None):
     """Process input file to convert to TeX format with proper handling of all elements"""
@@ -1300,9 +1472,6 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
 
         # Get preamble information first
         has_preamble, preamble_lines, content_lines, has_titlepage, has_maketitle = detect_preamble(lines)
-
-        # Filter out end document marker from content lines
-        content_lines = [line for line in content_lines if '\\end{document}' not in line]
 
         # Initialize the output .tex file
         with open(output_filename, 'w') as f:
@@ -1324,123 +1493,93 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
         current_slide_index = 0
 
         while i < len(content_lines):
-            try:
-                line = content_lines[i].strip()
+            line = content_lines[i].strip()
 
-                if not line:
+            if '\\end{document}' in line:
+                i += 1
+                continue
+
+            if not line:
+                i += 1
+                continue
+
+            if line.startswith("\\title"):
+                title = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else "Slide"
+                if ide_callback:
+                    ide_callback("update_current_slide", {'index': current_slide_index, 'title': title})
+                i += 1
+                continue
+
+            if line.startswith("\\begin{Content}"):
+                content = []
+                current_notes = []
+                if len(line) > len("\\begin{Content}"):
+                    current_url = line[len("\\begin{Content}"):].strip()
+                else:
                     i += 1
-                    continue
-
-                if line.startswith("\\title"):
-                    title = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else "Slide"
-                    if ide_callback:
-                        # Don't send end document marker in callback
-                        filtered_content = [c for c in content if '\\end{document}' not in c]
-                        ide_callback("update_current_slide", {'index': current_slide_index, 'title': title})
-                        if filtered_content:  # Only send update if there's content
-                            ide_callback("update_content", {'content': filtered_content})
-                    i += 1
-                    continue
-
-                if line.startswith("\\begin{Content}"):
-                    content = []
-                    current_notes = []
-                    if len(line) > len("\\begin{Content}"):
-                        current_url = line[len("\\begin{Content}"):].strip()
+                    if i < len(content_lines):
+                        current_url = content_lines[i].strip()
                     else:
-                        i += 1
-                        if i < len(content_lines):
-                            current_url = content_lines[i].strip()
+                        current_url = None
+                i += 1
+                continue
+
+            if line.startswith("\\end{Content}"):
+                if ide_callback:
+                    ide_callback("update_content", {'index': current_slide_index, 'content': content})
+
+                latex_code, new_directive = process_media(
+                    current_url if current_url else "\\None",
+                    content,
+                    title,
+                    False,
+                    slide_index=current_slide_index,
+                    callback=ide_callback
+                )
+
+                if latex_code:
+                    # Remove frame end if present for notes addition
+                    frame_end = latex_code.rfind('\\end{frame}')
+                    if frame_end != -1:
+                        latex_code = latex_code[:frame_end]
+
+                    # Add notes if present
+                    if current_notes:
+                        latex_code += "\n    % Presentation notes\n"
+                        for note in current_notes:
+                            latex_code += f"    \\note{{{note}}}\n"
+
+                    # Add frame end
+                    latex_code += "\\end{frame}\n\n"
+
+                    with open(output_filename, 'a') as f:
+                        f.write(latex_code)
+                    processed += 1
+
+                    if new_directive and current_url and new_directive != current_url:
+                        if isinstance(new_directive, tuple):
+                            url_updates[current_url] = new_directive
                         else:
-                            current_url = None
-                    i += 1
-                    continue
+                            url_updates[current_url] = (new_directive, new_directive)
+                else:
+                    failed += 1
+                    if ide_callback:
+                        ide_callback("error", {'message': f"Failed to process slide {current_slide_index + 1}"})
 
-                if line.startswith("\\end{Content}"):
-                    # Filter out end document marker from content
-                    content = [c for c in content if '\\end{document}' not in c]
-
-                    # Handle missing or invalid URL (but respect \None)
-                    if not current_url or (current_url != "\\None" and not current_url.startswith("\\file") and not validate_url(current_url)[0]):
-                        if ide_callback:
-                            response = ide_callback("request_media", {
-                                'title': title,
-                                'content': content,
-                                'slide_index': current_slide_index
-                            })
-                            if response:
-                                current_url = response
-                            elif current_url != "\\None":  # Preserve explicit \None
-                                current_url = "\\None"
-
-                    # Process media and generate slide
-                    latex_code, new_directive = process_media(
-                        current_url if current_url else "\\None",
-                        content,
-                        title,
-                        False,
-                        slide_index=current_slide_index,
-                        callback=ide_callback
-                    )
-
-                    if latex_code:
-                        # Remove frame end if present for notes addition
-                        frame_end = latex_code.rfind('\\end{frame}')
-                        if frame_end != -1:
-                            latex_code = latex_code[:frame_end]
-
-                        # Add notes if present
-                        if current_notes:
-                            latex_code += "\n    % Presentation notes\n"
-                            for note in current_notes:
-                                latex_code += f"    \\note{{{note}}}\n"
-
-                        # Add frame end
-                        latex_code += "\\end{frame}\n\n"
-
-                        with open(output_filename, 'a') as f:
-                            f.write(latex_code)
-                        processed += 1
-
-                        if new_directive and current_url and new_directive != current_url:
-                            if current_url.startswith("\\play "):
-                                url_updates[current_url.replace("\\play ", "").strip()] = new_directive
-                            else:
-                                url_updates[current_url] = new_directive
-                    else:
-                        failed += 1
-                        if ide_callback:
-                            ide_callback("error", {'message': f"Failed to process slide {current_slide_index + 1}"})
-
-                    content = []
-                    current_notes = []
-                    current_slide_index += 1
-                    i += 1
-                    continue
-
-                elif not line.startswith(("\\begin{Notes}", "\\end{Notes}")):
-                    # Skip end document marker in content
-                    if '\\end{document}' not in line:
-                        content.append(line)
-                        if ide_callback:
-                            ide_callback("update_content", {'index': current_slide_index, 'content': content})
-
+                content = []
+                current_notes = []
+                current_slide_index += 1
                 i += 1
+                continue
 
-            except Exception as e:
-                failed += 1
-                error_msg = f"Error processing slide {processed + failed}:\n"
-                error_msg += f"Title: {title}\n"
-                if content:
-                    error_msg += f"Content:\n{''.join(['  ' + l + '\n' for l in content])}"
-                error_msg += f"Error: {str(e)}\n"
-                errors.append(error_msg)
-                print(f"\nWarning: Error in slide processing: {str(e)}")
-                i += 1
+            if not line.startswith(("\\begin{Notes}", "\\end{Notes}")):
+                content.append(line)
+
+            i += 1
 
         # Write document end after all slides are processed
         with open(output_filename, 'a') as f:
-            f.write("\\end{document}")
+            f.write("\\end{document}\n")
 
         if url_updates:
             update_input_file(file_path, url_updates, is_tex_file=False)
@@ -1449,11 +1588,15 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
         return processed, failed, errors
 
     except Exception as e:
-        error_msg = f"General processing error: {str(e)}"
+        error_msg = f"Error processing slide {processed + failed}:\n"
+        error_msg += f"Title: {title}\n"
+        if content:
+            error_msg += f"Content:\n{''.join(['  ' + l + '\n' for l in content])}"
+        error_msg += f"Error: {str(e)}\n"
         errors.append(error_msg)
         if ide_callback:
             ide_callback("error", {'message': error_msg})
-        return 0, 1, errors
+        return processed, failed, errors
 
 def main():
     """
