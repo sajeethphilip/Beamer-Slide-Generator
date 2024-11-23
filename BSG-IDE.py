@@ -178,6 +178,99 @@ def install_remaining_packages(pip_path):
             except:
                 continue
 
+def get_requirements_path():
+    """Get path to requirements.txt"""
+    possible_paths = [
+        Path.cwd() / 'requirements.txt',
+        Path(__file__).parent / 'requirements.txt',
+        Path.home() / '.local' / 'lib' / 'bsg-ide' / 'requirements.txt',
+        Path(os.getenv('APPDATA', '')) / 'BSG-IDE' / 'requirements.txt'
+    ]
+
+    for path in possible_paths:
+        if path.exists():
+            return path
+
+    return possible_paths[0]  # Return first path as default
+def install_system_dependencies():
+    """Install system-specific dependencies"""
+    try:
+        if sys.platform.startswith('linux'):
+            # Install Linux system dependencies
+            dependencies = [
+                'python3-gi',
+                'python3-gi-cairo',
+                'gir1.2-gtk-3.0',
+                'python3-cairo',
+                'libgtk-3-0',
+                'librsvg2-common',
+                'poppler-utils',
+                'libgirepository1.0-dev',
+                'gcc',
+                'python3-dev',
+                'pkg-config',
+                'libcairo2-dev',
+                'gobject-introspection'
+            ]
+
+            if shutil.which('apt'):
+                cmd = ['sudo', 'apt', 'install', '-y']
+            elif shutil.which('dnf'):
+                cmd = ['sudo', 'dnf', 'install', '-y']
+            elif shutil.which('pacman'):
+                cmd = ['sudo', 'pacman', '-S', '--noconfirm']
+            else:
+                print("Could not detect package manager")
+                return False
+
+            try:
+                subprocess.check_call(cmd + dependencies)
+                return True
+            except:
+                print("Warning: Could not install system dependencies")
+                return False
+
+        elif sys.platform.startswith('win'):
+            # For Windows, most dependencies are handled by pip
+            return True
+
+        elif sys.platform.startswith('darwin'):
+            # Install macOS dependencies using Homebrew
+            try:
+                subprocess.check_call(['brew', 'install', 'gtk+3', 'pygobject3', 'cairo'])
+                return True
+            except:
+                print("Warning: Could not install macOS dependencies")
+                return False
+
+        return True
+
+    except Exception as e:
+        print(f"Error installing system dependencies: {e}")
+        return False
+def verify_installation():
+    """Verify critical packages are installed and working"""
+    try:
+        import customtkinter
+        import PIL
+        import tkinter
+        print("\nCritical packages verified successfully")
+        return True
+    except ImportError as e:
+        print(f"Error: Critical package missing: {e}")
+        return False
+
+def verify_existing_packages():
+    """Verify existing packages when offline"""
+    try:
+        import customtkinter
+        import PIL
+        import tkinter
+        print("✓ Required packages found in existing installation")
+        return True
+    except ImportError:
+        print("Error: Required packages not found and cannot install offline")
+        return False
 def check_and_install_dependencies():
     """
     Two-phase dependency installation with improved virtual environment handling
@@ -293,6 +386,49 @@ def check_and_install_dependencies():
                             print(f"✓ Installed {install_name}")
                     except:
                         continue
+            # Install critical packages first
+            print("\nInstalling critical packages...")
+            for package, version in critical_packages.items():
+                try:
+                    package_spec = f"{package}=={version}" if version else package
+                    subprocess.check_call([
+                        venv_pip, "install", "--no-cache-dir", package_spec
+                    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    print(f"✓ Installed {package_spec}")
+                except subprocess.CalledProcessError as e:
+                    print(f"Warning: Failed to install {package}: {e}")
+                    try:
+                        # Try without version constraint
+                        subprocess.check_call([
+                            venv_pip, "install", "--no-cache-dir", package.split('==')[0]
+                        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        print(f"✓ Installed {package} (latest version)")
+                    except:
+                        print(f"Error: Failed to install {package}")
+                        return False
+
+            # Install system dependencies for different platforms
+            if install_system_dependencies():
+                print("✓ System dependencies installed")
+            else:
+                print("Warning: Some system dependencies may be missing")
+
+            # Install all requirements from requirements.txt
+            print("\nInstalling remaining packages...")
+            requirements_path = get_requirements_path()
+            if requirements_path.exists():
+                try:
+                    subprocess.check_call([
+                        venv_pip, "install", "-r", str(requirements_path)
+                    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    print("✓ All packages installed successfully")
+                except subprocess.CalledProcessError as e:
+                    print(f"Warning: Some packages failed to install: {e}")
+                    # Continue anyway as critical packages are already installed
+            else:
+                print("Warning: requirements.txt not found")
+
+            return verify_installation()
 
         except ImportError:
             print("! Warning: customtkinter not found after installation")
@@ -341,7 +477,98 @@ from pathlib import Path
 from PIL import Image
 import traceback
 import webbrowser
+#-------------------------------------------Session Manager ------------------------------------------
+#import json
+#import os
+#from pathlib import Path
 
+class SessionManager:
+    """Manages persistence of session data between IDE launches"""
+
+    def __init__(self):
+        try:
+            # Get user's home directory
+            self.home_dir = Path.home()
+            # Create .bsg-ide directory in user's home if it doesn't exist
+            self.config_dir = self.home_dir / '.bsg-ide'
+            self.config_dir.mkdir(exist_ok=True)
+            self.session_file = self.config_dir / 'session.json'
+            self.default_session = {
+                'last_file': None,
+                'working_directory': str(Path.cwd()),  # Use current directory as default
+                'recent_files': [],
+                'window_size': {'width': 1200, 'height': 800},
+                'window_position': {'x': None, 'y': None}
+            }
+        except Exception as e:
+            print(f"Warning: Could not initialize session manager: {str(e)}")
+            # Still allow the program to run with defaults
+            self.session_file = None
+            self.default_session = {
+                'last_file': None,
+                'working_directory': str(Path.cwd()),
+                'recent_files': [],
+                'window_size': {'width': 1200, 'height': 800},
+                'window_position': {'x': None, 'y': None}
+            }
+
+    def save_session(self, data):
+        """Save session data to file"""
+        if not self.session_file:
+            return  # Skip saving if no session file available
+
+        try:
+            # Ensure all paths are strings
+            session_data = {
+                'last_file': str(data.get('last_file')) if data.get('last_file') else None,
+                'working_directory': str(data.get('working_directory', self.default_session['working_directory'])),
+                'recent_files': [str(f) for f in data.get('recent_files', [])[-10:]],  # Keep last 10 files
+                'window_size': data.get('window_size', self.default_session['window_size']),
+                'window_position': data.get('window_position', self.default_session['window_position'])
+            }
+
+            with open(self.session_file, 'w') as f:
+                json.dump(session_data, f, indent=2)
+
+        except Exception as e:
+            print(f"Warning: Could not save session data: {str(e)}")
+            # Continue program operation even if save fails
+
+    def load_session(self):
+        """Load session data from file"""
+        try:
+            if self.session_file and self.session_file.exists():
+                with open(self.session_file, 'r') as f:
+                    data = json.load(f)
+
+                # Validate loaded data
+                session_data = self.default_session.copy()
+                session_data.update({
+                    k: v for k, v in data.items()
+                    if k in self.default_session and v is not None
+                })
+
+                # Verify paths exist but don't fail if they don't
+                if session_data['last_file']:
+                    if not os.path.exists(session_data['last_file']):
+                        session_data['last_file'] = None
+
+                if not os.path.exists(session_data['working_directory']):
+                    session_data['working_directory'] = str(Path.cwd())
+
+                # Filter out non-existent recent files
+                session_data['recent_files'] = [
+                    f for f in session_data['recent_files']
+                    if os.path.exists(f)
+                ]
+
+                return session_data
+
+            return self.default_session.copy()
+
+        except Exception as e:
+            print(f"Warning: Could not load session data: {str(e)}")
+            return self.default_session.copy()
 #----------------------------------------------Interactive Terminal ------------------------------------
 class InteractiveTerminal(ctk.CTkFrame):
     """Interactive terminal with proper input capture and validation"""
@@ -714,7 +941,9 @@ def fix_installation():
         required_files = [
             'BSG-IDE.py',
             'BeamerSlideGenerator.py',
-            'BSG_terminal'
+            'BSG_terminal',
+            'airis4d_logo.png',
+            'requirements.txt'
         ]
 
         for file in required_files:
@@ -1302,66 +1531,29 @@ def create_icon(install_dir: Path) -> bool:
         traceback.print_exc()
         return False
 #--------------------------------------pyempress ----------------------------------
-def setup_pympress():
-    """Install pympress and its dependencies if not already installed"""
+def present_with_notes(self):
+    """Present PDF using pympress for dual-screen display with notes"""
+    if not self.current_file:
+        messagebox.showwarning("Warning", "Please save your file first!")
+        return
+
     try:
-        import pympress
-        print("✓ Pympress is already installed")
-        return True
-    except ImportError:
-        print("Installing pympress and dependencies...")
-        try:
-            # Install required dependencies first
-            dependencies = [
-                'python3-gi',
-                'python3-gi-cairo',
-                'gir1.2-gtk-3.0',
-                'python3-cairo',
-                'libgtk-3-0',
-                'librsvg2-common',
-                'poppler-utils'
-            ]
+        # Get absolute paths
+        base_filename = os.path.splitext(self.current_file)[0]
+        pdf_file = base_filename + '.pdf'
+        abs_pdf_path = os.path.abspath(pdf_file)
 
-            # Detect package manager
-            if shutil.which('apt'):
-                install_cmd = ['sudo', 'apt', 'install', '-y']
-            elif shutil.which('dnf'):
-                install_cmd = ['sudo', 'dnf', 'install', '-y']
-            elif shutil.which('pacman'):
-                install_cmd = ['sudo', 'pacman', '-S', '--noconfirm']
-            else:
-                print("Could not detect package manager. Please install dependencies manually:")
-                print(" ".join(dependencies))
-                return False
+        # Check if PDF exists and generate if needed
+        if not os.path.exists(abs_pdf_path):
+            self.write_to_terminal("PDF not found. Generating...")
+            self.generate_pdf()
 
-            # Install system dependencies
-            for dep in dependencies:
-                try:
-                    subprocess.check_call(install_cmd + [dep])
-                    print(f"✓ Installed {dep}")
-                except subprocess.CalledProcessError:
-                    print(f"✗ Failed to install {dep}")
-                    continue
+            if not os.path.exists(abs_pdf_path):
+                messagebox.showerror("Error", "Failed to generate PDF presentation.")
+                return
 
-            # Install pympress using pip
-            subprocess.check_call([
-                sys.executable, "-m", "pip", "install", "--no-cache-dir", "pympress"
-            ])
-            print("✓ Pympress installed successfully")
-            return True
-
-        except Exception as e:
-            print(f"✗ Error installing pympress: {str(e)}")
-            traceback.print_exc()
-            return False
-
-def launch_pympress(pdf_path: str) -> None:
-    """Launch pympress with the specified PDF"""
-    try:
-        if not os.path.exists(pdf_path):
-            raise FileNotFoundError(f"PDF file not found: {pdf_path}")
-
-        # Verify pympress is installed
+        # Verify pympress is installed and accessible
+        self.write_to_terminal("Checking pympress installation...")
         if not setup_pympress():
             messagebox.showerror(
                 "Error",
@@ -1370,12 +1562,210 @@ def launch_pympress(pdf_path: str) -> None:
             )
             return
 
-        # Launch pympress with the PDF
-        subprocess.Popen(['pympress', pdf_path])
+        # Launch presentation with pympress using absolute path
+        self.write_to_terminal("Launching pympress presentation viewer...")
+        try:
+            if sys.platform.startswith('win'):
+                # Windows path handling
+                subprocess.Popen(['pympress', abs_pdf_path], shell=True)
+            else:
+                # Linux/MacOS path handling
+                pympress_path = shutil.which('pympress')
+                if pympress_path:
+                    subprocess.Popen([pympress_path, abs_pdf_path])
+                else:
+                    # Try alternative locations
+                    possible_paths = [
+                        '/usr/bin/pympress',
+                        '/usr/local/bin/pympress',
+                        os.path.expanduser('~/.local/bin/pympress')
+                    ]
+                    for path in possible_paths:
+                        if os.path.exists(path):
+                            subprocess.Popen([path, abs_pdf_path])
+                            break
+                    else:
+                        raise FileNotFoundError("pympress executable not found")
+
+            self.write_to_terminal("✓ Presentation launched successfully\n", "green")
+            self.write_to_terminal("\nPympress Controls:\n")
+            self.write_to_terminal("- Right Arrow/Space/Page Down: Next slide\n")
+            self.write_to_terminal("- Left Arrow/Page Up: Previous slide\n")
+            self.write_to_terminal("- Escape: Exit presentation\n")
+            self.write_to_terminal("- F11: Toggle fullscreen\n")
+            self.write_to_terminal("- N: Toggle notes\n")
+            self.write_to_terminal("- P: Pause/unpause timer\n")
+
+        except Exception as e:
+            error_msg = f"Error launching pympress: {str(e)}\n"
+            self.write_to_terminal(error_msg, "red")
+            if "executable not found" in str(e):
+                # Try to help user locate pympress
+                self.write_to_terminal("\nTrying to locate pympress...\n")
+                try:
+                    result = subprocess.run(['which', 'pympress'],
+                                         capture_output=True,
+                                         text=True)
+                    if result.stdout:
+                        self.write_to_terminal(f"pympress found at: {result.stdout}\n")
+                    else:
+                        self.write_to_terminal("pympress not found in PATH\n")
+                except:
+                    pass
+
+                # Show guidance for manual launch
+                self.write_to_terminal("\nYou can try launching manually:\n")
+                self.write_to_terminal(f"pympress '{abs_pdf_path}'\n")
 
     except Exception as e:
-        messagebox.showerror("Error", f"Error launching pympress:\n{str(e)}")
+        self.write_to_terminal(f"✗ Error launching presentation: {str(e)}\n", "red")
+        messagebox.showerror("Error", f"Error launching presentation:\n{str(e)}")
         traceback.print_exc()
+#-------------------------------------------------pympress installation -----------------------------
+def setup_pympress():
+    """Verify pympress installation and setup with all required dependencies"""
+    try:
+        # Check if pympress works by importing required modules
+        def check_pympress_deps():
+            try:
+                import gi
+                import cairo
+                gi.require_version('Gtk', '3.0')
+                from gi.repository import Gtk
+                import pympress
+                return True
+            except ImportError:
+                return False
+
+        if check_pympress_deps():
+            print("✓ Pympress and dependencies already installed")
+            return True
+
+        print("Installing pympress and dependencies...")
+
+        # Install system dependencies first
+        if sys.platform.startswith('linux'):
+            dependencies = [
+                'python3-gi',
+                'python3-gi-cairo',
+                'gir1.2-gtk-3.0',
+                'python3-cairo',
+                'libgtk-3-0',
+                'librsvg2-common',
+                'poppler-utils',
+                'libgirepository1.0-dev',  # Required for PyGObject
+                'gcc',                     # Required for compilation
+                'python3-dev',             # Python development files
+                'pkg-config',              # Required for build process
+                'cairo-dev',               # Cairo development files
+                'libcairo2-dev',          # Cairo development files
+                'gobject-introspection'    # GObject introspection
+            ]
+
+            # Detect package manager and set appropriate commands
+            if shutil.which('apt'):
+                install_cmd = ['sudo', 'apt', 'install', '-y']
+                deps = dependencies + ['libgirepository1.0-dev', 'python3-gi-dev']
+            elif shutil.which('dnf'):
+                install_cmd = ['sudo', 'dnf', 'install', '-y']
+                deps = dependencies + ['gobject-introspection-devel', 'python3-gobject-devel']
+            elif shutil.which('pacman'):
+                install_cmd = ['sudo', 'pacman', '-S', '--noconfirm']
+                deps = dependencies + ['gobject-introspection', 'python-gobject']
+            else:
+                print("Could not detect package manager. Please install dependencies manually.")
+                print("Required packages:", " ".join(dependencies))
+                return False
+
+            # Install system dependencies
+            print("\nInstalling system dependencies...")
+            for dep in deps:
+                try:
+                    subprocess.check_call(install_cmd + [dep])
+                    print(f"✓ Installed {dep}")
+                except subprocess.CalledProcessError:
+                    print(f"✗ Failed to install {dep}")
+                    continue
+
+        # Install Python packages
+        print("\nInstalling Python packages...")
+        packages = [
+            'pycairo',
+            'PyGObject',
+            'pympress'
+        ]
+
+        for package in packages:
+            try:
+                # Try installing in user space first
+                subprocess.check_call([
+                    sys.executable, "-m", "pip", "install",
+                    "--user", "--no-cache-dir", package
+                ])
+                print(f"✓ Installed {package}")
+            except subprocess.CalledProcessError:
+                print(f"✗ Failed to install {package}")
+                continue
+
+        # Verify installation
+        if check_pympress_deps():
+            print("\n✓ Pympress and all dependencies installed successfully")
+            return True
+        else:
+            print("\n✗ Installation completed but verification failed")
+            print("Please try installing manually:")
+            print("sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0")
+            print("pip install --user pycairo PyGObject pympress")
+            return False
+
+    except Exception as e:
+        print(f"✗ Error setting up pympress: {str(e)}")
+        traceback.print_exc()
+        return False
+
+def launch_pympress(pdf_path):
+    """Launch pympress with proper environment setup"""
+    try:
+        # Ensure absolute path
+        abs_pdf_path = os.path.abspath(pdf_path)
+
+        # Set up environment variables
+        env = os.environ.copy()
+
+        # Add GI typelib path if needed
+        typelib_paths = [
+            '/usr/lib/girepository-1.0',
+            '/usr/local/lib/girepository-1.0',
+            '/usr/lib/x86_64-linux-gnu/girepository-1.0'
+        ]
+
+        existing_typelib = env.get('GI_TYPELIB_PATH', '').split(':')
+        new_typelib = ':'.join(filter(os.path.exists, typelib_paths + existing_typelib))
+        env['GI_TYPELIB_PATH'] = new_typelib
+
+        # Try to launch pympress
+        if sys.platform.startswith('win'):
+            subprocess.Popen(['pympress', abs_pdf_path], shell=True, env=env)
+        else:
+            # Try different possible pympress locations
+            pympress_paths = [
+                shutil.which('pympress'),
+                '/usr/local/bin/pympress',
+                '/usr/bin/pympress',
+                os.path.expanduser('~/.local/bin/pympress')
+            ]
+
+            for path in filter(None, pympress_paths):
+                if os.path.exists(path):
+                    subprocess.Popen([path, abs_pdf_path], env=env)
+                    return True
+
+            raise FileNotFoundError("pympress executable not found")
+
+    except Exception as e:
+        print(f"Error launching pympress: {str(e)}")
+        traceback.print_exc()
+        return False
 
 
 #--------------------------------------------------------------------------
@@ -2563,9 +2953,45 @@ class BeamerSlideEditor(ctk.CTk):
         self.__author__ = "Ninan Sajeeth Philip"
         self.__license__ = "Creative Commons"
         self.logo_ascii = AIRIS4D_ASCII_LOGO
+        # Initialize logo before creating widgets
+        self.has_logo = False
+        self.logo_image = None
+        self.setup_logo()
+
+        # Rest of initialization...
+        self.create_widgets()
         # Create terminal I/O interface
         self.terminal_io = TerminalIO(self)
+        #-----------------------------------------------
+        # Initialize session manager with error handling
+        try:
+            self.session_manager = SessionManager()
+            self.session_data = self.session_manager.load_session()
+        except Exception as e:
+            print(f"Warning: Session management unavailable: {str(e)}")
+            self.session_manager = None
+            self.session_data = {
+                'last_file': None,
+                'working_directory': str(Path.cwd()),
+                'recent_files': [],
+                'window_size': {'width': 1200, 'height': 800},
+                'window_position': {'x': None, 'y': None}
+            }
 
+        # Configure window based on session data
+        self.title("BeamerSlide Generator IDE")
+        self.geometry(f"{self.session_data['window_size']['width']}x{self.session_data['window_size']['height']}")
+        if all(v is not None for v in self.session_data['window_position'].values()):
+            self.geometry(f"+{self.session_data['window_position']['x']}+{self.session_data['window_position']['y']}")
+
+        # Initialize UI components
+        self.create_widgets()
+
+        # Add recent files menu if available
+        if self.session_data['recent_files']:
+            self.create_recent_files_menu()
+
+        #--------------------------------------------------
         # Set the terminal I/O in BeamerSlideGenerator
         from BeamerSlideGenerator import set_terminal_io
         set_terminal_io(self.terminal_io)
@@ -2577,8 +3003,8 @@ class BeamerSlideEditor(ctk.CTk):
         try:
             # Try to load the logo image
             self.logo_image = ctk.CTkImage(
-                light_image=Image.open("logo.png"),
-                dark_image=Image.open("logo.png"),
+                light_image=Image.open("airis4d_logo.png"),
+                dark_image=Image.open("airis4d_logo.png"),
                 size=(50, 50)
             )
             self.has_logo = True
@@ -2629,6 +3055,180 @@ class BeamerSlideEditor(ctk.CTk):
 
         # Setup output redirection after terminal creation
         self.setup_output_redirection()
+#--------------------------------------------------------------------------------
+        # Change to working directory if valid
+        try:
+            if self.session_data['working_directory']:
+                os.chdir(self.session_data['working_directory'])
+        except Exception as e:
+            print(f"Warning: Could not change to saved working directory: {str(e)}")
+
+        # Load last file if it exists
+        if self.session_data['last_file'] and os.path.exists(self.session_data['last_file']):
+            self.after(100, lambda: self.load_file(self.session_data['last_file']))
+
+        # Bind window events
+        self.bind('<Configure>', self.on_window_configure)
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def setup_logo(self):
+        """Initialize logo with colored ASCII fallback"""
+
+        try:
+            # Check all possible logo locations
+            possible_paths = [
+                Path(__file__).parent / 'airis4d_logo.png',  # Current directory
+                Path(__file__).parent / 'resources' / 'airis4d_logo.png',  # Local resources
+                Path.home() / '.bsg-ide' / 'airis4d_logo.png',  # User config directory
+                Path('/usr/local/share/bsg-ide/resources/airis4d_logo.png'),  # System-wide installation
+                Path(os.getenv('APPDATA', '')) / 'BSG-IDE' / 'resources' / 'airis4d_logo.png'  # Windows
+            ]
+
+            logo_path = None
+            for path in possible_paths:
+                if path.exists():
+                    logo_path = path
+                    break
+
+            if logo_path:
+                self.logo_image = ctk.CTkImage(
+                    light_image=Image.open(logo_path),
+                    dark_image=Image.open(logo_path),
+                    size=(50, 50)
+                )
+                self.has_logo = True
+                print(f"✓ Loaded logo from {logo_path}")
+            else:
+                self.has_logo = False
+                print("Using ASCII logo fallback - logo image not found")
+        except Exception as e:
+            print(f"Warning: Could not load logo image: {str(e)}")
+            self.has_logo = False
+
+    def create_widgets(self):
+        """Create and initialize all UI widgets"""
+        try:
+            # Create menu frame first
+            self.setup_top_menu()
+
+            # Configure grid
+            self.grid_columnconfigure(1, weight=1)
+            self.grid_rowconfigure(0, weight=1)
+
+            # Create main components
+            self.create_sidebar()
+            self.create_main_editor()
+            self.create_toolbar()
+            self.create_context_menu()
+            self.create_footer()
+
+            # Create terminal after other UI elements
+            self.create_terminal()
+
+            # Setup output redirection after terminal creation
+            self.setup_output_redirection()
+
+            # Initialize variables
+            self.current_file = None
+            self.slides = []
+            self.current_slide_index = -1
+
+            # Setup keyboard shortcuts
+            self.setup_keyboard_shortcuts()
+
+            # Setup Python paths
+            setup_python_paths()
+
+            # Adjust grid weights to accommodate terminal
+            self.grid_rowconfigure(1, weight=3)  # Main editor
+            self.grid_rowconfigure(4, weight=1)  # Terminal
+
+            # Initialize syntax highlighter
+            self.syntax_highlighter = None
+            if hasattr(self, 'content_editor'):
+                self.syntax_highlighter = BeamerSyntaxHighlighter(self.content_editor)
+
+            # Create notes highlighter if notes editor exists
+            if hasattr(self, 'notes_editor'):
+                self.notes_highlighter = BeamerSyntaxHighlighter(self.notes_editor)
+
+        except Exception as e:
+            print(f"Error creating widgets: {str(e)}")
+            raise
+
+    def create_recent_files_menu(self):
+        """Create recent files menu with error handling"""
+        try:
+            recent_menu = tk.Menu(self.menu_frame, tearoff=0)
+            for filepath in self.session_data['recent_files']:
+                if os.path.exists(filepath):
+                    recent_menu.add_command(
+                        label=os.path.basename(filepath),
+                        command=lambda f=filepath: self.load_file(f)
+                    )
+
+            if recent_menu.index('end') is not None:  # Only add if menu has items
+                self.menu_frame.add_cascade(label="Recent Files", menu=recent_menu)
+        except Exception as e:
+            print(f"Warning: Could not create recent files menu: {str(e)}")
+
+
+    def update_recent_files(self, filepath):
+        """Update recent files list"""
+        if filepath not in self.session_data['recent_files']:
+            self.session_data['recent_files'].append(filepath)
+        if len(self.session_data['recent_files']) > 10:
+            self.session_data['recent_files'].pop(0)
+        self.create_recent_files_menu()
+
+    def on_window_configure(self, event=None):
+        """Track window size and position changes"""
+        if event and event.widget == self:
+            self.session_data['window_size'] = {
+                'width': self.winfo_width(),
+                'height': self.winfo_height()
+            }
+            self.session_data['window_position'] = {
+                'x': self.winfo_x(),
+                'y': self.winfo_y()
+            }
+
+    def on_closing(self):
+        """Handle window closing with error handling"""
+        try:
+            if self.session_manager:
+                # Update session data
+                self.session_data.update({
+                    'last_file': self.current_file,
+                    'working_directory': os.getcwd()
+                })
+
+                # Save session
+                self.session_manager.save_session(self.session_data)
+        except Exception as e:
+            print(f"Warning: Could not save session on exit: {str(e)}")
+        finally:
+            # Always close window
+            self.destroy()
+
+    def load_file(self, filename):
+        """Override load_file with error handling"""
+        try:
+            super().load_file(filename)  # Call original load_file
+
+            # Update session data if available
+            if hasattr(self, 'session_data'):
+                self.session_data['last_file'] = filename
+                self.session_data['working_directory'] = os.path.dirname(filename) or '.'
+                self.update_recent_files(filename)
+
+                # Update terminal directory
+                if hasattr(self, 'terminal'):
+                    self.terminal.set_working_directory(self.session_data['working_directory'])
+        except Exception as e:
+            print(f"Error loading file: {str(e)}")
+            messagebox.showerror("Error", f"Could not load file:\n{str(e)}")
+
 
 #--------------------------------------------------------------------------------
     def ide_callback(self, action, data):
@@ -5118,7 +5718,9 @@ def setup_system_installation():
             'BSG-IDE.py': 'BSG_IDE.py',  # Rename to valid module name
             'BeamerSlideGenerator.py': 'BeamerSlideGenerator.py',
             'Beam2odp.py': 'Beam2odp.py' , # if you have this file
-            'BSG_terminal':'BSG_terminal'
+            'BSG_terminal':'BSG_terminal',
+            'requirements.txt': 'requirements.txt',
+            'airis4d_logo.png' : 'airis4d_logo.png'  # Add logo to required files
         }
 
         # Copy all required files to installation directory
@@ -5292,6 +5894,8 @@ def main():
                     print("Error: Could not import customtkinter even after installation.")
                     print("Please try running with --fix flag: python3 BSG-IDE.py --fix")
                     return
+        # Verify logo installation
+        verify_logo_installation()
 
         # Now start the application
         app = BeamerSlideEditor()
@@ -5311,6 +5915,35 @@ def main():
         print(f"PYTHONPATH: {os.environ.get('PYTHONPATH', 'Not set')}")
         print(f"VIRTUAL_ENV: {os.environ.get('VIRTUAL_ENV', 'Not set')}")
 #-------------------------------------------------------------------------------------------------------
+def verify_logo_installation():
+    """Verify logo file is properly installed"""
+    try:
+        # Get installation paths
+        system, paths = get_installation_paths()
+        install_dir = paths['share'] / 'bsg-ide' if system != "Windows" else paths['bin']
+
+        # Check logo in main directory
+        main_logo = install_dir / 'airis4d_logo.png'
+        resource_logo = install_dir / 'resources' / 'airis4d_logo.png'
+
+        if not main_logo.exists() and not resource_logo.exists():
+            print("Warning: Logo file not found in installation directory")
+            print("Attempting to reinstall logo...")
+
+            # Try to copy from current directory
+            current_logo = Path(__file__).parent / 'airis4d_logo.png'
+            if current_logo.exists():
+                os.makedirs(install_dir / 'resources', exist_ok=True)
+                shutil.copy2(current_logo, resource_logo)
+                print("✓ Logo reinstalled successfully")
+            else:
+                print("Logo file not found. ASCII fallback will be used.")
+
+        return main_logo.exists() or resource_logo.exists()
+
+    except Exception as e:
+        print(f"Error verifying logo installation: {str(e)}")
+        return False
 if __name__ == "__main__":
     # Ensure working directory is script directory
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
