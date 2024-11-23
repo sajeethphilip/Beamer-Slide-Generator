@@ -103,22 +103,31 @@ def generate_preview_frame(filepath, output_path=None):
 
 def get_beamer_preamble(title, subtitle, author, institution, short_institute, date):
     """
-    Returns the correct Beamer preamble with fixed brace matching and proper shadow text support
+    Returns Beamer preamble with proper package dependency handling and contained frame titles
     """
     preamble = f"""\\documentclass[aspectratio=169]{{beamer}}
+
+% Essential packages (core)
 \\usepackage{{hyperref}}
 \\usepackage{{graphicx}}
 \\usepackage{{amsmath}}
 \\usepackage{{tikz}}
 \\usepackage{{pgfplots}}
-\\pgfplotsset{{compat=1.18}}
+\\usepackage{{xstring}}
 \\usepackage{{animate}}
 \\usepackage{{multimedia}}
 
-% TikZ libraries for shadow effects
-\\usetikzlibrary{{shadows.blur}}
+% Extended packages with fallbacks
+\\IfFileExists{{tcolorbox.sty}}{{\\usepackage{{tcolorbox}}}}{{}}
+\\IfFileExists{{fontawesome5.sty}}{{\\usepackage{{fontawesome5}}}}{{}}
+\\IfFileExists{{pifont.sty}}{{\\usepackage{{pifont}}}}{{}}
+\\IfFileExists{{soul.sty}}{{\\usepackage{{soul}}}}{{}}
 
-% Custom command for shadowed text
+% Package configurations
+\\pgfplotsset{{compat=1.18}}
+\\usetikzlibrary{{shadows.blur, shapes.geometric, positioning, arrows.meta, backgrounds, fit}}
+
+% Original text effects
 \\newcommand{{\\shadowtext}}[2][2pt]{{%
     \\begin{{tikzpicture}}[baseline]
         \\node[blur shadow={{shadow blur steps=5,shadow xshift=0pt,shadow yshift=-#1,
@@ -126,7 +135,6 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
     \\end{{tikzpicture}}%
 }}
 
-% Glowing text effect
 \\newcommand{{\\glowtext}}[2][myblue]{{%
     \\begin{{tikzpicture}}[baseline]
         \\node[circle, inner sep=1pt,
@@ -137,28 +145,57 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
     \\end{{tikzpicture}}%
 }}
 
-% Set up a dark theme
-\\usetheme{{Madrid}}
-\\usecolortheme{{owl}}
+% Conditional definitions based on package availability
+\\IfFileExists{{tcolorbox.sty}}{{
+    \\newtcolorbox{{alertbox}}[1][red]{{
+        colback=#1!5!white,
+        colframe=#1!75!black,
+        fonttitle=\\bfseries,
+        boxrule=0.5pt,
+        rounded corners,
+        shadow={{2mm}}{{-1mm}}{{0mm}}{{black!50}}
+    }}
 
-% Custom colors
+    \\newtcolorbox{{infobox}}[1][blue]{{
+        enhanced,
+        colback=#1!5!white,
+        colframe=#1!75!black,
+        arc=4mm,
+        boxrule=0.5pt,
+        fonttitle=\\bfseries,
+        attach boxed title to top center={{yshift=-3mm,yshifttext=-1mm}},
+        boxed title style={{size=small,colback=#1!75!black}},
+        shadow={{2mm}}{{-1mm}}{{0mm}}{{black!50}}
+    }}
+}}{{}}
+
+% Base colors (always available)
 \\definecolor{{myyellow}}{{RGB}}{{255,210,0}}
 \\definecolor{{myorange}}{{RGB}}{{255,130,0}}
 \\definecolor{{mygreen}}{{RGB}}{{0,200,100}}
 \\definecolor{{myblue}}{{RGB}}{{0,130,255}}
 \\definecolor{{mypink}}{{RGB}}{{255,105,180}}
+\\definecolor{{mypurple}}{{RGB}}{{147,112,219}}
+\\definecolor{{myteal}}{{RGB}}{{0,128,128}}
 
-% Colors for glow effects
+% Glow colors
 \\definecolor{{glowblue}}{{RGB}}{{0,150,255}}
 \\definecolor{{glowyellow}}{{RGB}}{{255,223,0}}
 \\definecolor{{glowgreen}}{{RGB}}{{0,255,128}}
+\\definecolor{{glowpink}}{{RGB}}{{255,182,193}}
 
-% Define new commands for highlighting
+% Basic highlighting commands
 \\newcommand{{\\hlbias}}[1]{{\\textcolor{{myblue}}{{\\textbf{{#1}}}}}}
 \\newcommand{{\\hlvariance}}[1]{{\\textcolor{{mypink}}{{\\textbf{{#1}}}}}}
 \\newcommand{{\\hltotal}}[1]{{\\textcolor{{myyellow}}{{\\textbf{{#1}}}}}}
+\\newcommand{{\\hlkey}}[1]{{\\colorbox{{myblue!20}}{{\\textcolor{{white}}{{\\textbf{{#1}}}}}}}}
+\\newcommand{{\\hlnote}}[1]{{\\colorbox{{mygreen!20}}{{\\textcolor{{white}}{{\\textbf{{#1}}}}}}}}
 
-% Customize beamer colors
+% Basic theme setup
+\\usetheme{{Madrid}}
+\\usecolortheme{{owl}}
+
+% Color settings
 \\setbeamercolor{{normal text}}{{fg=white}}
 \\setbeamercolor{{structure}}{{fg=myyellow}}
 \\setbeamercolor{{alerted text}}{{fg=myorange}}
@@ -166,12 +203,48 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 \\setbeamercolor{{background canvas}}{{bg=black}}
 \\setbeamercolor{{frametitle}}{{fg=white,bg=black}}
 
-% Setup short institution name for footline if provided
+% Progress bar setup
+\\makeatletter
+\\def\\progressbar@progressbar{{}}
+\\newcount\\progressbar@tmpcounta
+\\newcount\\progressbar@tmpcountb
+\\newdimen\\progressbar@pbht
+\\newdimen\\progressbar@pbwd
+\\newdimen\\progressbar@tmpdim
+
+\\progressbar@pbwd=\\paperwidth
+\\progressbar@pbht=1pt
+
+\\def\\progressbar@progressbar{{%
+    \\begin{{tikzpicture}}[very thin]
+        \\shade[top color=myblue!50,bottom color=myblue]
+            (0pt, 0pt) rectangle (\\insertframenumber\\progressbar@pbwd/\\inserttotalframenumber, \\progressbar@pbht);
+    \\end{{tikzpicture}}%
+}}
+
+    % Modified frame title template with increased height and better spacing
+    \\setbeamertemplate{{frametitle}}{{
+        \\nointerlineskip
+        \\vskip1ex
+        \\begin{{beamercolorbox}}[wd=\\paperwidth,ht=4ex,dp=2ex]{{frametitle}}
+            \\begin{{minipage}}[t]{{\\dimexpr\\paperwidth-4em}}
+                \\centering
+                \\vspace{{2pt}}
+                \\insertframetitle
+                \\vspace{{2pt}}
+            \\end{{minipage}}
+        \\end{{beamercolorbox}}
+        \\vskip.5ex
+        \\progressbar@progressbar
+    }}
+\\makeatother
+
+% Institution setup
 \\makeatletter
 \\def\\insertshortinstitute{{{short_institute if short_institute else institution}}}
 \\makeatother
 
-% Modify footline template to use short institution
+% Footline template
 \\setbeamertemplate{{footline}}{{%
   \\leavevmode%
   \\hbox{{%
@@ -188,18 +261,12 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
   \\vskip0pt%
 }}
 
-% Additional packages and settings
-\\usepackage{{url}}
-\\usepackage[export]{{adjustbox}}
-\\usetikzlibrary{{shapes.geometric, positioning, arrows.meta, backgrounds, fit}}
-
-% Redefine the frame to have smaller margins
+% Additional settings
 \\setbeamersize{{text margin left=5pt,text margin right=5pt}}
+\\setbeamertemplate{{navigation symbols}}{{}}
+\\setbeamertemplate{{blocks}}[rounded][shadow=true]
 
-% Centering frame titles
-\\setbeamertemplate{{frametitle}}[default][center]
-
-% Set the title
+% Title setup
 \\title{{{title}}}
 {f'\\subtitle{{{subtitle}}}' if subtitle else ''}
 \\author{{{author}}}
@@ -208,13 +275,28 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 
 \\begin{{document}}
 
-\\begin{{frame}}
-\\titlepage
-\\end{{frame}}
+% Title page
+\\begin{{frame}}[plain]
+    \\begin{{tikzpicture}}[overlay,remember picture]
+        % Background gradient
+        \\fill[top color=black!90,bottom color=black!70,middle color=myblue!30]
+        (current page.south west) rectangle (current page.north east);
 
+        % Title with glow effect
+        \\node[align=center] at (current page.center) {{
+            \\glowtext[glowblue]{{\\Huge\\textbf{{{title}}}}}
+            {f'\\\\[1em]\\glowtext[glowyellow]{{\\large {subtitle}}}' if subtitle else ''}
+            \\\\[2em]
+            \\glowtext[glowgreen]{{\\large {author}}}
+            \\\\[0.5em]
+            \\textcolor{{white}}{{\\small {institution}}}
+            \\\\[1em]
+            \\textcolor{{white}}{{\\small {date}}}
+        }};
+    \\end{{tikzpicture}}
+\\end{{frame}}
 """
     return preamble
-
 
 def get_footline_template():
     """
