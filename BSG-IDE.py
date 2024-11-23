@@ -900,35 +900,14 @@ def import_required_packages():
         traceback.print_exc()
         sys.exit(1)
 
-def create_launcher_script(install_dir, bin_dir):
-    """Create launcher script that properly activates virtual environment"""
-    launcher_content = f"""#!/bin/bash
-# Activate virtual environment
-source ~/my_python/bin/activate
-
-# Set Python path
-export PYTHONPATH="{install_dir}:$PYTHONPATH"
-
-# Run the application
-python3 "{install_dir}/BSG-IDE.py" "$@"
-
-# Deactivate virtual environment
-deactivate
-"""
-
-    launcher_path = bin_dir / 'bsg-ide'
-    launcher_path.write_text(launcher_content)
-    launcher_path.chmod(0o755)
-
-    return launcher_path
-
 def fix_installation():
-    """Fix installation with proper environment setup"""
+    """Fix installation with icon update support"""
     try:
         # Get installation paths
         home = Path.home()
         local_bin = home / '.local' / 'bin'
         local_lib = home / '.local' / 'lib' / 'bsg-ide'
+        system, paths = get_installation_paths()
 
         # Create necessary directories
         os.makedirs(local_bin, exist_ok=True)
@@ -937,57 +916,132 @@ def fix_installation():
         # Get current script location
         current_script = Path(__file__).resolve()
 
-        # Copy main files to lib directory
+        # Copy all required files including icon
         required_files = [
             'BSG-IDE.py',
             'BeamerSlideGenerator.py',
             'BSG_terminal',
             'airis4d_logo.png',
+            'bsg-ide.png',  # Add icon to required files
             'requirements.txt'
         ]
 
-        for file in required_files:
-            src = current_script.parent / file
-            if src.exists():
-                shutil.copy2(src, local_lib / file)
-                print(f"Copied {file} to {local_lib}")
+        files_updated = []
+        for src_name in required_files:
+            src_file = current_script.parent / src_name
+            if src_file.exists():
+                shutil.copy2(src_file, local_lib / src_name)
+                files_updated.append(src_name)
+                print(f"✓ Updated {src_name}")
 
-        # Create launcher script
-        launcher_path = create_launcher_script(local_lib, local_bin)
-        print(f"Created launcher script at {launcher_path}")
+        # Setup icon specifically
+        if 'bsg-ide.png' in files_updated:
+            setup_program_icon(local_lib, system)
+            print("✓ Updated program icon")
 
-        # Create desktop entry
-        desktop_entry = f"""[Desktop Entry]
+            # Update icon in system locations
+            if system == "Linux":
+                # Update hicolor icons
+                icon_sizes = ['16x16', '32x32', '48x48', '64x64', '128x128', '256x256']
+                for size in icon_sizes:
+                    target_dir = home / '.local' / 'share' / 'icons' / 'hicolor' / size / 'apps'
+                    os.makedirs(target_dir, exist_ok=True)
+                    shutil.copy2(local_lib / 'bsg-ide.png', target_dir / 'bsg-ide.png')
+                print("✓ Updated system icons")
+
+                # Update desktop entry to ensure icon is referenced
+                desktop_entry = f"""[Desktop Entry]
 Version=1.0
 Type=Application
 Name=BSG-IDE
 Comment=Beamer Slide Generator IDE
-Exec={launcher_path}
+Exec={local_bin}/bsg-ide
 Icon=bsg-ide
 Terminal=false
 Categories=Office;Development;Education;
 Keywords=presentation;latex;beamer;slides;
+StartupWMClass=bsg-ide
 """
-        desktop_dir = home / '.local' / 'share' / 'applications'
-        os.makedirs(desktop_dir, exist_ok=True)
-        desktop_file = desktop_dir / 'bsg-ide.desktop'
-        desktop_file.write_text(desktop_entry)
-        desktop_file.chmod(0o755)
+                desktop_dir = home / '.local' / 'share' / 'applications'
+                os.makedirs(desktop_dir, exist_ok=True)
+                desktop_file = desktop_dir / 'bsg-ide.desktop'
+                desktop_file.write_text(desktop_entry)
+                desktop_file.chmod(0o755)
+                print("✓ Updated desktop entry")
 
-        # Verify installation
-        print("\nVerifying installation...")
-        if check_and_install_dependencies():
-            print("\nInstallation fixed successfully!")
-            print("\nYou can now run BSG-IDE by:")
-            print("1. Using the application menu")
-            print("2. Running 'bsg-ide' in terminal")
-            return True
-        return False
+            elif system == "Windows":
+                # Create and update Windows icon
+                try:
+                    from PIL import Image
+                    img = Image.open(local_lib / 'bsg-ide.png')
+                    ico_path = local_lib / 'icons' / 'bsg-ide.ico'
+                    os.makedirs(local_lib / 'icons', exist_ok=True)
+                    img.save(ico_path, format='ICO', sizes=[(32, 32), (64, 64), (128, 128)])
+
+                    # Update Windows shortcut if it exists
+                    try:
+                        import winshell
+                        from win32com.client import Dispatch
+                        shortcut_path = Path(winshell.programs()) / "BSG-IDE" / "BSG-IDE.lnk"
+                        if shortcut_path.exists():
+                            shell = Dispatch('WScript.Shell')
+                            shortcut = shell.CreateShortCut(str(shortcut_path))
+                            shortcut.IconLocation = str(ico_path)
+                            shortcut.save()
+                            print("✓ Updated Windows shortcut icon")
+                    except ImportError:
+                        print("Warning: Could not update Windows shortcut (winshell not available)")
+                except Exception as e:
+                    print(f"Warning: Could not update Windows icon: {e}")
+
+            elif system == "Darwin":  # macOS
+                # Update macOS icon
+                resources_dir = paths['resources'] if 'resources' in paths else local_lib / 'Resources'
+                os.makedirs(resources_dir, exist_ok=True)
+                shutil.copy2(local_lib / 'bsg-ide.png', resources_dir / 'bsg-ide.png')
+                print("✓ Updated macOS application icon")
+
+        # Create/update launcher script
+        launcher_script = create_launcher_script(local_lib, local_bin)
+        print(f"✓ Updated launcher at {launcher_script}")
+
+        print("\nInstallation fix completed successfully!")
+        print("Icon and all components have been updated.\n")
+        print("You can now run BSG-IDE by:")
+        print("1. Using the application menu (with updated icon)")
+        print("2. Running 'bsg-ide' in terminal")
+        return True
 
     except Exception as e:
-        print(f"Error during installation fix: {str(e)}")
+        print(f"Error during fix: {str(e)}")
         traceback.print_exc()
         return False
+
+def create_launcher_script(install_dir: Path, bin_dir: Path) -> Path:
+    """Create launcher script with icon support"""
+    launcher_content = f"""#!/bin/bash
+# Activate virtual environment if it exists
+if [ -f ~/my_python/bin/activate ]; then
+    source ~/my_python/bin/activate
+fi
+
+# Set Python path
+export PYTHONPATH="{install_dir}:$PYTHONPATH"
+
+# Run the application
+python3 "{install_dir}/BSG-IDE.py" "$@"
+
+# Deactivate virtual environment if it was activated
+if [ -n "$VIRTUAL_ENV" ]; then
+    deactivate
+fi
+"""
+
+    launcher_path = bin_dir / 'bsg-ide'
+    launcher_path.write_text(launcher_content)
+    launcher_path.chmod(0o755)
+
+    return launcher_path
 
 
 class MediaURLDialog(ctk.CTkToplevel):
@@ -3232,31 +3286,145 @@ class BeamerSlideEditor(ctk.CTk):
 
 #--------------------------------------------------------------------------------
     def ide_callback(self, action, data):
-        """Handle callbacks from file processing"""
+        """Enhanced IDE callback handler with proper \\None handling"""
         if action == "update_current_slide":
-            self.current_slide_index = data['index']
+            # Update slide title
             self.title_entry.delete(0, 'end')
-            self.title_entry.insert(0, data['title'])
+            self.title_entry.insert(0, data.get('title', ''))
+
+            # Ensure proper highlight in slide list
+            self.current_slide_index = data.get('index', 0)
             self.update_slide_list()
+            self.highlight_current_slide()
+
+            # Important: Reset media when changing slides
+            self.media_entry.delete(0, 'end')
 
         elif action == "update_content":
+            # Update content editor, ensuring clean state
             self.content_editor.delete('1.0', 'end')
-            for line in data['content']:
-                self.content_editor.insert('end', f"{line}\n")
+            for line in data.get('content', []):
+                if line and line.strip():  # Only add non-empty lines
+                    self.content_editor.insert('end', f"{line}\n")
 
-        elif action == "request_media":
-            # Show guidance message
+        elif action == "update_media":
+            # Update media entry with proper \None handling
+            self.media_entry.delete(0, 'end')
+            media = data.get('media')
 
-            self.write_to_terminal("f Media Required  for slide '{data['title']}' " )
+            # Handle different media cases
+            if media is None or media == "\\None":
+                self.media_entry.insert(0, "\\None")
+            elif media:  # Only insert if there's actual media content
+                self.media_entry.insert(0, media)
 
-            # Focus and highlight the media entry
-            self.media_entry.configure(border_color="#4ECDC4")
-            self.media_entry.focus_set()
+        elif action == "show_current_slide":
+            # Show complete slide with proper state reset
+            self.current_slide_index = data.get('index', 0)
 
-            return "\\None"  # Return None directive - user will update via IDE
+            # Clear everything first
+            self.title_entry.delete(0, 'end')
+            self.media_entry.delete(0, 'end')
+            self.content_editor.delete('1.0', 'end')
+
+            # Update title
+            if title := data.get('title'):
+                self.title_entry.insert(0, title)
+
+            # Update media with explicit \None handling
+            media = data.get('media')
+            if media is None or media == "\\None":
+                self.media_entry.insert(0, "\\None")
+            elif media:
+                self.media_entry.insert(0, media)
+
+            # Update content
+            content = data.get('content', [])
+            if content:
+                for line in content:
+                    if line and line.strip():
+                        self.content_editor.insert('end', f"{line}\n")
+
+            # Update slide list display
+            self.update_slide_list()
+            self.slide_list.see(f"{self.current_slide_index + 1}.0")
+            self.highlight_current_slide()
+
+        elif action == "navigate_to_slide":
+            # Navigate to specific slide with complete state reset
+            index = data.get('index', 0)
+            if 0 <= index < len(self.slides):
+                # Clear current state
+                self.media_entry.delete(0, 'end')
+                self.content_editor.delete('1.0', 'end')
+
+                self.current_slide_index = index
+                self.load_slide(index)
+                self.update_slide_list()
+
+                if data.get('focus'):
+                    self.slide_list.see(f"{index + 1}.0")
+                    self.highlight_current_slide()
 
         elif action == "error":
-            self.write_to_terminal(f"Error: {data['message']}\n", "red")
+            # Show error in terminal
+            if hasattr(self, 'terminal'):
+                self.terminal.write(f"Error: {data.get('message', 'Unknown error')}\n", "red")
+
+    def load_slide(self, index):
+        """Enhanced load_slide with proper media handling"""
+        if 0 <= index < len(self.slides):
+            slide = self.slides[index]
+
+            # Clear all fields first
+            self.title_entry.delete(0, 'end')
+            self.media_entry.delete(0, 'end')
+            self.content_editor.delete('1.0', 'end')
+
+            # Update title
+            self.title_entry.insert(0, slide.get('title', ''))
+
+            # Update media with explicit \None handling
+            media = slide.get('media', '')
+            if not media or media == "\\None":
+                self.media_entry.insert(0, "\\None")
+            else:
+                self.media_entry.insert(0, media)
+
+            # Update content
+            for item in slide.get('content', []):
+                if item and item.strip():
+                    if not item.startswith('-'):
+                        item = f"- {item}"
+                    self.content_editor.insert('end', f"{item}\n")
+
+            # Refresh syntax highlighting if active
+            if hasattr(self, 'syntax_highlighter') and self.syntax_highlighter.active:
+                self.syntax_highlighter.highlight()
+
+    def update_slide_list(self):
+        """Update slide list with improved current slide handling"""
+        self.slide_list.delete('1.0', 'end')
+        for i, slide in enumerate(self.slides):
+            prefix = "→ " if i == self.current_slide_index else "  "
+            title = slide.get('title', 'Untitled')
+            media_type = " [None]" if not slide.get('media') or slide.get('media') == "\\None" else ""
+            self.slide_list.insert('end', f"{prefix}Slide {i+1}: {title}{media_type}\n")
+
+        self.highlight_current_slide()
+
+    def highlight_current_slide(self):
+        """Highlight current slide in list"""
+        # Remove previous highlight
+        self.slide_list.tag_remove('selected', '1.0', 'end')
+
+        # Add highlight to current slide
+        if self.current_slide_index >= 0:
+            start = f"{self.current_slide_index + 1}.0"
+            self.slide_list.see(start)  # Ensure visible
+            end = f"{self.current_slide_index + 1}.end"
+            self.slide_list.tag_add('selected', start, end)
+            self.slide_list.tag_config('selected', background='#2F3542')
 #--------------------------------------------------------------------------------------------------------------------
     def setup_output_redirection(self):
         """Set up output redirection to terminal"""
@@ -3906,17 +4074,7 @@ Created by {self.__author__}
         self.bind('<Control-s>', lambda e: self.save_file())          # Ctrl+S for save
 
 
-    def highlight_current_slide(self) -> None:
-        """Highlight the currently selected slide in the list"""
-        # Remove previous highlighting
-        self.slide_list.tag_remove('selected', '1.0', 'end')
 
-        # Add new highlighting
-        if self.current_slide_index >= 0:
-            start = f"{self.current_slide_index + 1}.0"
-            end = f"{self.current_slide_index + 1}.end"
-            self.slide_list.tag_add('selected', start, end)
-            self.slide_list.tag_config('selected', background='#2F3542')
 
     def on_list_focus(self, event) -> None:
         """Handle slide list focus"""
@@ -3929,15 +4087,7 @@ Created by {self.__author__}
         # Remove focus visual feedback
         self.slide_list.configure(border_color="")
 
-    def update_slide_list(self) -> None:
-        """Update slide list with improved visual feedback"""
-        self.slide_list.delete('1.0', 'end')
-        for i, slide in enumerate(self.slides):
-            prefix = "→ " if i == self.current_slide_index else "  "
-            self.slide_list.insert('end', f"{prefix}Slide {i+1}: {slide['title']}\n")
 
-        # Refresh highlighting
-        self.highlight_current_slide()
 
     def duplicate_slide(self) -> None:
             """Duplicate the current slide"""
@@ -5165,12 +5315,7 @@ Created by {self.__author__}
             self.update_slide_list()
             self.load_slide(self.current_slide_index)
 
-    def update_slide_list(self) -> None:
-        """Update slide list in sidebar"""
-        self.slide_list.delete('1.0', 'end')
-        for i, slide in enumerate(self.slides):
-            prefix = "→ " if i == self.current_slide_index else "  "
-            self.slide_list.insert('end', f"{prefix}Slide {i+1}: {slide['title']}\n")
+
 
     def on_slide_select(self, event) -> None:
         """Handle slide selection from list"""
@@ -5182,31 +5327,7 @@ Created by {self.__author__}
             self.load_slide(index)
             self.update_slide_list()
 
-    def load_slide(self, index: int) -> None:
-        """Load slide data including notes"""
-        slide = self.slides[index]
-        self.title_entry.delete(0, 'end')
-        self.title_entry.insert(0, slide['title'])
 
-        self.media_entry.delete(0, 'end')
-        self.media_entry.insert(0, slide['media'])
-
-        self.content_editor.delete('1.0', 'end')
-        for item in slide['content']:
-            # Skip end document marker
-            if '\\end{document}' not in item:
-                if not item.startswith('-'):
-                    item = f"- {item}"
-                self.content_editor.insert('end', f"{item}\n")
-
-        self.notes_editor.delete('1.0', 'end')
-        if 'notes' in slide:
-            for note in slide['notes']:
-                self.notes_editor.insert('end', f"{note}\n")
-
-        if self.syntax_highlighter.active:
-            self.syntax_highlighter.highlight()
-            self.notes_highlighter.highlight()
 
     def save_current_slide(self) -> None:
         """Save current slide data including notes"""
@@ -5688,14 +5809,82 @@ def check_bsg_file():
             shutil.copy2(bsg_file, 'BeamerSlideGenerator.py')
         except Exception as e:
             print(f"Warning: Could not copy BeamerSlideGenerator.py to current directory: {e}")
+#-------------------------------------------------------------Installation ---------------------------------------------------
+def setup_program_icon(install_dir: Path, system: str) -> None:
+    """Set up program icon in appropriate locations"""
+    try:
+        # Create icons directory
+        icons_dir = install_dir / 'icons'
+        os.makedirs(icons_dir, exist_ok=True)
+
+        # Copy icon to installation directory
+        icon_source = Path('bsg-ide.png')  # Assuming the icon is named bsg-ide.png
+        if icon_source.exists():
+            # Copy to installation icons directory
+            shutil.copy2(icon_source, icons_dir / 'bsg-ide.png')
+
+            if system == "Linux":
+                # Set up icons in standard Linux locations
+                icon_sizes = ['16x16', '32x32', '48x48', '64x64', '128x128', '256x256']
+                for size in icon_sizes:
+                    target_dir = Path.home() / '.local' / 'share' / 'icons' / 'hicolor' / size / 'apps'
+                    os.makedirs(target_dir, exist_ok=True)
+                    shutil.copy2(icon_source, target_dir / 'bsg-ide.png')
+
+            elif system == "Windows":
+                # For Windows, create .ico version
+                try:
+                    from PIL import Image
+                    img = Image.open(icon_source)
+                    ico_path = icons_dir / 'bsg-ide.ico'
+                    img.save(ico_path, format='ICO', sizes=[(32, 32), (64, 64), (128, 128)])
+                except Exception as e:
+                    print(f"Warning: Could not create ICO file: {e}")
+
+            elif system == "Darwin":  # macOS
+                resources_dir = install_dir / 'Resources'
+                os.makedirs(resources_dir, exist_ok=True)
+                shutil.copy2(icon_source, resources_dir / 'bsg-ide.png')
+
+            print(f"✓ Icon installed successfully")
+            return True
+        else:
+            print("Warning: Icon file not found")
+            return False
+
+    except Exception as e:
+        print(f"Warning: Could not set up program icon: {e}")
+        return False
 
 def setup_system_installation():
-    """Set up system-wide installation with all required files"""
+    """Set up system-wide installation with icon support"""
     try:
         system, paths = get_installation_paths()
 
         # Create installation directories
+        install_dir = paths['share'] / 'bsg-ide' if system != "Windows" else paths['bin']
+        os.makedirs(install_dir, exist_ok=True)
+
+        # Set up program icon
+        setup_program_icon(install_dir, system)
+
+        # Update desktop entry for Linux to include icon
         if system == "Linux":
+            desktop_entry = f"""[Desktop Entry]
+Version=1.0
+Type=Application
+Name=BSG-IDE
+Comment=Beamer Slide Generator IDE
+Exec={paths['bin']}/bsg-ide
+Icon=bsg-ide
+Terminal=false
+Categories=Office;Development;Education;
+Keywords=presentation;slides;beamer;latex;
+"""
+            # Write desktop entry
+            desktop_path = paths['apps'] / 'bsg-ide.desktop'
+            desktop_path.write_text(desktop_entry)
+            desktop_path.chmod(0o755)
             # Main installation directory in user's home
             install_dir = Path.home() / '.local' / 'lib' / 'bsg-ide'
             bin_dir = Path.home() / '.local' / 'bin'
@@ -5720,7 +5909,8 @@ def setup_system_installation():
             'Beam2odp.py': 'Beam2odp.py' , # if you have this file
             'BSG_terminal':'BSG_terminal',
             'requirements.txt': 'requirements.txt',
-            'airis4d_logo.png' : 'airis4d_logo.png'  # Add logo to required files
+            'airis4d_logo.png' : 'airis4d_logo.png' , # Add logo to required files
+            'bsg-ide.png':'bsg-ide.png'
         }
 
         # Copy all required files to installation directory
