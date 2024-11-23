@@ -1,140 +1,142 @@
-\documentclass[aspectratio=169]{beamer}
-\usepackage{hyperref}
-\usepackage{graphicx}
-\usepackage{amsmath}
-\usepackage{tikz}
-\usepackage{pgfplots}
-\pgfplotsset{compat=1.18}
-\usepackage{animate}
-\usepackage{multimedia}
-
-% TikZ libraries for shadow effects
-\usetikzlibrary{shadows.blur}
-
-% Custom command for shadowed text
-\newcommand{\shadowtext}[2][2pt]{%
-    \begin{tikzpicture}[baseline]
-        \node[blur shadow={shadow blur steps=5,shadow xshift=0pt,shadow yshift=-#1,
-              shadow opacity=0.75}, text=white] {#2};
-    \end{tikzpicture}%
-}
-
-% Glowing text effect
-\newcommand{\glowtext}[2][myblue]{%
-    \begin{tikzpicture}[baseline]
-        \node[circle, inner sep=1pt,
-              blur shadow={shadow blur steps=10,shadow xshift=0pt,
-              shadow yshift=0pt,shadow blur radius=5pt,
-              shadow opacity=0.5,shadow color=#1},
-              text=white] {#2};
-    \end{tikzpicture}%
-}
-
-% Set up a dark theme
-\usetheme{Madrid}
-\usecolortheme{owl}
-
-% Custom colors
-\definecolor{myyellow}{RGB}{255,210,0}
-\definecolor{myorange}{RGB}{255,130,0}
-\definecolor{mygreen}{RGB}{0,200,100}
-\definecolor{myblue}{RGB}{0,130,255}
-\definecolor{mypink}{RGB}{255,105,180}
-
-% Colors for glow effects
-\definecolor{glowblue}{RGB}{0,150,255}
-\definecolor{glowyellow}{RGB}{255,223,0}
-\definecolor{glowgreen}{RGB}{0,255,128}
-
-% Define new commands for highlighting
-\newcommand{\hlbias}[1]{\textcolor{myblue}{\textbf{#1}}}
-\newcommand{\hlvariance}[1]{\textcolor{mypink}{\textbf{#1}}}
-\newcommand{\hltotal}[1]{\textcolor{myyellow}{\textbf{#1}}}
-
-% Customize beamer colors
-\setbeamercolor{normal text}{fg=white}
-\setbeamercolor{structure}{fg=myyellow}
-\setbeamercolor{alerted text}{fg=myorange}
-\setbeamercolor{example text}{fg=mygreen}
-\setbeamercolor{background canvas}{bg=black}
-\setbeamercolor{frametitle}{fg=white,bg=black}
-
-% Setup short institution name for footline if provided
-\makeatletter
-\def\insertshortinstitute{airis4D}
-\makeatother
-
-% Modify footline template to use short institution
-\setbeamertemplate{footline}{%
-  \leavevmode%
-  \hbox{%
-    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
-      \usebeamerfont{author in head/foot}\insertshortauthor~~(\insertshortinstitute)%
-    \end{beamercolorbox}%
-    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{title in head/foot}%
-      \usebeamerfont{title in head/foot}\insertshorttitle%
-    \end{beamercolorbox}%
-    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,right]{date in head/foot}%
-      \usebeamerfont{date in head/foot}\insertshortdate{}\hspace*{2em}%
-      \insertframenumber{} / \inserttotalframenumber\hspace*{2ex}%
-    \end{beamercolorbox}}%
-  \vskip0pt%
-}
-
-% Additional packages and settings
-\usepackage{url}
-\usepackage[export]{adjustbox}
-\usetikzlibrary{shapes.geometric, positioning, arrows.meta, backgrounds, fit}
-
-% Redefine the frame to have smaller margins
-\setbeamersize{text margin left=5pt,text margin right=5pt}
-
-% Centering frame titles
-\setbeamertemplate{frametitle}[default][center]
-
-% Set the title
 \title{What Can Be Done with BSG-IDE?}
-\subtitle{Demo}
+\subtitle{Enhanced Demo with Special Effects}
 \author{Ninan Sajeeth Philip}
 \institute{\textcolor{mygreen}{Artificial Intelligence Research and Intelligent Systems (airis4D)}}
 \date{\today}
 
-\begin{document}
+\title Special Text Effects Demo
+\begin{Content} \None
+- Regular text vs \shadowtext{Shadow Text Effect}
+- Using \glowtext{Glowing Text} for emphasis
+- Gradient text: \gradienttext[myblue][mypurple]{Important Concept}
+- Spotlight effect: \spotlight{Key Point}
+- Highlighting: \hlkey{Important} vs \hlnote{Note This}
+\end{Content}
 
-\begin{frame}
-\titlepage
-\end{frame}
+\title Alert and Info Boxes
+\begin{Content} \None
+\begin{alertbox}[myred]
+    Critical Information: Pay attention to this!
+\end{alertbox}
 
-\title An Introduction to Overleaf
+\begin{infobox}[myblue]
+    Additional Information
+    - Useful for side notes
+    - Can contain multiple points
+\end{infobox}
+\end{Content}
+
+\title Media Layout: Full Frame
+\begin{Content} \ff bsg-ide.png
+- \glowtext{Full Frame Mode} uses the entire slide
+- Text appears over the image
+- Great for impactful visuals
+- Best with high-resolution images
+\end{Content}
+
+\title Media Layout: Watermark
+\begin{Content} \wm bsg-ide.png
+- \spotlight{Watermark Mode} shows faded background
+- Perfect for subtle branding
+- Maintains text readability
+- Professional look and feel
+\end{Content}
+
+\title Media Layout: Overlay
+\begin{Content} \ol bsg-ide.png
+- \gradienttext[myblue][mypurple]{Overlay Mode} balances image and text
+- Semi-transparent background
+- Ensures content visibility
+- Modern presentation style
+\end{Content}
+
+\title Media Layout: Picture-in-Picture
+\begin{Content} \pip bsg-ide.png
+- Small image in corner
+- \hlkey{PiP Mode} keeps focus on content
+- Useful for reference images
+- Clean and organized layout
+\end{Content}
+
+\title Media Layout: Split Screen
+\begin{Content} \split bsg-ide.png
+- Equal space for image and text
+- \spotlight{Split Mode} perfect for comparisons
+- Balanced visual presentation
+- Professional side-by-side layout
+\end{Content}
+
+\title Media Layout: Top-Bottom
+\begin{Content} \tb bsg-ide.png
+- Image above, content below
+- \glowtext{Top-Bottom Mode} for sequential flow
+- Great for step-by-step explanations
+- Clear visual hierarchy
+\end{Content}
+
+\title Media Layout: Corner
+\begin{Content} \corner bsg-ide.png
+- Small image in corner
+- \hlnote{Corner Mode} minimizes distraction
+- Maintains focus on content
+- Subtle visual support
+\end{Content}
+
+\title Multiple Images with Mosaic
+\begin{Content} \mosaic bsg-ide.png,bsg-ide.png,bsg-ide.png,bsg-ide.png
+- \gradienttext[myblue][mypurple]{Mosaic Layout} combines multiple images
+- Perfect for comparisons
+- Grid-based arrangement
+- Visual impact with organization
+\end{Content}
+
+\title Interactive Media Demo
 \begin{Content} \play https://www.youtube.com/watch?v=58CoXgze71Y
-- Overleaf is a complete DTP platform in LaTeX widely used by the academic community
-- The standalone platform allows users to develop and keep their ideas available online.
-- It generates the PDF file and can also provide a Rich text-like platform for those who are not very familiar with LaTeX
-- It is Free.
+- \spotlight{Video Integration}
+- Automatic video thumbnail generation
+- Click to play functionality
+- \hlkey{Source Attribution} automatic citation
 \end{Content}
 
-\title Google Colab
-\begin{Content} \play https://www.youtube.com/watch?v=oCngVVBSsmA
-- Google Colab is an online high-performance computing environment
-- It has everything that is needed to learn and get introduced to AI and Data Science
-- It is Free
+\title Combined Effects Example
+\begin{Content} \split bsg-ide.png
+\begin{alertbox}[myorange]
+    \glowtext{Important Visual Concept}
+\end{alertbox}
+
+- \gradienttext[myblue][mypurple]{Main Point} with gradient effect
+- \spotlight{Key Concept} with spotlight
+- Regular bullet point with \hlkey{highlighted term}
+
+\begin{infobox}[myteal]
+    \shadowtext{Additional Notes:}
+    - Supporting details
+    - Extra information
+\end{infobox}
 \end{Content}
 
-\title How did I generate this Slide?
+\title Code Highlighting Demo
 \begin{Content} \None
-- I just called \textcolor[RGB]{255,165,0}{python BeamerSlideGenerator.py}
-- Selected option 2 and entered the text file:  demo-presentation.txt
-- Press enter, and everything is ready. Finally you only need to run \textcolor[RGB]{255,165,0}{pdflatex demo-presentation.tex}
-- The text file remains unchanged, and I often spell check and grammar check it after typing. Rerun it, and the new presentation will be ready!
+\begin{minted}{python}
+def hello_world():
+    print("\glowtext{Hello, World!}")
+    return True
+\end{minted}
+- Code highlighting with \hlkey{minted} package
+- Supports multiple languages
+- Syntax highlighting included
 \end{Content}
 
-\title How did I generate this Slide?
-\begin{Content} \None
-- You need not worry about creating the text file. That is the good news. You give a new file name, say \textcolor[RGB]{255,165,0}{some\_filename.txt},after selecting the option 2.
-- It will guide you through even suggestive pages on your browser related to the topic of your slide.
-- You can follow the instructions. Copy and paste  and play (use play  command) YouTube video links by selecting option 1 in the submenu, or add your own files by selecting option 2.
-- No worries, the links will be automatically cited so that you won't be blamed for IP violation.
-- Try it and let me know
+\title BSG-IDE Features Summary
+\begin{Content} \ol bsg-ide.png
+\begin{alertbox}[mygreen]
+    \glowtext{Key Features}
+\end{alertbox}
+- \gradienttext[myblue][mypurple]{Multiple Media Layouts}
+- \spotlight{Special Text Effects}
+- \hlkey{Interactive Elements}
+- \shadowtext{Professional Formatting}
+- \glowtext{Automatic Enhancements}
 \end{Content}
 
 \end{document}
