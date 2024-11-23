@@ -1,3 +1,9 @@
+For the impatient:
+
+1. Download the files.
+2. Unzip it
+3. run:> python BSG-IDE.py --fix
+4. Now from menu, you can load BSG-IDE (usually under Office folder)
 
 # Bridge the gap from Idea Generation to PDF Presentation
 
