@@ -1569,7 +1569,7 @@ def parse_media_directive(directive_string):
 
 
 def process_input_file(file_path, output_filename='movie.tex', ide_callback=None):
-    """Process input file to convert to TeX format with proper slide content isolation"""
+    """Process input file to convert to TeX format with proper slide navigation"""
     url_updates = {}
     errors = []
     processed = 0
@@ -1600,56 +1600,118 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
         current_notes = []
         latex_code = ""
         current_slide_index = 0
-        in_content_block = False  # Flag to track if we're inside a Content block
+        in_content_block = False
+
+        # Store initial states
+        original_media = None
+        original_title = None
+        original_content = None
 
         while i < len(content_lines):
             line = content_lines[i].strip()
 
-            if '\\end{document}' in line:
+            # Important: Process current slide before ending
+            if line.startswith('\\end{document}'):
+                # If we're in a content block, process the last slide
+                if in_content_block:
+                    if ide_callback:
+                        # Update IDE with current slide state
+                        ide_callback("show_current_slide", {
+                            'index': current_slide_index,
+                            'title': title,
+                            'media': current_url if current_url else "\\None",
+                            'content': content
+                        })
+                        # Force media update
+                        ide_callback("update_media", {
+                            'index': current_slide_index,
+                            'media': current_url if current_url else "\\None"
+                        })
 
+                    # Process the last slide
+                    latex_code, new_directive = process_media(
+                        current_url if current_url else "\\None",
+                        content.copy() if content else None,
+                        title,
+                        False,
+                        slide_index=current_slide_index,
+                        callback=ide_callback
+                    )
+
+                    if latex_code:
+                        with open(output_filename, 'a') as f:
+                            f.write(latex_code)
+                        processed += 1
+
+                # Write document end
+                with open(output_filename, 'a') as f:
+                    f.write("\\end{document}\n")
                 break
-
             if not line:
                 i += 1
                 continue
 
             if line.startswith("\\title"):
-                # Reset everything when a new title is found
-                title = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else "Slide"
-                content = []  # Clear content for new slide
+                # Save original title for IDE update
+                original_title = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else "Slide"
+                title = original_title
+                content = []
                 current_url = None
                 current_notes = []
                 in_content_block = False
+
+                # Update IDE with title using callback
                 if ide_callback:
-                    ide_callback("update_current_slide", {'index': current_slide_index, 'title': title})
+                    ide_callback("update_current_slide", {
+                        'index': current_slide_index,
+                        'title': title
+                    })
+                    # Also focus the slide in IDE's slide list
+                    ide_callback("navigate_to_slide", {
+                        'index': current_slide_index,
+                        'focus': True
+                    })
                 i += 1
                 continue
 
             if line.startswith("\\begin{Content}"):
-                # Start of new content block - reset all content
                 content = []
                 current_notes = []
                 in_content_block = True
                 if len(line) > len("\\begin{Content}"):
                     current_url = line[len("\\begin{Content}"):].strip()
+                    original_media = current_url  # Store original media URL
                 else:
                     i += 1
                     if i < len(content_lines):
                         current_url = content_lines[i].strip()
+                        original_media = current_url
                     else:
                         current_url = None
+                        original_media = None
+
+                # Update IDE with media using callback
+                if ide_callback:
+                    ide_callback("update_media", {
+                        'index': current_slide_index,
+                        'media': original_media if original_media != "\\None" else None
+                    })
                 i += 1
                 continue
 
             if line.startswith("\\end{Content}"):
-                # Process the complete slide content
-                if ide_callback:
-                    ide_callback("update_content", {'index': current_slide_index, 'content': content})
+                original_content = content.copy()  # Store original content
 
-                # Even if content is empty, process the slide with whatever we have
+                # Update IDE with content using callback
+                if ide_callback:
+                    ide_callback("update_content", {
+                        'index': current_slide_index,
+                        'content': content
+                    })
+
                 latex_code, new_directive = process_media(
                     current_url if current_url else "\\None",
-                    content.copy() if content else None,  # Use copy to prevent reference issues
+                    content.copy() if content else None,
                     title,
                     False,
                     slide_index=current_slide_index,
@@ -1657,18 +1719,16 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                 )
 
                 if latex_code:
-                    # Remove frame end if present for notes addition
+                    # Process frame and notes [existing code...]
                     frame_end = latex_code.rfind('\\end{frame}')
                     if frame_end != -1:
                         latex_code = latex_code[:frame_end]
 
-                    # Add notes if present
                     if current_notes:
                         latex_code += "\n    % Presentation notes\n"
                         for note in current_notes:
                             latex_code += f"    \\note{{{note}}}\n"
 
-                    # Add frame end
                     latex_code += "\\end{frame}\n\n"
 
                     with open(output_filename, 'a') as f:
@@ -1680,12 +1740,21 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                             url_updates[current_url] = new_directive
                         else:
                             url_updates[current_url] = (new_directive, new_directive)
+
+                    # Force IDE to display current slide
+                    if ide_callback:
+                        ide_callback("show_current_slide", {
+                            'index': current_slide_index,
+                            'title': original_title,
+                            'media': original_media,
+                            'content': original_content
+                        })
                 else:
                     failed += 1
                     if ide_callback:
                         ide_callback("error", {'message': f"Failed to process slide {current_slide_index + 1}"})
 
-                # Reset everything after processing the slide
+                # Reset for next slide
                 content = []
                 current_notes = []
                 current_url = None
