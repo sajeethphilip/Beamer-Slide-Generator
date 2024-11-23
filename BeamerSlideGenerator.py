@@ -1569,7 +1569,7 @@ def parse_media_directive(directive_string):
 
 
 def process_input_file(file_path, output_filename='movie.tex', ide_callback=None):
-    """Process input file while preserving original media URLs/directives for IDE display"""
+    """Process input file to convert to TeX format with proper slide content isolation"""
     url_updates = {}
     errors = []
     processed = 0
@@ -1582,22 +1582,31 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
         # Get preamble information first
         has_preamble, preamble_lines, content_lines, has_titlepage, has_maketitle = detect_preamble(lines)
 
-        # Initialize the output .tex file [existing code...]
+        # Initialize the output .tex file
+        with open(output_filename, 'w') as f:
+            if has_preamble:
+                f.writelines(preamble_lines)
+                if not has_maketitle:
+                    f.write("\\maketitle\n")
+                if not has_titlepage:
+                    f.write("\\begin{frame}\n\\titlepage\n\\end{frame}\n\n")
+            else:
+                f.write("\\documentclass[12pt]{beamer}\n\\usepackage{graphicx}\n\\usepackage{multimedia}\n\n\\begin{document}\n\n")
 
         i = 0
         title = None
         content = []
         current_url = None
-        original_media = None  # Store the original media directive/URL
         current_notes = []
         latex_code = ""
         current_slide_index = 0
-        in_content_block = False
+        in_content_block = False  # Flag to track if we're inside a Content block
 
         while i < len(content_lines):
             line = content_lines[i].strip()
 
             if '\\end{document}' in line:
+
                 break
 
             if not line:
@@ -1605,54 +1614,42 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                 continue
 
             if line.startswith("\\title"):
+                # Reset everything when a new title is found
                 title = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else "Slide"
-                content = []
+                content = []  # Clear content for new slide
+                current_url = None
+                current_notes = []
+                in_content_block = False
                 if ide_callback:
-                    # Update title and preserve any existing media
-                    ide_callback("update_current_slide", {
-                        'index': current_slide_index,
-                        'title': title
-                    })
+                    ide_callback("update_current_slide", {'index': current_slide_index, 'title': title})
                 i += 1
                 continue
 
             if line.startswith("\\begin{Content}"):
+                # Start of new content block - reset all content
                 content = []
                 current_notes = []
                 in_content_block = True
-
-                # Get the original media directive/URL
                 if len(line) > len("\\begin{Content}"):
-                    original_media = line[len("\\begin{Content}"):].strip()
-                    current_url = original_media
+                    current_url = line[len("\\begin{Content}"):].strip()
                 else:
                     i += 1
                     if i < len(content_lines):
-                        original_media = content_lines[i].strip()
-                        current_url = original_media
+                        current_url = content_lines[i].strip()
                     else:
-                        original_media = None
                         current_url = None
-
-                if ide_callback:
-                    # Always use the original media directive for IDE display
-                    ide_callback("update_media", {
-                        'index': current_slide_index,
-                        'media': original_media
-                    })
                 i += 1
                 continue
 
             if line.startswith("\\end{Content}"):
+                # Process the complete slide content
                 if ide_callback:
-                    ide_callback("update_content", {
-                        'index': current_slide_index,
-                        'content': content
-                    })
+                    ide_callback("update_content", {'index': current_slide_index, 'content': content})
 
+                # Even if content is empty, process the slide with whatever we have
                 latex_code, new_directive = process_media(
                     current_url if current_url else "\\None",
-                    content.copy() if content else None,
+                    content.copy() if content else None,  # Use copy to prevent reference issues
                     title,
                     False,
                     slide_index=current_slide_index,
@@ -1660,23 +1657,24 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                 )
 
                 if latex_code:
-                    # Process frame and notes [existing code...]
+                    # Remove frame end if present for notes addition
                     frame_end = latex_code.rfind('\\end{frame}')
                     if frame_end != -1:
                         latex_code = latex_code[:frame_end]
 
+                    # Add notes if present
                     if current_notes:
                         latex_code += "\n    % Presentation notes\n"
                         for note in current_notes:
                             latex_code += f"    \\note{{{note}}}\n"
 
+                    # Add frame end
                     latex_code += "\\end{frame}\n\n"
 
                     with open(output_filename, 'a') as f:
                         f.write(latex_code)
                     processed += 1
 
-                    # Update the tex file with new directives if needed, but keep original in IDE
                     if new_directive and current_url and new_directive != current_url:
                         if isinstance(new_directive, tuple):
                             url_updates[current_url] = new_directive
@@ -1687,20 +1685,11 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                     if ide_callback:
                         ide_callback("error", {'message': f"Failed to process slide {current_slide_index + 1}"})
 
-                # Reset for next slide
+                # Reset everything after processing the slide
                 content = []
                 current_notes = []
                 current_url = None
-                original_media = None
                 in_content_block = False
-
-                # Clear media state for next slide
-                if ide_callback:
-                    ide_callback("update_media", {
-                        'index': current_slide_index + 1,
-                        'media': None
-                    })
-
                 current_slide_index += 1
                 i += 1
                 continue
