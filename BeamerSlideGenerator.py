@@ -105,167 +105,179 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
     """
     Returns Beamer preamble with proper package dependency handling and contained frame titles
     """
-    preamble = f"""\\documentclass[aspectratio=169]{{beamer}}
+    # Core part of preamble (static)
+    core_preamble = r"""
+\documentclass[aspectratio=169]{beamer}
 
 % Essential packages (core)
-\\usepackage{{hyperref}}
-\\usepackage{{graphicx}}
-\\usepackage{{amsmath}}
-\\usepackage{{tikz}}
-\\usepackage{{pgfplots}}
-\\usepackage{{xstring}}
-\\usepackage{{animate}}
-\\usepackage{{multimedia}}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{xstring}
+\usepackage{animate}
+\usepackage{multimedia}
 
 % Extended packages with fallbacks
-\\IfFileExists{{tcolorbox.sty}}{{\\usepackage{{tcolorbox}}}}{{}}
-\\IfFileExists{{fontawesome5.sty}}{{\\usepackage{{fontawesome5}}}}{{}}
-\\IfFileExists{{pifont.sty}}{{\\usepackage{{pifont}}}}{{}}
-\\IfFileExists{{soul.sty}}{{\\usepackage{{soul}}}}{{}}
+\IfFileExists{tcolorbox.sty}{\usepackage{tcolorbox}}{}
+\IfFileExists{fontawesome5.sty}{\usepackage{fontawesome5}}{}
+\IfFileExists{pifont.sty}{\usepackage{pifont}}{}
+\IfFileExists{soul.sty}{\usepackage{soul}}{}
 
 % Package configurations
-\\pgfplotsset{{compat=1.18}}
-\\usetikzlibrary{{shadows.blur, shapes.geometric, positioning, arrows.meta, backgrounds, fit}}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{shadows.blur, shapes.geometric, positioning, arrows.meta, backgrounds, fit}
 
 % Original text effects
-\\newcommand{{\\shadowtext}}[2][2pt]{{%
-    \\begin{{tikzpicture}}[baseline]
-        \\node[blur shadow={{shadow blur steps=5,shadow xshift=0pt,shadow yshift=-#1,
-              shadow opacity=0.75}}, text=white] {{#2}};
-    \\end{{tikzpicture}}%
-}}
+\newcommand{\shadowtext}[2][2pt]{%
+    \begin{tikzpicture}[baseline]
+        \node[blur shadow={shadow blur steps=5,shadow xshift=0pt,shadow yshift=-#1,
+              shadow opacity=0.75}, text=white] {#2};
+    \end{tikzpicture}%
+}
 
-\\newcommand{{\\glowtext}}[2][myblue]{{%
-    \\begin{{tikzpicture}}[baseline]
-        \\node[circle, inner sep=1pt,
-              blur shadow={{shadow blur steps=10,shadow xshift=0pt,
+\newcommand{\glowtext}[2][myblue]{%
+    \begin{tikzpicture}[baseline]
+        \node[circle, inner sep=1pt,
+              blur shadow={shadow blur steps=10,shadow xshift=0pt,
               shadow yshift=0pt,shadow blur radius=5pt,
-              shadow opacity=0.5,shadow color=#1}},
-              text=white] {{#2}};
-    \\end{{tikzpicture}}%
-}}
+              shadow opacity=0.5,shadow color=#1},
+              text=white] {#2};
+    \end{tikzpicture}%
+}
 
 % Conditional definitions based on package availability
-\\IfFileExists{{tcolorbox.sty}}{{
-    \\newtcolorbox{{alertbox}}[1][red]{{
+\IfFileExists{tcolorbox.sty}{
+    \newtcolorbox{alertbox}[1][red]{
         colback=#1!5!white,
         colframe=#1!75!black,
-        fonttitle=\\bfseries,
+        fonttitle=\bfseries,
         boxrule=0.5pt,
         rounded corners,
-        shadow={{2mm}}{{-1mm}}{{0mm}}{{black!50}}
-    }}
+        shadow={2mm}{-1mm}{0mm}{black!50}
+    }
 
-    \\newtcolorbox{{infobox}}[1][blue]{{
+    \newtcolorbox{infobox}[1][blue]{
         enhanced,
         colback=#1!5!white,
         colframe=#1!75!black,
         arc=4mm,
         boxrule=0.5pt,
-        fonttitle=\\bfseries,
-        attach boxed title to top center={{yshift=-3mm,yshifttext=-1mm}},
-        boxed title style={{size=small,colback=#1!75!black}},
-        shadow={{2mm}}{{-1mm}}{{0mm}}{{black!50}}
-    }}
-}}{{}}
+        fonttitle=\bfseries,
+        attach boxed title to top center={yshift=-3mm,yshifttext=-1mm},
+        boxed title style={size=small,colback=#1!75!black},
+        shadow={2mm}{-1mm}{0mm}{black!50}
+    }
+}{}
 
 % Base colors (always available)
-\\definecolor{{myyellow}}{{RGB}}{{255,210,0}}
-\\definecolor{{myorange}}{{RGB}}{{255,130,0}}
-\\definecolor{{mygreen}}{{RGB}}{{0,200,100}}
-\\definecolor{{myblue}}{{RGB}}{{0,130,255}}
-\\definecolor{{mypink}}{{RGB}}{{255,105,180}}
-\\definecolor{{mypurple}}{{RGB}}{{147,112,219}}
-\\definecolor{{myteal}}{{RGB}}{{0,128,128}}
+\definecolor{myyellow}{RGB}{255,210,0}
+\definecolor{myorange}{RGB}{255,130,0}
+\definecolor{mygreen}{RGB}{0,200,100}
+\definecolor{myblue}{RGB}{0,130,255}
+\definecolor{mypink}{RGB}{255,105,180}
+\definecolor{mypurple}{RGB}{147,112,219}
+\definecolor{myteal}{RGB}{0,128,128}
 
 % Glow colors
-\\definecolor{{glowblue}}{{RGB}}{{0,150,255}}
-\\definecolor{{glowyellow}}{{RGB}}{{255,223,0}}
-\\definecolor{{glowgreen}}{{RGB}}{{0,255,128}}
-\\definecolor{{glowpink}}{{RGB}}{{255,182,193}}
+\definecolor{glowblue}{RGB}{0,150,255}
+\definecolor{glowyellow}{RGB}{255,223,0}
+\definecolor{glowgreen}{RGB}{0,255,128}
+\definecolor{glowpink}{RGB}{255,182,193}
 
 % Basic highlighting commands
-\\newcommand{{\\hlbias}}[1]{{\\textcolor{{myblue}}{{\\textbf{{#1}}}}}}
-\\newcommand{{\\hlvariance}}[1]{{\\textcolor{{mypink}}{{\\textbf{{#1}}}}}}
-\\newcommand{{\\hltotal}}[1]{{\\textcolor{{myyellow}}{{\\textbf{{#1}}}}}}
-\\newcommand{{\\hlkey}}[1]{{\\colorbox{{myblue!20}}{{\\textcolor{{white}}{{\\textbf{{#1}}}}}}}}
-\\newcommand{{\\hlnote}}[1]{{\\colorbox{{mygreen!20}}{{\\textcolor{{white}}{{\\textbf{{#1}}}}}}}}
+\newcommand{\hlbias}[1]{\textcolor{myblue}{\textbf{#1}}}
+\newcommand{\hlvariance}[1]{\textcolor{mypink}{\textbf{#1}}}
+\newcommand{\hltotal}[1]{\textcolor{myyellow}{\textbf{#1}}}
+\newcommand{\hlkey}[1]{\colorbox{myblue!20}{\textcolor{white}{\textbf{#1}}}}
+\newcommand{\hlnote}[1]{\colorbox{mygreen!20}{\textcolor{white}{\textbf{#1}}}}
 
 % Basic theme setup
-\\usetheme{{Madrid}}
-\\usecolortheme{{owl}}
+\usetheme{Madrid}
+\usecolortheme{owl}
 
 % Color settings
-\\setbeamercolor{{normal text}}{{fg=white}}
-\\setbeamercolor{{structure}}{{fg=myyellow}}
-\\setbeamercolor{{alerted text}}{{fg=myorange}}
-\\setbeamercolor{{example text}}{{fg=mygreen}}
-\\setbeamercolor{{background canvas}}{{bg=black}}
-\\setbeamercolor{{frametitle}}{{fg=white,bg=black}}
+\setbeamercolor{normal text}{fg=white}
+\setbeamercolor{structure}{fg=myyellow}
+\setbeamercolor{alerted text}{fg=myorange}
+\setbeamercolor{example text}{fg=mygreen}
+\setbeamercolor{background canvas}{bg=black}
+\setbeamercolor{frametitle}{fg=white,bg=black}
+"""
 
+    # Progress bar and frame title setup (static)
+    frame_setup = r"""
 % Progress bar setup
-\\makeatletter
-\\def\\progressbar@progressbar{{}}
-\\newcount\\progressbar@tmpcounta
-\\newcount\\progressbar@tmpcountb
-\\newdimen\\progressbar@pbht
-\\newdimen\\progressbar@pbwd
-\\newdimen\\progressbar@tmpdim
+\makeatletter
+\def\progressbar@progressbar{}
+\newcount\progressbar@tmpcounta
+\newcount\progressbar@tmpcountb
+\newdimen\progressbar@pbht
+\newdimen\progressbar@pbwd
+\newdimen\progressbar@tmpdim
 
-\\progressbar@pbwd=\\paperwidth
-\\progressbar@pbht=1pt
+\progressbar@pbwd=\paperwidth
+\progressbar@pbht=1pt
 
-\\def\\progressbar@progressbar{{%
-    \\begin{{tikzpicture}}[very thin]
-        \\shade[top color=myblue!50,bottom color=myblue]
-            (0pt, 0pt) rectangle (\\insertframenumber\\progressbar@pbwd/\\inserttotalframenumber, \\progressbar@pbht);
-    \\end{{tikzpicture}}%
-}}
+\def\progressbar@progressbar{%
+    \begin{tikzpicture}[very thin]
+        \shade[top color=myblue!50,bottom color=myblue]
+            (0pt, 0pt) rectangle (\insertframenumber\progressbar@pbwd/\inserttotalframenumber, \progressbar@pbht);
+    \end{tikzpicture}%
+}
 
-    % Modified frame title template with increased height and better spacing
-    \\setbeamertemplate{{frametitle}}{{
-        \\nointerlineskip
-        \\vskip1ex
-        \\begin{{beamercolorbox}}[wd=\\paperwidth,ht=4ex,dp=2ex]{{frametitle}}
-            \\begin{{minipage}}[t]{{\\dimexpr\\paperwidth-4em}}
-                \\centering
-                \\vspace{{2pt}}
-                \\insertframetitle
-                \\vspace{{2pt}}
-            \\end{{minipage}}
-        \\end{{beamercolorbox}}
-        \\vskip.5ex
-        \\progressbar@progressbar
-    }}
-\\makeatother
+% Modified frame title template with increased height and better spacing
+\setbeamertemplate{frametitle}{
+    \nointerlineskip
+    \vskip1ex
+    \begin{beamercolorbox}[wd=\paperwidth,ht=4ex,dp=2ex]{frametitle}
+        \begin{minipage}[t]{\dimexpr\paperwidth-4em}
+            \centering
+            \vspace{2pt}
+            \insertframetitle
+            \vspace{2pt}
+        \end{minipage}
+    \end{beamercolorbox}
+    \vskip.5ex
+    \progressbar@progressbar
+}
+\makeatother
+"""
 
-% Institution setup
-\\makeatletter
-\\def\\insertshortinstitute{{{short_institute if short_institute else institution}}}
-\\makeatother
+    # Institution setup (variable part)
+    inst_setup = f"\\makeatletter\n\\def\\insertshortinstitute{{{short_institute if short_institute else institution}}}\n\\makeatother\n"
 
+    # Footline template (static)
+    footline_template = r"""
 % Footline template
-\\setbeamertemplate{{footline}}{{%
-  \\leavevmode%
-  \\hbox{{%
-    \\begin{{beamercolorbox}}[wd=.333333\\paperwidth,ht=2.25ex,dp=1ex,center]{{author in head/foot}}%
-      \\usebeamerfont{{author in head/foot}}\\insertshortauthor~~(\\insertshortinstitute)%
-    \\end{{beamercolorbox}}%
-    \\begin{{beamercolorbox}}[wd=.333333\\paperwidth,ht=2.25ex,dp=1ex,center]{{title in head/foot}}%
-      \\usebeamerfont{{title in head/foot}}\\insertshorttitle%
-    \\end{{beamercolorbox}}%
-    \\begin{{beamercolorbox}}[wd=.333333\\paperwidth,ht=2.25ex,dp=1ex,right]{{date in head/foot}}%
-      \\usebeamerfont{{date in head/foot}}\\insertshortdate{{}}\\hspace*{{2em}}%
-      \\insertframenumber{{}} / \\inserttotalframenumber\\hspace*{{2ex}}%
-    \\end{{beamercolorbox}}}}%
-  \\vskip0pt%
-}}
+\setbeamertemplate{footline}{%
+  \leavevmode%
+  \hbox{%
+    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
+      \usebeamerfont{author in head/foot}\insertshortauthor~(\insertshortinstitute)%
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{title in head/foot}%
+      \usebeamerfont{title in head/foot}\insertshorttitle%
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,right]{date in head/foot}%
+      \usebeamerfont{date in head/foot}\insertshortdate{}\hspace*{2em}%
+      \insertframenumber{} / \inserttotalframenumber\hspace*{2ex}%
+    \end{beamercolorbox}}%
+  \vskip0pt%
+}
+"""
 
+    # Additional settings (static)
+    additional_settings = r"""
 % Additional settings
-\\setbeamersize{{text margin left=5pt,text margin right=5pt}}
-\\setbeamertemplate{{navigation symbols}}{{}}
-\\setbeamertemplate{{blocks}}[rounded][shadow=true]
+\setbeamersize{text margin left=5pt,text margin right=5pt}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{blocks}[rounded][shadow=true]
+"""
 
+    # Title setup (variable part)
+    title_setup = f"""
 % Title setup
 \\title{{{title}}}
 {f'\\subtitle{{{subtitle}}}' if subtitle else ''}
@@ -274,7 +286,10 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 \\date{{{date}}}
 
 \\begin{{document}}
+"""
 
+    # Title page template (variable part)
+    title_page = f"""
 % Title page
 \\begin{{frame}}[plain]
     \\begin{{tikzpicture}}[overlay,remember picture]
@@ -296,7 +311,17 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
     \\end{{tikzpicture}}
 \\end{{frame}}
 """
-    return preamble
+
+    # Combine all parts
+    return "\n".join([
+        core_preamble,
+        frame_setup,
+        inst_setup,
+        footline_template,
+        additional_settings,
+        title_setup,
+        title_page
+    ])
 
 def get_footline_template():
     """
