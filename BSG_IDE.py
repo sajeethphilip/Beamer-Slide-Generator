@@ -357,17 +357,6 @@ MimeType=application/pdf;
         print("✓ Desktop entry created")
 
 
-def verify_installation():
-    """Verify critical packages are installed and working"""
-    try:
-        import customtkinter
-        import PIL
-        import tkinter
-        print("\nCritical packages verified successfully")
-        return True
-    except ImportError as e:
-        print(f"Error: Critical package missing: {e}")
-        return False
 
 def verify_existing_packages():
     """Verify existing packages when offline"""
@@ -838,9 +827,36 @@ class BeamerSlideEditor(ctk.CTk):
         self.__license__ = "Creative Commons"
         self.logo_ascii = AIRIS4D_ASCII_LOGO
         # Initialize logo before creating widgets
+        self.setup_logo()
+
+        # Initialize paths
+        self.package_root, self.resources_dir = setup_paths()
+
+        # Initialize logo before creating widgets
         self.has_logo = False
         self.logo_image = None
-        self.setup_logo()
+
+        # Try to find logo
+        possible_paths = [
+            self.resources_dir / 'airis4d_logo.png',
+            self.package_root / 'airis4d_logo.png',
+            self.package_root / 'resources' / 'airis4d_logo.png'
+        ]
+
+        for path in possible_paths:
+            if path.exists():
+                try:
+                    self.logo_image = ctk.CTkImage(
+                        light_image=Image.open(path),
+                        dark_image=Image.open(path),
+                        size=(50, 50)
+                    )
+                    self.has_logo = True
+                    print(f"✓ Loaded logo from {path}")
+                    break
+                except Exception as e:
+                    print(f"Warning: Could not load logo from {path}: {e}")
+                    continue
 
         # Rest of initialization...
         self.create_widgets()
@@ -1000,15 +1016,18 @@ class BeamerSlideEditor(ctk.CTk):
         self.bind('<Configure>', self.on_window_configure)
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+#-------------------------------------------------------------------------------------
     def setup_logo(self):
-        """Initialize logo with colored ASCII fallback"""
-
+        """Initialize logo with colored ASCII fallback and path tracking"""
         try:
+            # Store the original directory where the logo was found
+            self.logo_dir = None
+
             # Check all possible logo locations
             possible_paths = [
                 Path(__file__).parent / 'airis4d_logo.png',  # Current directory
                 Path(__file__).parent / 'resources' / 'airis4d_logo.png',  # Local resources
-                Path.home() / '.bsg-ide' / 'airis4d_logo.png',  # User config directory
+                Path.home() / '.local' / 'lib' / 'bsg-ide' / 'airis4d_logo.png',  # User config directory
                 Path('/usr/local/share/bsg-ide/resources/airis4d_logo.png'),  # System-wide installation
                 Path(os.getenv('APPDATA', '')) / 'BSG-IDE' / 'resources' / 'airis4d_logo.png'  # Windows
             ]
@@ -1017,6 +1036,7 @@ class BeamerSlideEditor(ctk.CTk):
             for path in possible_paths:
                 if path.exists():
                     logo_path = path
+                    self.logo_dir = path.parent
                     break
 
             if logo_path:
@@ -1030,9 +1050,11 @@ class BeamerSlideEditor(ctk.CTk):
             else:
                 self.has_logo = False
                 print("Using ASCII logo fallback - logo image not found")
+
         except Exception as e:
             print(f"Warning: Could not load logo image: {str(e)}")
             self.has_logo = False
+#---------------------------------------------------------------------------------------
 
     def create_widgets(self):
         """Create and initialize all UI widgets"""
@@ -1457,8 +1479,8 @@ class BeamerSlideEditor(ctk.CTk):
                 self.current_process = None
 
 #--------------------------------------------------------------------------------------------------------------------
-    def create_footer(self) -> None:
-        """Create footer with terminal toggle and institution info"""
+    def create_footer(self):
+        """Create footer with institution info and properly tracked logo"""
         # Footer frame with dark theme
         self.footer = ctk.CTkFrame(self)
         self.footer.grid(row=3, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
@@ -1471,7 +1493,7 @@ class BeamerSlideEditor(ctk.CTk):
         self.terminal_visible = False
         self.terminal_button = ctk.CTkButton(
             left_frame,
-            text="▲ Show Terminal",  # Will toggle between Show/Hide
+            text="▲ Show Terminal",
             command=self.toggle_terminal,
             width=120,
             height=24,
@@ -1480,23 +1502,20 @@ class BeamerSlideEditor(ctk.CTk):
         )
         self.terminal_button.pack(side="left", padx=10)
 
-
         # Logo (image or ASCII)
-        if self.has_logo:
-            logo_label = ctk.CTkLabel(
-                left_frame,
-                image=self.logo_image,
-                text=""
-            )
-            logo_label.pack(side="left", padx=(0, 10))
+        if self.has_logo and hasattr(self, 'logo_image'):
+            try:
+                logo_label = ctk.CTkLabel(
+                    left_frame,
+                    image=self.logo_image,
+                    text=""
+                )
+                logo_label.pack(side="left", padx=(0, 10))
+            except Exception as e:
+                print(f"Warning: Could not create logo label: {e}")
+                self.create_ascii_logo(left_frame)
         else:
-            logo_label = ctk.CTkLabel(
-                left_frame,
-                text=self.logo_ascii,
-                font=("Courier", 10),
-                justify="left"
-            )
-            logo_label.pack(side="left", padx=(0, 10))
+            self.create_ascii_logo(left_frame)
 
         # Institution name
         inst_label = ctk.CTkLabel(
@@ -1560,6 +1579,16 @@ class BeamerSlideEditor(ctk.CTk):
             text_color="#6272A4"
         )
         license_label.pack(side="left", padx=5)
+
+    def create_ascii_logo(self, parent):
+        """Create ASCII logo as fallback"""
+        logo_label = ctk.CTkLabel(
+            parent,
+            text=self.logo_ascii,
+            font=("Courier", 10),
+            justify="left"
+        )
+        logo_label.pack(side="left", padx=(0, 10))
 
     def create_about_dialog(self) -> None:
         """Create about dialog with logo and information"""
@@ -4034,148 +4063,6 @@ def import_required_packages():
         traceback.print_exc()
         sys.exit(1)
 
-def fix_installation():
-    """Fix installation with icon update support"""
-    try:
-        # Get installation paths
-        home = Path.home()
-        local_bin = home / '.local' / 'bin'
-        local_lib = home / '.local' / 'lib' / 'bsg-ide'
-        system, paths = get_installation_paths()
-
-        # Create necessary directories
-        os.makedirs(local_bin, exist_ok=True)
-        os.makedirs(local_lib, exist_ok=True)
-
-        # Get current script location
-        current_script = Path(__file__).resolve()
-
-        # Copy all required files including icon
-        required_files = [
-            'BSG-IDE.py',
-            'BeamerSlideGenerator.py',
-            'BSG_terminal',
-            'airis4d_logo.png',
-            'bsg-ide.png',  # Add icon to required files
-            'requirements.txt'
-        ]
-
-        files_updated = []
-        for src_name in required_files:
-            src_file = current_script.parent / src_name
-            if src_file.exists():
-                shutil.copy2(src_file, local_lib / src_name)
-                files_updated.append(src_name)
-                print(f"✓ Updated {src_name}")
-
-        # Setup icon specifically
-        if 'bsg-ide.png' in files_updated:
-            setup_program_icon(local_lib, system)
-            print("✓ Updated program icon")
-
-            # Update icon in system locations
-            if system == "Linux":
-                # Update hicolor icons
-                icon_sizes = ['16x16', '32x32', '48x48', '64x64', '128x128', '256x256']
-                for size in icon_sizes:
-                    target_dir = home / '.local' / 'share' / 'icons' / 'hicolor' / size / 'apps'
-                    os.makedirs(target_dir, exist_ok=True)
-                    shutil.copy2(local_lib / 'bsg-ide.png', target_dir / 'bsg-ide.png')
-                print("✓ Updated system icons")
-
-                # Update desktop entry to ensure icon is referenced
-                desktop_entry = f"""[Desktop Entry]
-Version=1.0
-Type=Application
-Name=BSG-IDE
-Comment=Beamer Slide Generator IDE
-Exec={local_bin}/bsg-ide
-Icon=bsg-ide
-Terminal=false
-Categories=Office;Development;Education;
-Keywords=presentation;latex;beamer;slides;
-StartupWMClass=bsg-ide
-"""
-                desktop_dir = home / '.local' / 'share' / 'applications'
-                os.makedirs(desktop_dir, exist_ok=True)
-                desktop_file = desktop_dir / 'bsg-ide.desktop'
-                desktop_file.write_text(desktop_entry)
-                desktop_file.chmod(0o755)
-                print("✓ Updated desktop entry")
-
-            elif system == "Windows":
-                # Create and update Windows icon
-                try:
-                    from PIL import Image
-                    img = Image.open(local_lib / 'bsg-ide.png')
-                    ico_path = local_lib / 'icons' / 'bsg-ide.ico'
-                    os.makedirs(local_lib / 'icons', exist_ok=True)
-                    img.save(ico_path, format='ICO', sizes=[(32, 32), (64, 64), (128, 128)])
-
-                    # Update Windows shortcut if it exists
-                    try:
-                        import winshell
-                        from win32com.client import Dispatch
-                        shortcut_path = Path(winshell.programs()) / "BSG-IDE" / "BSG-IDE.lnk"
-                        if shortcut_path.exists():
-                            shell = Dispatch('WScript.Shell')
-                            shortcut = shell.CreateShortCut(str(shortcut_path))
-                            shortcut.IconLocation = str(ico_path)
-                            shortcut.save()
-                            print("✓ Updated Windows shortcut icon")
-                    except ImportError:
-                        print("Warning: Could not update Windows shortcut (winshell not available)")
-                except Exception as e:
-                    print(f"Warning: Could not update Windows icon: {e}")
-
-            elif system == "Darwin":  # macOS
-                # Update macOS icon
-                resources_dir = paths['resources'] if 'resources' in paths else local_lib / 'Resources'
-                os.makedirs(resources_dir, exist_ok=True)
-                shutil.copy2(local_lib / 'bsg-ide.png', resources_dir / 'bsg-ide.png')
-                print("✓ Updated macOS application icon")
-
-        # Create/update launcher script
-        launcher_script = create_launcher_script(local_lib, local_bin)
-        print(f"✓ Updated launcher at {launcher_script}")
-
-        print("\nInstallation fix completed successfully!")
-        print("Icon and all components have been updated.\n")
-        print("You can now run BSG-IDE by:")
-        print("1. Using the application menu (with updated icon)")
-        print("2. Running 'bsg-ide' in terminal")
-        return True
-
-    except Exception as e:
-        print(f"Error during fix: {str(e)}")
-        traceback.print_exc()
-        return False
-
-def create_launcher_script(install_dir: Path, bin_dir: Path) -> Path:
-    """Create launcher script with icon support"""
-    launcher_content = f"""#!/bin/bash
-# Activate virtual environment if it exists
-if [ -f ~/my_python/bin/activate ]; then
-    source ~/my_python/bin/activate
-fi
-
-# Set Python path
-export PYTHONPATH="{install_dir}:$PYTHONPATH"
-
-# Run the application
-python3 "{install_dir}/BSG-IDE.py" "$@"
-
-# Deactivate virtual environment if it was activated
-if [ -n "$VIRTUAL_ENV" ]; then
-    deactivate
-fi
-"""
-
-    launcher_path = bin_dir / 'bsg-ide'
-    launcher_path.write_text(launcher_content)
-    launcher_path.chmod(0o755)
-
-    return launcher_path
 
 
 class MediaURLDialog(ctk.CTkToplevel):
@@ -4256,7 +4143,7 @@ def update_installation():
             # Copy current files to installation directory
             current_dir = current_path.parent
             required_files = [
-                'BSG-IDE.py',
+                'BSG_IDE.py',
                 'BeamerSlideGenerator.py',
                 'requirements.txt'
             ]
@@ -4281,7 +4168,7 @@ def update_installation():
             elif system == "Windows":
                 batch_content = f"""@echo off
 set PYTHONPATH={install_dir};%PYTHONPATH%
-pythonw "{install_dir}\\BSG-IDE.py" %*
+pythonw "{install_dir}\\BSG_IDE.py" %*
 """
                 batch_path = paths['bin'] / 'bsg-ide.bat'
                 batch_path.write_text(batch_content)
@@ -4611,69 +4498,7 @@ def verify_desktop_entry():
         print(f"Error verifying desktop entry: {str(e)}")
         return False
 
-def install_system_wide():
-    """Set up system-wide installation with icon support"""
-    try:
-        system, paths = get_installation_paths()
 
-        # Create installation directories
-        install_dir = paths['share'] / 'bsg-ide' if system != "Windows" else paths['bin']
-        os.makedirs(install_dir, exist_ok=True)
-
-        # Create icons directory
-        icons_dir = install_dir / 'icons'
-        os.makedirs(icons_dir, exist_ok=True)
-
-        # Copy icon to installation directory
-        try:
-            source_icon = Path(__file__).parent / 'icons' / 'bsg-ide.png'
-            if not source_icon.exists():
-                source_icon = Path(__file__).parent / 'bsg-ide.png'
-
-            if source_icon.exists():
-                shutil.copy2(source_icon, icons_dir / 'bsg-ide.png')
-                print("✓ Icon copied to installation directory")
-            else:
-                print("Warning: Could not find icon file")
-        except Exception as e:
-            print(f"Warning: Could not copy icon: {e}")
-
-        if system == "Linux":
-            # Set up desktop entry and icons
-            setup_desktop_entry()
-        elif system == "Windows":
-            # Create Windows icon
-            try:
-                from PIL import Image
-                img = Image.open(icons_dir / 'bsg-ide.png')
-                ico_path = icons_dir / 'bsg-ide.ico'
-                img.save(ico_path, format='ICO', sizes=[(32, 32), (64, 64), (128, 128)])
-
-                # Create Start Menu shortcut with icon
-                try:
-                    import winshell
-                    from win32com.client import Dispatch
-                    programs_path = Path(winshell.folder("CSIDL_PROGRAMS")) / "BSG-IDE"
-                    programs_path.mkdir(parents=True, exist_ok=True)
-
-                    shell = Dispatch('WScript.Shell')
-                    shortcut = shell.CreateShortCut(str(programs_path / "BSG-IDE.lnk"))
-                    shortcut.Targetpath = sys.executable
-                    shortcut.Arguments = f'"{install_dir}\\BSG_IDE.py"'
-                    shortcut.IconLocation = str(ico_path)
-                    shortcut.save()
-                    print("✓ Start Menu shortcut created with icon")
-                except Exception as e:
-                    print(f"Warning: Could not create Windows shortcut: {e}")
-            except Exception as e:
-                print(f"Warning: Could not create Windows icon: {e}")
-
-        return True
-
-    except Exception as e:
-        print(f"Error during installation: {str(e)}")
-        traceback.print_exc()
-        return False
 
 #-------------------------------------------------pympress installation -----------------------------
 def setup_pympress():
@@ -6102,7 +5927,7 @@ def check_bsg_file():
                     print(f"✓ BeamerSlideGenerator.py installed to {bsg_file}")
                 else:
                     print("✗ Error: BeamerSlideGenerator.py not found in current or script directory.")
-                    print("Please ensure BeamerSlideGenerator.py is in the same directory as BSG-IDE.py")
+                    print("Please ensure BeamerSlideGenerator.py is in the same directory as BSG_IDE.py")
                     sys.exit(1)
         except Exception as e:
             print(f"✗ Error installing BeamerSlideGenerator.py: {str(e)}")
@@ -6164,6 +5989,143 @@ def setup_program_icon(install_dir: Path, system: str) -> None:
         print(f"Warning: Could not set up program icon: {e}")
         return False
 
+def setup_linux_integration(install_paths):
+    """Set up Linux-specific integration"""
+    try:
+        # Set up icons
+        icon_sizes = ['16x16', '32x32', '48x48', '64x64', '128x128', '256x256']
+        icon_source = install_paths['resources'] / 'bsg-ide.png'
+
+        if icon_source.exists():
+            for size in icon_sizes:
+                icon_dir = install_paths['icons'] / size / 'apps'
+                icon_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(icon_source, icon_dir / 'bsg-ide.png')
+            print("✓ Installed system icons")
+
+            # Create desktop entry
+            desktop_entry = f"""[Desktop Entry]
+Version=1.0
+Type=Application
+Name=BSG-IDE
+Comment=Beamer Slide Generator IDE
+Exec={install_paths['bin']}/bsg-ide
+Icon=bsg-ide
+Terminal=false
+Categories=Office;Development;Education;
+Keywords=presentation;latex;beamer;slides;
+StartupWMClass=bsg-ide
+"""
+            desktop_file = install_paths['applications'] / 'bsg-ide.desktop'
+            desktop_file.write_text(desktop_entry)
+            desktop_file.chmod(0o755)
+            print("✓ Created desktop entry")
+        else:
+            print("! Warning: Icon file not found")
+    except Exception as e:
+        print(f"! Warning: Error in Linux integration: {str(e)}")
+
+def setup_macos_integration(install_paths):
+    """Set up macOS-specific integration"""
+    try:
+        # Create Info.plist
+        info_plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>BSG-IDE</string>
+    <key>CFBundleDisplayName</key>
+    <string>BSG-IDE</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.airis4d.bsg-ide</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleIconFile</key>
+    <string>bsg-ide.icns</string>
+    <key>CFBundleExecutable</key>
+    <string>bsg-ide</string>
+</dict>
+</plist>"""
+        (install_paths['base'] / 'Info.plist').write_text(info_plist)
+        print("✓ Created Info.plist")
+
+        # Convert PNG icon to ICNS
+        try:
+            from PIL import Image
+            icon_source = install_paths['resources'] / 'bsg-ide.png'
+            if icon_source.exists():
+                img = Image.open(icon_source)
+                icns_path = install_paths['resources'] / 'bsg-ide.icns'
+                # Save multiple sizes for icns
+                sizes = [(16,16), (32,32), (64,64), (128,128), (256,256), (512,512)]
+                img.save(icns_path, format='ICNS', sizes=sizes)
+                print("✓ Created application icon")
+            else:
+                print("! Warning: Icon file not found")
+        except ImportError:
+            print("! Warning: PIL not available, skipping icon conversion")
+    except Exception as e:
+        print(f"! Warning: Error in macOS integration: {str(e)}")
+
+def setup_windows_integration(install_paths):
+    """Set up Windows-specific integration"""
+    try:
+        # Create Windows icon
+        try:
+            from PIL import Image
+            icon_source = install_paths['resources'] / 'bsg-ide.png'
+            if icon_source.exists():
+                img = Image.open(icon_source)
+                ico_path = install_paths['resources'] / 'bsg-ide.ico'
+                # Save multiple sizes for ico
+                sizes = [(16,16), (32,32), (48,48), (256,256)]
+                img.save(ico_path, format='ICO', sizes=sizes)
+                print("✓ Created Windows icon")
+
+                # Create Start Menu shortcut
+                try:
+                    import winshell
+                    from win32com.client import Dispatch
+                    shell = Dispatch('WScript.Shell')
+                    install_paths['start_menu'].mkdir(parents=True, exist_ok=True)
+                    shortcut = shell.CreateShortCut(str(install_paths['start_menu'] / "BSG-IDE.lnk"))
+                    # Point to pythonw for no console window
+                    shortcut.Targetpath = sys.executable
+                    shortcut.Arguments = f'-m bsg_ide'
+                    shortcut.IconLocation = str(ico_path)
+                    shortcut.save()
+                    print("✓ Created Start Menu shortcut")
+                except ImportError:
+                    print("! Warning: winshell not available, skipping shortcut creation")
+            else:
+                print("! Warning: Icon file not found")
+        except ImportError:
+            print("! Warning: PIL not available, skipping icon creation")
+
+        # Add to PATH if admin installation
+        if ctypes.windll.shell32.IsUserAnAdmin():
+            try:
+                import winreg
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                   'SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment',
+                                   0, winreg.KEY_ALL_ACCESS)
+                path = winreg.QueryValueEx(key, 'Path')[0]
+                bin_path = str(install_paths['bin'])
+                if bin_path not in path:
+                    new_path = f"{path};{bin_path}"
+                    winreg.SetValueEx(key, 'Path', 0, winreg.REG_EXPAND_SZ, new_path)
+                    print("✓ Added to system PATH")
+                winreg.CloseKey(key)
+            except Exception as e:
+                print(f"! Warning: Could not modify PATH: {str(e)}")
+    except Exception as e:
+        print(f"! Warning: Error in Windows integration: {str(e)}")
+
 def setup_system_installation():
     """Set up system-wide installation with icon support"""
     try:
@@ -6212,7 +6174,7 @@ Keywords=presentation;slides;beamer;latex;
 
         # Copy required Python files
         required_files = {
-            'BSG-IDE.py': 'BSG_IDE.py',  # Rename to valid module name
+            'BSG_IDE.py': 'BSG_IDE.py',  # Rename to valid module name
             'BeamerSlideGenerator.py': 'BeamerSlideGenerator.py',
             'Beam2odp.py': 'Beam2odp.py' , # if you have this file
             'BSG_terminal':'BSG_terminal',
@@ -6353,103 +6315,6 @@ Installation completed successfully:
         traceback.print_exc()
         return False
 
-def main():
-    """Main entry point with installation handling"""
-    try:
-        import argparse
-
-        parser = argparse.ArgumentParser(description='BSG-IDE - Beamer Slide Generator IDE')
-        parser.add_argument('--fix', action='store_true',
-                          help='Fix installation issues')
-        parser.add_argument('--install', action='store_true',
-                          help='Install BSG-IDE system-wide')
-
-        args = parser.parse_args()
-
-        # Handle installation requests
-        if args.install:
-            print("Installing BSG-IDE system-wide...")
-            if install_system_wide():
-                print("✓ Installation completed successfully")
-                return
-            else:
-                print("✗ Installation failed")
-                return
-
-        if args.fix:
-            print("Fixing installation...")
-            fix_installation()
-            # Also run system-wide installation as part of fix
-            print("Updating system-wide installation...")
-            install_system_wide()
-            return
-
-        # Check if BSG-IDE is installed
-        if not check_installation():
-            print("BSG-IDE is not installed system-wide.")
-            response = input("Would you like to install it now? (y/n): ").lower()
-            if response.startswith('y'):
-                if install_system_wide():
-                    print("✓ Installation completed successfully")
-                else:
-                    print("✗ Installation failed, but will try to continue...")
-            else:
-                print("Continuing without system-wide installation...")
-
-        # Ensure working directory is script directory
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        os.chdir(script_dir)
-
-        # Check virtual environment and dependencies
-        venv_python, venv_pip, venv_created = setup_virtual_env()
-
-        if venv_created:
-            # Add virtual environment site-packages to Python path
-            venv_site_packages = Path(venv_python).parent.parent / 'lib' / f'python{sys.version_info.major}.{sys.version_info.minor}' / 'site-packages'
-            if venv_site_packages.exists():
-                sys.path.insert(0, str(venv_site_packages))
-                os.environ['PYTHONPATH'] = f"{str(venv_site_packages)}:{os.environ.get('PYTHONPATH', '')}"
-
-        # Verify customtkinter and other dependencies
-        try:
-            import customtkinter
-        except ImportError:
-            print("CustomTkinter not found. Running dependency check...")
-            if check_and_install_dependencies():
-                try:
-                    import customtkinter
-                except ImportError:
-                    print("Error: Could not import customtkinter even after installation.")
-                    print("Please try running with --fix flag: python3 BSG-IDE.py --fix")
-                    return
-
-        # Verify icon and create desktop entry if needed
-        verify_icon_installation()
-        # Verify installations
-        verify_installations()
-
-        # Create and run the IDE
-        try:
-            app = BeamerSlideEditor()
-            app.mainloop()
-        except Exception as e:
-            print(f"Error launching BSG-IDE: {str(e)}")
-            traceback.print_exc()
-
-    except Exception as e:
-        print(f"Error in main: {str(e)}")
-        traceback.print_exc()
-
-        # Additional debug information
-        print("\nDebug Information:")
-        print(f"Python executable: {sys.executable}")
-        print(f"Python path:")
-        for p in sys.path:
-            print(f"  {p}")
-        print("\nEnvironment Variables:")
-        print(f"PYTHONPATH: {os.environ.get('PYTHONPATH', 'Not set')}")
-        print(f"VIRTUAL_ENV: {os.environ.get('VIRTUAL_ENV', 'Not set')}")
-
 def check_installation():
     """Check if BSG-IDE is installed system-wide"""
     try:
@@ -6469,112 +6334,543 @@ def check_installation():
     except Exception as e:
         print(f"Warning: Could not check installation status: {e}")
         return False
-#-------------------------------------------------------------------------------------
-def verify_logo_installation():
-    """Verify logo file is properly installed"""
-    try:
-        # Get installation paths
-        system, paths = get_installation_paths()
-        install_dir = paths['share'] / 'bsg-ide' if system != "Windows" else paths['bin']
+#-------------------------------------INSTALLATION----------------------------
+import os
+import sys
+import platform
+import shutil
+import subprocess
+import json
+from pathlib import Path
+import site
+import socket
+import ctypes
+from importlib import util
 
-        # Check logo in main directory
-        main_logo = install_dir / 'airis4d_logo.png'
-        resource_logo = install_dir / 'resources' / 'airis4d_logo.png'
+class InstallationDialog(ctk.CTkToplevel):
+    """Installation progress dialog with visual feedback"""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("BSG-IDE Installation")
+        self.geometry("400x300")
 
-        if not main_logo.exists() and not resource_logo.exists():
-            print("Warning: Logo file not found in installation directory")
-            print("Attempting to reinstall logo...")
+        # Make dialog modal
+        self.transient(parent)
+        self.grab_set()
 
-            # Try to copy from current directory
-            current_logo = Path(__file__).parent / 'airis4d_logo.png'
-            if current_logo.exists():
-                os.makedirs(install_dir / 'resources', exist_ok=True)
-                shutil.copy2(current_logo, resource_logo)
-                print("✓ Logo reinstalled successfully")
+        # Center dialog
+        self.center_window()
+
+        # Progress elements
+        self.status_label = ctk.CTkLabel(self, text="Preparing installation...")
+        self.status_label.pack(pady=20)
+
+        self.progress = ctk.CTkProgressBar(self)
+        self.progress.pack(pady=10, padx=20, fill="x")
+        self.progress.set(0)
+
+        self.detail_text = ctk.CTkTextbox(self, height=150)
+        self.detail_text.pack(pady=10, padx=20, fill="both", expand=True)
+
+    def center_window(self):
+        """Center dialog on parent window"""
+        self.update_idletasks()
+        width = self.winfo_width()
+        height = self.winfo_height()
+        x = (self.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.winfo_screenheight() // 2) - (height // 2)
+        self.geometry(f'+{x}+{y}')
+
+    def update_progress(self, value: float, message: str):
+        """Update progress bar and status message"""
+        self.progress.set(value)
+        self.status_label.configure(text=message)
+        self.detail_text.insert('end', f"{message}\n")
+        self.detail_text.see('end')
+        self.update()
+
+    def write(self, message: str, color: str = None):
+        """Write message to detail text with optional color"""
+        if color:
+            tag = f"color_{color}"
+            self.detail_text.tag_configure(tag, foreground=color)
+            self.detail_text.insert('end', message + "\n", tag)
+        else:
+            self.detail_text.insert('end', message + "\n")
+        self.detail_text.see('end')
+        self.update()
+
+class InstallationManager:
+    """Enhanced installation manager with GUI feedback"""
+    def __init__(self, parent):
+        self.parent = parent
+        self.dialog = None
+        self.system = platform.system()
+        self.install_paths = self._get_install_paths()
+
+    def install(self):
+        """Start installation process with GUI feedback"""
+        try:
+            self.dialog = InstallationDialog(self.parent)
+
+            # Verify Python environment
+            self.dialog.update_progress(0.1, "Checking Python environment...")
+            self._verify_python_env()
+
+            # Create installation directories
+            self.dialog.update_progress(0.2, "Creating directories...")
+            self._create_directories()
+
+            # Copy files
+            self.dialog.update_progress(0.4, "Copying required files...")
+            self._copy_files()
+
+            # Setup OS integration
+            self.dialog.update_progress(0.6, "Setting up system integration...")
+            self._setup_os_integration()
+
+            # Install dependencies
+            self.dialog.update_progress(0.8, "Installing dependencies...")
+            self._install_dependencies()
+
+            # Final checks
+            self.dialog.update_progress(0.9, "Performing final checks...")
+            self._verify_installation()
+
+            # Complete
+            self.dialog.update_progress(1.0, "Installation completed successfully!")
+            self.dialog.write("✓ BSG-IDE installation completed!", "green")
+
+            # Close dialog after delay
+            self.dialog.after(2000, self.dialog.destroy)
+            return True
+
+        except Exception as e:
+            if self.dialog:
+                self.dialog.write(f"✗ Installation failed: {str(e)}", "red")
+                self.dialog.write("\nDetails:", "red")
+                self.dialog.write(traceback.format_exc(), "red")
+                # Keep dialog open for error review
+            return False
+
+    def _verify_python_env(self):
+        """Verify Python environment and dependencies"""
+        required_version = (3, 7)
+        if sys.version_info < required_version:
+            raise RuntimeError(f"Python {required_version[0]}.{required_version[1]} or higher required")
+
+        # Check virtual environment
+        if not hasattr(sys, 'real_prefix') and not hasattr(sys, 'base_prefix') != sys.prefix:
+            self.dialog.write("! Creating virtual environment...")
+            venv_path = os.path.join(os.path.expanduser("~"), "my_python")
+            venv.create(venv_path, with_pip=True)
+            self.dialog.write("✓ Virtual environment created", "green")
+
+    def _create_directories(self):
+        """Create required directories with proper permissions"""
+        for path in self.install_paths.values():
+            path.mkdir(parents=True, exist_ok=True)
+            self.dialog.write(f"✓ Created: {path}", "green")
+
+    def _copy_files(self):
+        """Copy required files to installation directories"""
+        package_root = Path(__file__).parent
+        required_files = {
+            'BSG_IDE.py': {'dest': ['base', 'python_site']},
+            'BeamerSlideGenerator.py': {'dest': ['base', 'python_site']},
+            'requirements.txt': {'dest': ['base']},
+            'airis4d_logo.png': {'dest': ['resources']},
+            'bsg-ide.png': {'dest': ['resources']}
+        }
+
+        for filename, config in required_files.items():
+            src = package_root / filename
+            if src.exists():
+                for dest_key in config['dest']:
+                    dest = self.install_paths[dest_key] / filename
+                    shutil.copy2(src, dest)
+                    self.dialog.write(f"✓ Copied {filename} to {dest}", "green")
             else:
-                print("Logo file not found. ASCII fallback will be used.")
+                self.dialog.write(f"! Warning: {filename} not found", "yellow")
 
-        return main_logo.exists() or resource_logo.exists()
+    def _setup_os_integration(self):
+        """Setup OS-specific integration features"""
+        if self.system == "Linux":
+            self._setup_linux()
+        elif self.system == "Darwin":
+            self._setup_macos()
+        else:
+            self._setup_windows()
+
+    def _install_dependencies(self):
+        """Install Python package dependencies"""
+        requirements_file = self.install_paths['base'] / 'requirements.txt'
+        if requirements_file.exists():
+            try:
+                subprocess.check_call([
+                    sys.executable, "-m", "pip", "install",
+                    "-r", str(requirements_file)
+                ])
+                self.dialog.write("✓ Installed Python dependencies", "green")
+            except subprocess.CalledProcessError as e:
+                self.dialog.write(f"! Warning: Some dependencies failed to install: {e}", "yellow")
+
+    def _verify_installation(self):
+        """Verify installation success"""
+        problems = []
+
+        # Check core files
+        for path in self.install_paths.values():
+            if not path.exists():
+                problems.append(f"Missing directory: {path}")
+
+        # Check dependencies
+        try:
+            import customtkinter
+            import PIL
+            self.dialog.write("✓ Required packages verified", "green")
+        except ImportError as e:
+            problems.append(f"Missing dependency: {e}")
+
+        if problems:
+            self.dialog.write("\nInstallation warnings:", "yellow")
+            for problem in problems:
+                self.dialog.write(f"! {problem}", "yellow")
+
+
+def install_bsg_ide(fix_mode=False):
+    """Main installation function"""
+    try:
+        installer = InstallationManager()
+        install_type = "system-wide" if installer.is_admin else "user"
+
+        print(f"\nStarting BSG-IDE {'fix' if fix_mode else 'installation'} ({install_type})")
+        print(f"Detected OS: {installer.system}")
+
+        # Create directory structure
+        installer.create_directory_structure()
+
+        # Copy resources
+        package_root = Path(__file__).resolve().parent
+        installer.copy_resources(package_root)
+
+        # Create launcher
+        installer.create_launcher()
+
+        # Setup OS integration
+        installer.setup_os_integration()
+
+        print(f"\nBSG-IDE {'fix' if fix_mode else 'installation'} completed successfully!")
+        print("\nYou can now run BSG-IDE by:")
+        if installer.system == "Windows":
+            print("1. Using the Start Menu shortcut")
+            print("2. Running 'bsg-ide' from Command Prompt")
+        elif installer.system == "Darwin":
+            print("1. Opening BSG-IDE from Applications")
+            print("2. Running 'bsg-ide' from Terminal")
+        else:
+            print("1. Using the application menu")
+            print("2. Running 'bsg-ide' from terminal")
+
+        return True
 
     except Exception as e:
-        print(f"Error verifying logo installation: {str(e)}")
+        print(f"\n✗ Error during {'fix' if fix_mode else 'installation'}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False
 
-def verify_icon_installation():
-    """Verify application icon is properly installed"""
+def verify_installation():
+    """Verify BSG-IDE whether running from source or installed"""
     try:
-        # Get installation paths
-        system, paths = get_installation_paths()
+        package_root, resources_dir = setup_paths()
+        all_ok = True
 
-        if system == "Linux":
-            # Check icon in system locations
-            icon_locations = [
-                Path.home() / '.local' / 'share' / 'icons' / 'hicolor' / '128x128' / 'apps' / 'bsg-ide.png',
-                paths['icons'] / '128x128' / 'apps' / 'bsg-ide.png'
+        print("\nChecking installation...")
+        print(f"Package root: {package_root}")
+        print(f"Resources directory: {resources_dir}")
+
+        # 1. Check core files
+        required_files = {
+            'BSG_IDE.py': package_root,
+            'BeamerSlideGenerator.py': package_root,
+            'requirements.txt': package_root,
+            'airis4d_logo.png': resources_dir,
+            'bsg-ide.png': resources_dir
+        }
+
+        print("\nChecking required files:")
+        for filename, directory in required_files.items():
+            path = directory / filename
+            if path.exists():
+                print(f"✓ Found {filename} in {directory}")
+            else:
+                print(f"✗ Missing {filename}")
+                all_ok = False
+
+        # 2. Check Python paths
+        print("\nChecking Python paths:")
+        if str(package_root) in sys.path:
+            print("✓ Package root in Python path")
+        else:
+            print("✗ Package root not in Python path")
+            all_ok = False
+
+        try:
+            import site
+            python_site = Path(site.getusersitepackages()) / 'bsg_ide'
+            if str(python_site) in sys.path:
+                print("✓ Python site-packages directory in Python path")
+            else:
+                print("✗ Python site-packages directory not in Python path")
+                all_ok = False
+        except Exception as e:
+            print(f"! Warning: Could not check site-packages: {e}")
+
+        # 3. Check launcher script
+        print("\nChecking launcher script:")
+        if sys.platform == "win32":
+            launcher_name = 'bsg-ide.bat'
+        else:
+            launcher_name = 'bsg-ide'
+
+        launcher_locations = [
+            Path.home() / '.local/bin',
+            Path('/usr/local/bin'),
+            package_root / 'bin'
+        ]
+
+        launcher_found = False
+        for loc in launcher_locations:
+            launcher_path = loc / launcher_name
+            if launcher_path.exists():
+                print(f"✓ Found launcher at: {launcher_path}")
+                launcher_found = True
+                # Check permissions on Unix-like systems
+                if sys.platform != "win32":
+                    if os.access(launcher_path, os.X_OK):
+                        print("✓ Launcher has correct permissions")
+                    else:
+                        print("✗ Launcher missing executable permission")
+                        all_ok = False
+                break
+
+        if not launcher_found:
+            print("✗ Launcher script not found")
+            all_ok = False
+
+        # 4. Check desktop integration
+        print("\nChecking desktop integration:")
+        if sys.platform.startswith('linux'):
+            # Check desktop entry
+            desktop_locations = [
+                Path.home() / '.local/share/applications',
+                Path('/usr/share/applications')
             ]
+            desktop_found = False
+            for loc in desktop_locations:
+                desktop_path = loc / 'bsg-ide.desktop'
+                if desktop_path.exists():
+                    print(f"✓ Found desktop entry at: {desktop_path}")
+                    desktop_found = True
+                    break
 
-            icon_installed = any(loc.exists() for loc in icon_locations)
+            if not desktop_found:
+                print("✗ Desktop entry not found")
+                all_ok = False
 
-            if not icon_installed:
-                print("Application icon not found. Attempting to install...")
-                setup_desktop_entry()
-                return True
+            # Check icons
+            icon_found = False
+            icon_sizes = ['16x16', '32x32', '48x48', '64x64', '128x128', '256x256']
+            for size in icon_sizes:
+                icon_locations = [
+                    Path.home() / f'.local/share/icons/hicolor/{size}/apps',
+                    Path(f'/usr/share/icons/hicolor/{size}/apps')
+                ]
+                for loc in icon_locations:
+                    icon_path = loc / 'bsg-ide.png'
+                    if icon_path.exists():
+                        if not icon_found:  # Only print first found
+                            print(f"✓ Found application icon at: {icon_path.parent.parent.parent}")
+                        icon_found = True
 
-        elif system == "Windows":
-            # Check Windows icon
-            icon_path = paths['bin'] / 'icons' / 'bsg-ide.ico'
-            if not icon_path.exists():
-                print("Windows icon not found. Attempting to install...")
-                try:
-                    from PIL import Image
-                    source_icon = Path(__file__).parent / 'icons' / 'bsg-ide.png'
-                    if source_icon.exists():
-                        os.makedirs(icon_path.parent, exist_ok=True)
-                        img = Image.open(source_icon)
-                        img.save(icon_path, format='ICO', sizes=[(32, 32), (64, 64), (128, 128)])
-                        print("✓ Windows icon installed successfully")
-                        return True
-                except Exception as e:
-                    print(f"Warning: Could not create Windows icon: {e}")
-                    return False
+            if not icon_found:
+                print("✗ Application icon not found")
+                all_ok = False
 
-        elif system == "Darwin":  # macOS
-            icon_path = paths['resources'] / 'bsg-ide.png'
-            if not icon_path.exists():
-                print("macOS icon not found. Attempting to install...")
-                try:
-                    source_icon = Path(__file__).parent / 'icons' / 'bsg-ide.png'
-                    if source_icon.exists():
-                        os.makedirs(icon_path.parent, exist_ok=True)
-                        shutil.copy2(source_icon, icon_path)
-                        print("✓ macOS icon installed successfully")
-                        return True
-                except Exception as e:
-                    print(f"Warning: Could not install macOS icon: {e}")
-                    return False
+        elif sys.platform == "darwin":  # macOS
+            app_locations = [
+                Path.home() / 'Applications/BSG-IDE.app',
+                Path('/Applications/BSG-IDE.app')
+            ]
+            app_found = False
+            for loc in app_locations:
+                if loc.exists():
+                    print(f"✓ Found application bundle at: {loc}")
+                    app_found = True
+                    # Check Info.plist
+                    if (loc / 'Contents/Info.plist').exists():
+                        print("✓ Found Info.plist")
+                    else:
+                        print("✗ Missing Info.plist")
+                        all_ok = False
+                    break
 
-        return True
+            if not app_found:
+                print("✗ Application bundle not found")
+                all_ok = False
+
+        elif sys.platform == "win32":  # Windows
+            # Check Start Menu shortcut
+            start_menu_locations = [
+                Path(os.environ['APPDATA']) / 'Microsoft/Windows/Start Menu/Programs',
+                Path(os.environ['PROGRAMDATA']) / 'Microsoft/Windows/Start Menu/Programs'
+            ]
+            shortcut_found = False
+            for loc in start_menu_locations:
+                shortcut_path = loc / 'BSG-IDE/BSG-IDE.lnk'
+                if shortcut_path.exists():
+                    print(f"✓ Found Start Menu shortcut at: {shortcut_path}")
+                    shortcut_found = True
+                    break
+
+            if not shortcut_found:
+                print("✗ Start Menu shortcut not found")
+                all_ok = False
+
+        # 5. Check imports
+        print("\nChecking imports:")
+        try:
+            import BeamerSlideGenerator
+            print("✓ Can import BeamerSlideGenerator")
+        except ImportError as e:
+            print(f"✗ Cannot import BeamerSlideGenerator: {e}")
+            all_ok = False
+
+        try:
+            from BSG_IDE import BeamerSlideEditor
+            print("✓ Can import BeamerSlideEditor")
+        except ImportError as e:
+            print(f"✗ Cannot import BeamerSlideEditor: {e}")
+            all_ok = False
+
+        # Final status
+        print("\nVerification result:")
+        if all_ok:
+            print("✓ All checks passed successfully!")
+        else:
+            print("✗ Some checks failed. Please run 'bsg-ide --fix' to repair the installation")
+
+        return all_ok
 
     except Exception as e:
-        print(f"Error verifying icon installation: {str(e)}")
+        print(f"\n✗ Error during verification: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False
 
-def verify_installations():
-    """Verify both logo and icon installations"""
+
+
+
+def get_package_root():
+    """Get the package root directory whether installed or running from source"""
     try:
-        logo_ok = verify_logo_installation()
-        icon_ok = verify_icon_installation()
+        # First check if we're running from source
+        current_file = Path(__file__).resolve()
+        current_dir = current_file.parent
 
-        if not logo_ok:
-            print("Warning: Logo verification failed")
-        if not icon_ok:
-            print("Warning: Icon verification failed")
+        # Check if we're in source directory (look for key files)
+        if all((current_dir / f).exists() for f in ['BeamerSlideGenerator.py', 'BSG_IDE.py']):
+            return current_dir
 
-        # Return True even if verifications fail - the app can still run
-        return True
+        # If not in source, check if we're pip installed
+        try:
+            import bsg_ide
+            return Path(bsg_ide.__file__).parent
+        except ImportError:
+            pass
+
+        # Finally check standard installation locations
+        standard_locations = [
+            Path.home() / '.local/lib/bsg-ide',
+            Path.home() / '.local/share/bsg-ide',
+            Path('/usr/local/share/bsg-ide')
+        ]
+
+        for loc in standard_locations:
+            if (loc / 'BSG_IDE.py').exists():
+                return loc
+
+        # If we get here, return current directory as fallback
+        return current_dir
 
     except Exception as e:
-        print(f"Error during installation verification: {str(e)}")
-        return True  # Still return True to allow app to run
+        print(f"Warning: Could not determine package root: {e}")
+        return Path(__file__).parent
+
+def setup_paths():
+    """Setup Python paths for both source and installed runs"""
+    package_root = get_package_root()
+
+    # Add package root to Python path if not already there
+    if str(package_root) not in sys.path:
+        sys.path.insert(0, str(package_root))
+
+    # Find resources directory
+    resources_dir = package_root / 'resources'
+    if not resources_dir.exists():
+        resources_dir = package_root  # Fallback to package root
+
+    return package_root, resources_dir
+
+def main():
+    """Main entry point for both source and installed runs"""
+    try:
+        # Setup paths first
+        package_root, resources_dir = setup_paths()
+
+        # Parse arguments
+        import argparse
+        parser = argparse.ArgumentParser(description='BSG-IDE - Beamer Slide Generator IDE')
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument('--fix', action='store_true',
+                          help='Fix installation issues')
+        group.add_argument('--install', action='store_true',
+                          help='Install BSG-IDE')
+        group.add_argument('--verify', action='store_true',
+                          help='Verify installation')
+
+        args = parser.parse_args()
+
+        if args.verify:
+            success = verify_installation()
+            sys.exit(0 if success else 1)
+        elif args.fix or args.install:
+            #from installation import install_bsg_ide
+            success = install_bsg_ide(fix_mode=args.fix)
+            if success and not args.verify:
+                verify_installation()
+            sys.exit(0 if success else 1)
+
+        # Launch IDE
+        from BSG_IDE import BeamerSlideEditor
+        app = BeamerSlideEditor()
+        app.mainloop()
+
+    except Exception as e:
+        print(f"Error starting BSG-IDE: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+    except Exception as e:
+        print(f"Error in main: {str(e)}")
+        traceback.print_exc()
+        sys.exit(1)
+
 if __name__ == "__main__":
     main()
+#---------------------------------------------------------------------------------------
+
+

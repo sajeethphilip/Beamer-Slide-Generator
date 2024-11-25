@@ -171,13 +171,14 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
     }
 }{}
 
-% Base colors (always available)
+% Base colors
+\definecolor{myred}{RGB}{255,50,50}
+\definecolor{myblue}{RGB}{0,130,255}
+\definecolor{mygreen}{RGB}{0,200,100}
 \definecolor{myyellow}{RGB}{255,210,0}
 \definecolor{myorange}{RGB}{255,130,0}
-\definecolor{mygreen}{RGB}{0,200,100}
-\definecolor{myblue}{RGB}{0,130,255}
-\definecolor{mypink}{RGB}{255,105,180}
 \definecolor{mypurple}{RGB}{147,112,219}
+\definecolor{mypink}{RGB}{255,105,180}
 \definecolor{myteal}{RGB}{0,128,128}
 
 % Glow colors
@@ -185,6 +186,11 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 \definecolor{glowyellow}{RGB}{255,223,0}
 \definecolor{glowgreen}{RGB}{0,255,128}
 \definecolor{glowpink}{RGB}{255,182,193}
+
+% Special effect support
+\usetikzlibrary{shadows.blur}
+\usetikzlibrary{decorations.text}
+\usetikzlibrary{fadings}
 
 % Basic highlighting commands
 \newcommand{\hlbias}[1]{\textcolor{myblue}{\textbf{#1}}}
@@ -645,64 +651,502 @@ def open_google_image_search(query):
     search_url = f"https://www.google.com/search?q={query}&tbm=isch"
     webbrowser.open(search_url)
 
+
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+import mimetypes
+from PIL import Image
+import io
+import requests
+import shutil
+
+class MediaConverter:
+    """Media conversion utility for BSG-IDE"""
+
+    def __init__(self):
+        # Define supported formats
+        self.supported_formats = {
+            'image': ['.png', '.jpg', '.jpeg', '.gif'],
+            'video': ['.mp4', '.webm', '.mkv', '.avi'],
+            'animation': ['.gif'],
+            'document': ['.pdf']
+        }
+
+        # Define preferred formats for each type
+        self.preferred_formats = {
+            'image': '.png',
+            'video': '.mp4',
+            'animation': '.gif',
+            'document': '.pdf'
+        }
+
+        # Max dimensions for images
+        self.max_dimensions = (1920, 1080)
+
+    def convert_from_url(self, url: str, output_folder: str = 'media_files') -> tuple:
+        """
+        Download and convert media from URL to appropriate format.
+        Returns (success, file_path, media_type)
+        """
+        try:
+            # Create media_files directory if it doesn't exist
+            os.makedirs(output_folder, exist_ok=True)
+
+            # Download content to temporary file
+            response = requests.get(url, stream=True)
+            response.raise_for_status()
+
+            # Get content type and extension
+            content_type = response.headers.get('content-type', '').split(';')[0]
+            ext = mimetypes.guess_extension(content_type) or '.tmp'
+
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_file:
+                for chunk in response.iter_content(chunk_size=8192):
+                    temp_file.write(chunk)
+                temp_path = temp_file.name
+
+            # Convert the downloaded file
+            return self.convert_file(temp_path, output_folder)
+
+        except Exception as e:
+            print(f"Error converting from URL: {str(e)}")
+            return False, None, None
+
+        finally:
+            # Clean up temporary file
+            if 'temp_path' in locals():
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+
+    def convert_file(self, input_path: str, output_folder: str = 'media_files') -> tuple:
+        """
+        Convert file to appropriate format based on content type.
+        Returns (success, file_path, media_type)
+        """
+        try:
+            # Determine media type
+            media_type = self._detect_media_type(input_path)
+            if not media_type:
+                return False, None, None
+
+            # Generate output filename
+            base_name = os.path.splitext(os.path.basename(input_path))[0]
+            output_ext = self.preferred_formats[media_type]
+            output_path = os.path.join(output_folder, f"{base_name}{output_ext}")
+
+            # Convert based on media type
+            if media_type == 'image':
+                success = self._convert_image(input_path, output_path)
+            elif media_type == 'video':
+                success = self._convert_video(input_path, output_path)
+            elif media_type == 'animation':
+                success = self._convert_animation(input_path, output_path)
+            elif media_type == 'document':
+                success = self._convert_document(input_path, output_path)
+            else:
+                success = False
+
+            if success:
+                return True, output_path, media_type
+            return False, None, None
+
+        except Exception as e:
+            print(f"Error converting file: {str(e)}")
+            return False, None, None
+
+    def _detect_media_type(self, file_path: str) -> str:
+        """Detect media type based on file content and extension"""
+        try:
+            # Try to open as image first
+            try:
+                with Image.open(file_path) as img:
+                    if getattr(img, 'is_animated', False):
+                        return 'animation'
+                    return 'image'
+            except:
+                pass
+
+            # Check file extension
+            ext = os.path.splitext(file_path)[1].lower()
+
+            for media_type, extensions in self.supported_formats.items():
+                if ext in extensions:
+                    return media_type
+
+            # Try mime type
+            mime_type = mimetypes.guess_type(file_path)[0]
+            if mime_type:
+                if mime_type.startswith('image/'):
+                    return 'image'
+                elif mime_type.startswith('video/'):
+                    return 'video'
+                elif mime_type.startswith('application/pdf'):
+                    return 'document'
+
+            return None
+
+        except Exception as e:
+            print(f"Error detecting media type: {str(e)}")
+            return None
+
+    def _convert_image(self, input_path: str, output_path: str) -> bool:
+        """Convert image to preferred format with optimization"""
+        try:
+            with Image.open(input_path) as img:
+                # Convert to RGB if needed
+                if img.mode in ('RGBA', 'P'):
+                    img = img.convert('RGB')
+
+                # Resize if too large
+                if img.size[0] > self.max_dimensions[0] or img.size[1] > self.max_dimensions[1]:
+                    img.thumbnail(self.max_dimensions, Image.Resampling.LANCZOS)
+
+                # Optimize and save
+                if output_path.lower().endswith('.jpg') or output_path.lower().endswith('.jpeg'):
+                    img.save(output_path, 'JPEG', quality=85, optimize=True)
+                elif output_path.lower().endswith('.png'):
+                    img.save(output_path, 'PNG', optimize=True)
+                else:
+                    img.save(output_path)
+
+                return True
+
+        except Exception as e:
+            print(f"Error converting image: {str(e)}")
+            return False
+
+    def _convert_animation(self, input_path: str, output_path: str) -> bool:
+        """Convert animation to optimized GIF"""
+        try:
+            with Image.open(input_path) as img:
+                if not getattr(img, 'is_animated', False):
+                    # Single frame - convert as regular image
+                    return self._convert_image(input_path, output_path)
+
+                # Get all frames
+                frames = []
+                durations = []
+                for frame in range(img.n_frames):
+                    img.seek(frame)
+                    # Convert and append frame
+                    new_frame = img.convert('RGBA')
+                    frames.append(new_frame)
+                    durations.append(img.info.get('duration', 100))
+
+                # Save optimized GIF
+                frames[0].save(
+                    output_path,
+                    save_all=True,
+                    append_images=frames[1:],
+                    duration=durations,
+                    loop=0,
+                    optimize=True
+                )
+                return True
+
+        except Exception as e:
+            print(f"Error converting animation: {str(e)}")
+            return False
+
+    def _convert_video(self, input_path: str, output_path: str) -> bool:
+        """Convert video to MP4 using ffmpeg"""
+        try:
+            # Check if ffmpeg is available
+            if not shutil.which('ffmpeg'):
+                print("ffmpeg not found. Please install ffmpeg.")
+                return False
+
+            command = [
+                'ffmpeg', '-i', input_path,
+                '-c:v', 'libx264',
+                '-preset', 'medium',
+                '-crf', '23',
+                '-c:a', 'aac',
+                '-b:a', '128k',
+                '-movflags', '+faststart',
+                '-y',  # Overwrite output file if exists
+                output_path
+            ]
+
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            stdout, stderr = process.communicate()
+
+            return process.returncode == 0
+
+        except Exception as e:
+            print(f"Error converting video: {str(e)}")
+            return False
+
+    def _convert_document(self, input_path: str, output_path: str) -> bool:
+        """Convert document to PDF if needed"""
+        try:
+            # For now, just copy PDF files
+            if input_path.lower().endswith('.pdf'):
+                shutil.copy2(input_path, output_path)
+                return True
+
+            # Add other document conversion methods as needed
+            return False
+
+        except Exception as e:
+            print(f"Error converting document: {str(e)}")
+            return False
+def convert_media(url_or_path: str, output_folder: str = 'media_files') -> tuple:
+    """
+    High-level function to convert media from URL or local file.
+    Returns (success, file_path, media_type)
+    """
+    converter = MediaConverter()
+
+    if url_or_path.startswith(('http://', 'https://')):
+        return converter.convert_from_url(url_or_path, output_folder)
+    else:
+        return converter.convert_file(url_or_path, output_folder)
+
+def download_media(url, output_folder='media_files'):
+    """
+    Enhanced version with source tracking and automatic format conversion.
+    Returns (base_name, filename, first_frame_path)
+    """
+    try:
+        # Create output folder if it doesn't exist
+        os.makedirs(output_folder, exist_ok=True)
+
+        # Handle local files
+        if url.startswith('local:'):
+            local_file = url.split('local:')[1].strip()
+            local_path = os.path.join(output_folder, local_file)
+            if os.path.exists(local_path):
+                # Convert local file if needed
+                success, converted_path, media_type = convert_media(local_path, output_folder)
+                if success:
+                    base_name = os.path.splitext(os.path.basename(converted_path))[0]
+                    filename = os.path.basename(converted_path)
+                    return base_name, filename, filename
+                return None, None, None
+            return None, None, None
+
+        # Handle Giphy URLs
+        if 'giphy.com' in url:
+            return download_giphy_gif(url, output_folder)
+
+        # Handle regular URLs
+        try:
+            # First download the content
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+
+            # Convert the downloaded content
+            success, converted_path, media_type = convert_media(url, output_folder)
+
+            if success:
+                base_name = os.path.splitext(os.path.basename(converted_path))[0]
+                filename = os.path.basename(converted_path)
+
+                # Generate preview frame if needed
+                first_frame_path = None
+                if media_type in ['video', 'animation']:
+                    first_frame_path = generate_preview_frame(converted_path)
+                elif media_type == 'image':
+                    first_frame_path = converted_path
+
+                # Store metadata
+                metadata_path = os.path.join(output_folder, f"{base_name}_metadata.txt")
+                with open(metadata_path, 'w') as f:
+                    f.write(f"Source: {url}\n")
+                    f.write(f"Original Type: {media_type}\n")
+                    f.write(f"Converted Format: {os.path.splitext(filename)[1]}\n")
+                    f.write(f"Downloaded: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+
+                    # Add media-specific metadata
+                    if media_type == 'image':
+                        try:
+                            with Image.open(converted_path) as img:
+                                f.write(f"Dimensions: {img.size}\n")
+                                f.write(f"Mode: {img.mode}\n")
+                        except Exception as e:
+                            f.write(f"Image info error: {str(e)}\n")
+                    elif media_type == 'video':
+                        try:
+                            import cv2
+                            video = cv2.VideoCapture(converted_path)
+                            fps = video.get(cv2.CAP_PROP_FPS)
+                            frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+                            duration = frame_count/fps if fps > 0 else 0
+                            f.write(f"Duration: {duration:.2f} seconds\n")
+                            f.write(f"FPS: {fps}\n")
+                            video.release()
+                        except Exception as e:
+                            f.write(f"Video info error: {str(e)}\n")
+
+                return base_name, filename, first_frame_path
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error downloading from URL {url}: {str(e)}")
+            return None, None, None
+
+    except Exception as e:
+        print(f"Error processing media from {url}: {str(e)}")
+        return None, None, None
+
+
 def download_giphy_gif(url, output_folder='media_files'):
     """
-    Special handling for Giphy URLs to get the actual GIF.
+    Enhanced Giphy GIF downloader with format conversion.
     """
     try:
         # Extract the GIF ID from the URL
         gif_id = url.split('/')[-1].split('-')[-1]
+
         # Construct direct gif URL
         direct_url = f"https://media.giphy.com/media/{gif_id}/giphy.gif"
-        return download_media(direct_url, output_folder)
+
+        # Download and convert
+        success, converted_path, media_type = convert_media(direct_url, output_folder)
+
+        if success:
+            base_name = os.path.splitext(os.path.basename(converted_path))[0]
+            filename = os.path.basename(converted_path)
+
+            # Generate preview if it's an animated GIF
+            first_frame_path = None
+            if media_type == 'animation':
+                first_frame_path = generate_preview_frame(converted_path)
+            else:
+                first_frame_path = converted_path
+
+            # Store Giphy-specific metadata
+            metadata_path = os.path.join(output_folder, f"{base_name}_metadata.txt")
+            with open(metadata_path, 'w') as f:
+                f.write(f"Source: {url}\n")
+                f.write(f"Giphy ID: {gif_id}\n")
+                f.write(f"Direct URL: {direct_url}\n")
+                f.write(f"Downloaded: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+
+                # Add animation metadata
+                try:
+                    with Image.open(converted_path) as img:
+                        f.write(f"Dimensions: {img.size}\n")
+                        f.write(f"Frames: {getattr(img, 'n_frames', 1)}\n")
+                        f.write(f"Duration: {img.info.get('duration', 0)}ms\n")
+                except Exception as e:
+                    f.write(f"Animation info error: {str(e)}\n")
+
+            return base_name, filename, first_frame_path
+
+        return None, None, None
+
     except Exception as e:
         print(f"Error processing Giphy URL: {str(e)}")
         return None, None, None
 
-def download_media(url, output_folder='media_files'):
-    """
-    Enhanced version with source tracking.
-    """
-    try:
-        if url.startswith('local:'):
-            local_file = url.split('local:')[1].strip()
-            if os.path.exists(os.path.join(output_folder, local_file)):
-                base_name = os.path.splitext(local_file)[0]
-                return base_name, local_file, local_file
-            return None, None, None
 
-        if 'giphy.com' in url:
-            return download_giphy_gif(url, output_folder)
+def parse_color_args(color_spec):
+    """Parse color specifications from text effect arguments"""
+    if not color_spec:
+        return None, None
 
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
+    # Remove brackets and split colors
+    colors = color_spec.strip('[]').split(',')
+    if len(colors) == 1:
+        return colors[0].strip(), None
+    elif len(colors) >= 2:
+        return colors[0].strip(), colors[1].strip()
+    return None, None
 
-
-        # Store source URL in a metadata file
-        if base_name and filename:
-            metadata_path = os.path.join(output_folder, f"{base_name}_metadata.txt")
-            with open(metadata_path, 'w') as f:
-                f.write(f"Source: {url}\n")
-                f.write(f"Downloaded: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-
-        return base_name, filename, first_frame_path
-    except Exception as e:
-        print(f"Error downloading media from {url}: {str(e)}")
-        return None, None, None
-
-
-def process_latex_content(content_line: str) -> str:
-    """
-    Process content line to properly handle LaTeX math expressions,
-    ensuring underscores work correctly as subscripts in math mode.
-    Also handles other LaTeX commands and special characters.
-    """
+def process_special_effects(content_line):
+    """Process all special text effects with color support"""
     if not content_line:
         return content_line
 
+    # Process shadowtext
+    while '\\shadowtext[' in content_line or '\\shadowtext{' in content_line:
+        match = re.search(r'\\shadowtext(?:\[(.*?)\])?\{(.*?)\}', content_line)
+        if not match:
+            break
+        color_args, text = match.group(1), match.group(2)
+        shadow_color, text_color = parse_color_args(color_args) if color_args else ('black', 'white')
+        replacement = f"""\\begin{{tikzpicture}}[baseline]
+            \\node[blur shadow={{shadow blur steps=5,shadow xshift=0pt,shadow yshift=-2pt,
+                  shadow opacity=0.75,shadow color={shadow_color}}},
+                  text={text_color if text_color else 'white'}] {{{text}}};
+        \\end{{tikzpicture}}"""
+        content_line = content_line.replace(match.group(0), replacement)
+
+    # Process glowtext
+    while '\\glowtext[' in content_line or '\\glowtext{' in content_line:
+        match = re.search(r'\\glowtext(?:\[(.*?)\])?\{(.*?)\}', content_line)
+        if not match:
+            break
+        color_args, text = match.group(1), match.group(2)
+        glow_color, text_color = parse_color_args(color_args) if color_args else ('myblue', 'white')
+        replacement = f"""\\begin{{tikzpicture}}[baseline]
+            \\node[circle, inner sep=1pt,
+                  blur shadow={{shadow blur steps=10,shadow xshift=0pt,
+                  shadow yshift=0pt,shadow blur radius=5pt,
+                  shadow opacity=0.5,shadow color={glow_color}}},
+                  text={text_color if text_color else 'white'}] {{{text}}};
+        \\end{{tikzpicture}}"""
+        content_line = content_line.replace(match.group(0), replacement)
+
+    # Process gradienttext
+    while '\\gradienttext[' in content_line:
+        match = re.search(r'\\gradienttext\[(.*?)\]\[(.*?)\]\{(.*?)\}', content_line)
+        if not match:
+            break
+        start_color, end_color, text = match.group(1), match.group(2), match.group(3)
+        replacement = f"""\\begin{{tikzpicture}}[baseline]
+            \\node[fill={start_color},fill opacity=0.15,
+                  path picture={{\\node at (path picture bounding box.center) {{
+                  \\color{{{end_color}}}{text}
+                  }};}},inner sep=2pt] {{}};
+        \\end{{tikzpicture}}"""
+        content_line = content_line.replace(match.group(0), replacement)
+
+    # Process highlighting
+    while '\\hlkey[' in content_line or '\\hlkey{' in content_line:
+        match = re.search(r'\\hlkey(?:\[(.*?)\])?\{(.*?)\}', content_line)
+        if not match:
+            break
+        color_args, text = match.group(1), match.group(2)
+        bg_color, text_color = parse_color_args(color_args) if color_args else ('myblue!20', 'white')
+        replacement = f"\\colorbox{{{bg_color}}}{{\\textcolor{{{text_color if text_color else 'black'}}}" + \
+                     "{\\textbf{" + text + "}}}"
+        content_line = content_line.replace(match.group(0), replacement)
+
+    # Process note highlighting
+    while '\\hlnote[' in content_line or '\\hlnote{' in content_line:
+        match = re.search(r'\\hlnote(?:\[(.*?)\])?\{(.*?)\}', content_line)
+        if not match:
+            break
+        color_args, text = match.group(1), match.group(2)
+        bg_color, text_color = parse_color_args(color_args) if color_args else ('mygreen!20', 'white')
+        replacement = f"\\colorbox{{{bg_color}}}{{\\textcolor{{{text_color if text_color else 'black'}}}" + \
+                     "{\\textbf{" + text + "}}}"
+        content_line = content_line.replace(match.group(0), replacement)
+
+    return content_line
+
+def process_latex_content(content_line: str) -> str:
+    """Enhanced content processing with special effects support"""
+    if not content_line:
+        return content_line
+
+    # First process special effects
+    content_line = process_special_effects(content_line)
+
+    # Then process standard LaTeX content
     result = []
     in_math = False
-    in_command = False
     brace_level = 0
     i = 0
 
@@ -715,14 +1159,6 @@ def process_latex_content(content_line: str) -> str:
             result.append(char)
             i += 1
             continue
-
-        # Handle LaTeX commands
-        if char == '\\' and i + 1 < len(content_line):
-            next_char = content_line[i + 1]
-            if next_char.isalpha() or next_char in ['[', ']', '$', '{', '}', '_', '^', '%', '&', '#', ' ']:
-                result.extend(['\\', next_char])
-                i += 2
-                continue
 
         # Handle braces
         if char == '{':
@@ -738,22 +1174,10 @@ def process_latex_content(content_line: str) -> str:
 
         # Process characters based on context
         if in_math or brace_level > 0:
-            # In math mode or within braces, preserve everything
             result.append(char)
         else:
-            # Outside math mode, escape special characters
-            if char == '_':
-                result.append('\\_')
-            elif char == '&':
-                result.append('\\&')
-            elif char == '#':
-                result.append('\\#')
-            elif char == '%':
-                result.append('\\%')
-            elif char == '~':
-                result.append('\\textasciitilde{}')
-            elif char == '^':
-                result.append('\\textasciicircum{}')
+            if char in '_&%#~^':
+                result.append('\\' + char)
             else:
                 result.append(char)
         i += 1
