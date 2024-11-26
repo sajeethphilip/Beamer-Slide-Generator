@@ -173,6 +173,7 @@ opencv-python
 screeninfo
 numpy
 PyMuPDF==1.23.7
+pyautogui
 """
         # Try to write to user's local directory first
         save_paths = [
@@ -223,6 +224,7 @@ def install_system_dependencies():
                     'python3-dev',
                     'pkg-config',
                     'libcairo2-dev',
+                    'pyautogui',
                     'gobject-introspection'
                 ]
             elif shutil.which('dnf'):  # Fedora/RHEL
@@ -236,6 +238,7 @@ def install_system_dependencies():
                     'gcc',
                     'pkg-config',
                     'cairo-devel',
+                    'pyautogui',
                     'gobject-introspection-devel',
                     'cairo-gobject-devel'
                 ]
@@ -250,6 +253,7 @@ def install_system_dependencies():
                     'gcc',
                     'pkg-config',
                     'cairo',
+                    'pyautogui',
                     'gobject-introspection'
                 ]
             elif shutil.which('zypper'):  # openSUSE
@@ -263,6 +267,7 @@ def install_system_dependencies():
                     'gcc',
                     'pkg-config',
                     'cairo-devel',
+                    'pyautogui',
                     'gobject-introspection-devel'
                 ]
             else:
@@ -293,6 +298,7 @@ def install_system_dependencies():
                     'pygobject3',
                     'cairo',
                     'py3cairo',
+                    'pyautogui',
                     'gobject-introspection'
                 ]
 
@@ -477,7 +483,9 @@ def check_and_install_dependencies():
                     'cv2': 'opencv-python',
                     'screeninfo': 'screeninfo',
                     'numpy': 'numpy',
+                    'pyautogui':'pyautogui',
                     'fitz': 'PyMuPDF==1.23.7'
+
                 }
 
                 for import_name, install_name in packages.items():
@@ -705,6 +713,9 @@ class SimpleRedirector:
 
     def flush(self):
         pass
+
+
+
 #------------------------------------------------------------------------------------------
 class BeamerSyntaxHighlighter:
     """Syntax highlighting for Beamer/LaTeX content"""
@@ -1015,6 +1026,8 @@ class BeamerSlideEditor(ctk.CTk):
         # Bind window events
         self.bind('<Configure>', self.on_window_configure)
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+#-------------------------------------------------------------------------------------
 
 #-------------------------------------------------------------------------------------
     def setup_logo(self):
@@ -2024,7 +2037,7 @@ Created by {self.__author__}
                 messagebox.showwarning("Warning", "No slide to duplicate!")
 #---------------------------------------------------------------------------------------------------
     def create_main_editor(self) -> None:
-        """Create main editor area with content and notes sections"""
+        """Create main editor area with enhanced media controls and all original features"""
         self.editor_frame = ctk.CTkFrame(self)
         self.editor_frame.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
 
@@ -2036,27 +2049,59 @@ Created by {self.__author__}
         self.title_entry = ctk.CTkEntry(title_frame, width=400)
         self.title_entry.pack(side="left", padx=5, fill="x", expand=True)
 
-        # Media section
+        # Enhanced Media section
         media_frame = ctk.CTkFrame(self.editor_frame)
         media_frame.pack(fill="x", padx=5, pady=5)
 
-        ctk.CTkLabel(media_frame, text="Media:").pack(side="left", padx=5)
-        self.media_entry = ctk.CTkEntry(media_frame, width=300)
+        # Media label and entry
+        media_label_frame = ctk.CTkFrame(media_frame)
+        media_label_frame.pack(side="left", fill="x", expand=True)
+
+        ctk.CTkLabel(media_label_frame, text="Media:").pack(side="left", padx=5)
+        self.media_entry = ctk.CTkEntry(media_label_frame, width=300)
         self.media_entry.pack(side="left", padx=5, fill="x", expand=True)
 
-        # Media buttons
+        # Media buttons with both standard and capture tools
         media_buttons = ctk.CTkFrame(media_frame)
         media_buttons.pack(side="right", padx=5)
 
-        button_data = [
+        # Standard media buttons
+        standard_buttons = [
             ("Local File", self.browse_media, "Browse local media files"),
             ("YouTube", self.youtube_dialog, "Add YouTube video"),
-            ("Search Images", self.search_images, "Search for images online"),
-            ("No Media", lambda: self.media_entry.insert(0, "\\None"), "Create slide without media")
+            ("Search Images", self.search_images, "Search for images online")
         ]
 
-        for text, command, tooltip in button_data:
-            btn = ctk.CTkButton(media_buttons, text=text, command=command)
+        for text, command, tooltip in standard_buttons:
+            btn = ctk.CTkButton(
+                media_buttons,
+                text=text,
+                command=command,
+                width=90
+            )
+            btn.pack(side="left", padx=2)
+            self.create_tooltip(btn, tooltip)
+
+        # Add separator
+        separator = ttk.Separator(media_buttons, orient="vertical")
+        separator.pack(side="left", padx=5, pady=5, fill="y")
+
+        # Capture buttons
+        capture_buttons = [
+            ("📷 Camera", self.open_camera, "Capture from camera"),
+            ("🖥️ Screen", self.capture_screen, "Capture screen area"),
+            ("❌ No Media", lambda: self.media_entry.insert(0, "\\None"), "Create slide without media")
+        ]
+
+        for text, command, tooltip in capture_buttons:
+            btn = ctk.CTkButton(
+                media_buttons,
+                text=text,
+                command=command,
+                width=90,
+                fg_color="#4A90E2",
+                hover_color="#357ABD"
+            )
             btn.pack(side="left", padx=2)
             self.create_tooltip(btn, tooltip)
 
@@ -2128,6 +2173,777 @@ Created by {self.__author__}
 
         # Set initial button colors
         self.update_notes_buttons(self.notes_mode.get())
+
+    def check_dependencies(self) -> dict:
+        """Check if required packages are installed in current environment"""
+        dependencies = {
+            'PIL': {'import_name': 'PIL', 'package_name': 'pillow', 'installed': False},
+            'pyautogui': {'import_name': 'pyautogui', 'package_name': 'pyautogui', 'installed': False},
+            'cv2': {'import_name': 'cv2', 'package_name': 'opencv-python', 'installed': False}
+        }
+
+        for dep_name, dep_info in dependencies.items():
+            try:
+                __import__(dep_info['import_name'])
+                dep_info['installed'] = True
+            except ImportError:
+                dep_info['installed'] = False
+
+        return dependencies
+
+    def capture_screen(self) -> None:
+        """Enhanced screen capture with proper dependency checking"""
+        # Check only required dependencies for screen capture
+        deps = self.check_dependencies()
+        required_deps = ['PIL', 'pyautogui']
+        missing_deps = [deps[d]['package_name'] for d in required_deps if not deps[d]['installed']]
+
+        if missing_deps:
+            messagebox.showerror(
+                "Missing Dependencies",
+                f"Screen capture requires the following packages:\n{', '.join(missing_deps)}\n\n" +
+                "Please install using:\npip install " + " ".join(missing_deps)
+            )
+            return
+
+        try:
+            import pyautogui
+            from PIL import ImageGrab, ImageDraw
+
+            # Show information dialog
+            messagebox.showinfo(
+                "Screen Capture",
+                "1. This window will minimize\n" +
+                "2. Draw a rectangle by clicking and dragging\n" +
+                "3. Press ESC to cancel"
+            )
+
+            # Minimize the window
+            self.iconify()
+            self.update()
+            time.sleep(0.5)  # Give time for window to minimize
+
+            # Create screen overlay for selection
+            root = tk.Tk()
+            root.attributes('-fullscreen', True, '-alpha', 0.3)
+            root.configure(background='black')
+
+            # Variables for selection
+            start_x = start_y = end_x = end_y = 0
+            selection = None
+            is_selecting = False
+
+            def on_mouse_down(event):
+                nonlocal start_x, start_y, is_selecting
+                start_x, start_y = event.x, event.y
+                is_selecting = True
+
+            def on_mouse_move(event):
+                nonlocal selection, end_x, end_y
+                if is_selecting:
+                    end_x, end_y = event.x, event.y
+                    if selection:
+                        root.delete(selection)
+                    selection = root.create_rectangle(
+                        start_x, start_y, end_x, end_y,
+                        outline='white'
+                    )
+
+            def on_mouse_up(event):
+                nonlocal is_selecting
+                is_selecting = False
+                root.destroy()
+
+                try:
+                    # Ensure coordinates are positive
+                    x1, x2 = min(start_x, end_x), max(start_x, end_x)
+                    y1, y2 = min(start_y, end_y), max(start_y, end_y)
+
+                    # Add padding to ensure we get the full selection
+                    padding = 2
+                    bbox = (x1-padding, y1-padding, x2+padding, y2+padding)
+
+                    # Capture the selected area
+                    screenshot = ImageGrab.grab(bbox=bbox)
+
+                    # Create media_files directory if it doesn't exist
+                    os.makedirs('media_files', exist_ok=True)
+
+                    # Save the image
+                    timestamp = time.strftime("%Y%m%d-%H%M%S")
+                    filename = f"screen_capture_{timestamp}.png"
+                    filepath = os.path.join('media_files', filename)
+                    screenshot.save(filepath)
+
+                    # Update media entry
+                    self.media_entry.delete(0, 'end')
+                    self.media_entry.insert(0, f"\\file media_files/{filename}")
+
+                    # Show success message
+                    messagebox.showinfo(
+                        "Success",
+                        f"Screen capture saved as:\n{filename}"
+                    )
+
+                except Exception as e:
+                    messagebox.showerror(
+                        "Error",
+                        f"Failed to capture screen area:\n{str(e)}"
+                    )
+                finally:
+                    # Restore window
+                    self.deiconify()
+
+            # Bind events
+            root.bind('<Escape>', lambda e: (root.destroy(), self.deiconify()))
+            root.bind('<ButtonPress-1>', on_mouse_down)
+            root.bind('<B1-Motion>', on_mouse_move)
+            root.bind('<ButtonRelease-1>', on_mouse_up)
+
+            # Create canvas for drawing selection
+            canvas = tk.Canvas(root, highlightthickness=0)
+            canvas.pack(fill='both', expand=True)
+
+            root.mainloop()
+
+        except Exception as e:
+            messagebox.showerror(
+                "Error",
+                f"Screen capture failed:\n{str(e)}"
+            )
+            self.deiconify()
+
+
+    def open_camera(self) -> None:
+        """Enhanced cross-platform camera capture with full feature set"""
+        try:
+            # Check for required imports
+            import cv2
+            from PIL import Image, ImageTk
+            import platform
+            from pathlib import Path
+            import subprocess
+            import time
+            import sys
+
+            # Create media_files directory if it doesn't exist
+            os.makedirs('media_files', exist_ok=True)
+
+            def get_available_cameras():
+                """Get list of available cameras with proper device detection"""
+                available_cameras = []
+                system = platform.system()
+
+                def check_camera(index, device_name=None):
+                    """Helper to check if a camera works"""
+                    cap = cv2.VideoCapture(index)
+                    if cap.isOpened():
+                        try:
+                            ret, _ = cap.read()
+                            if ret:
+                                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                                fps = int(cap.get(cv2.CAP_PROP_FPS))
+
+                                if not device_name:
+                                    device_name = f"Camera {index}"
+
+                                # Try to get supported resolutions
+                                resolutions = []
+                                for res in [(3840, 2160), (1920, 1080), (1280, 720), (640, 480)]:
+                                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, res[0])
+                                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, res[1])
+                                    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                                    if actual_w > 0 and actual_h > 0:
+                                        resolutions.append(f"{actual_w}x{actual_h}")
+
+                                return {
+                                    'index': index,
+                                    'name': device_name,
+                                    'current_resolution': f"{width}x{height}",
+                                    'supported_resolutions': resolutions,
+                                    'fps': fps
+                                }
+                        except Exception as e:
+                            print(f"Error checking camera {index}: {e}")
+                        finally:
+                            cap.release()
+                    return None
+
+                # Check primary camera (index 0) first
+                if system == "Linux":
+                    # Check for video0 device name
+                    try:
+                        video0_name = Path("/sys/class/video4linux/video0/name")
+                        if video0_name.exists():
+                            device_name = video0_name.read_text().strip()
+                        else:
+                            device_name = "Primary Camera"
+                    except:
+                        device_name = "Primary Camera"
+
+                    camera = check_camera(0, device_name)
+                    if camera:
+                        available_cameras.append(camera)
+
+                    # Check additional video devices
+                    for i in range(1, 5):  # Check up to video4
+                        try:
+                            video_path = Path(f"/sys/class/video4linux/video{i}/name")
+                            if video_path.exists():
+                                device_name = video_path.read_text().strip()
+                                camera = check_camera(i, device_name)
+                                if camera:
+                                    available_cameras.append(camera)
+                        except:
+                            continue
+
+                elif system == "Darwin":  # macOS
+                    # Try built-in camera first
+                    camera = check_camera(0, "FaceTime Camera")
+                    if camera:
+                        available_cameras.append(camera)
+                    # Check additional cameras
+                    for i in range(1, 3):
+                        camera = check_camera(i)
+                        if camera:
+                            available_cameras.append(camera)
+
+                else:  # Windows
+                    # Check first 5 camera indices
+                    for i in range(5):
+                        camera = check_camera(i)
+                        if camera:
+                            if i == 0:
+                                camera['name'] = "Default Camera"
+                            available_cameras.append(camera)
+
+                return available_cameras
+
+            def start_camera_capture(camera_index):
+                """Initialize and start camera capture with preview"""
+                try:
+                    # Create camera dialog
+                    dialog = ctk.CTkToplevel(self)
+                    dialog.title("Camera Capture")
+                    dialog.geometry("800x600")
+                    dialog.transient(self)
+                    dialog.grab_set()
+
+                    # Center the dialog
+                    dialog.update_idletasks()
+                    x = (dialog.winfo_screenwidth() - 800) // 2
+                    y = (dialog.winfo_screenheight() - 600) // 2
+                    dialog.geometry(f"+{x}+{y}")
+
+                    # Initialize camera
+                    cap = cv2.VideoCapture(camera_index)
+                    if not cap.isOpened():
+                        raise Exception(f"Could not open camera {camera_index}")
+
+                    # Try to set highest available resolution
+                    resolutions = [
+                        (3840, 2160),  # 4K
+                        (1920, 1080),  # Full HD
+                        (1280, 720),   # HD
+                        (800, 600),    # SVGA
+                        (640, 480)     # VGA
+                    ]
+
+                    max_res = None
+                    for width, height in resolutions:
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                        actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                        actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                        if actual_width > 0 and actual_height > 0:
+                            max_res = (actual_width, actual_height)
+                            break
+
+                    # Create main content frame
+                    content_frame = ctk.CTkFrame(dialog)
+                    content_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+                    # Preview frame
+                    preview_frame = ctk.CTkFrame(content_frame)
+                    preview_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
+                    preview_label = tk.Label(preview_frame, background="black")
+                    preview_label.pack(fill="both", expand=True)
+
+                    # Status frame
+                    status_frame = ctk.CTkFrame(dialog)
+                    status_frame.pack(fill="x", padx=10, pady=5)
+
+                    # Resolution label
+                    if max_res:
+                        res_text = f"Resolution: {max_res[0]}x{max_res[1]}"
+                    else:
+                        res_text = "Resolution: Unknown"
+
+                    resolution_label = ctk.CTkLabel(
+                        status_frame,
+                        text=res_text,
+                        font=("Arial", 12)
+                    )
+                    resolution_label.pack(side="left", padx=5)
+
+                    # Status label
+                    status_label = ctk.CTkLabel(
+                        status_frame,
+                        text="",
+                        font=("Arial", 12)
+                    )
+                    status_label.pack(side="right", padx=5)
+
+                    # Control frame
+                    control_frame = ctk.CTkFrame(dialog)
+                    control_frame.pack(fill="x", padx=10, pady=5)
+
+                    # Variables for recording
+                    recording_data = {
+                        'is_recording': False,
+                        'start_time': None,
+                        'output': None,
+                        'current_file': None
+                    }
+
+                    def create_camera_controls(dialog, cap, preview_frame, status_label, recording_data):
+                        """Create enhanced camera controls with resolution and file management"""
+                        # Create control panels
+                        settings_frame = ctk.CTkFrame(dialog)
+                        settings_frame.pack(fill="x", padx=10, pady=5)
+
+                        # Resolution controls
+                        resolution_frame = ctk.CTkFrame(settings_frame)
+                        resolution_frame.pack(side="left", padx=5, pady=5, fill="x", expand=True)
+
+                        resolutions = [
+                            "3840x2160 (4K)",
+                            "1920x1080 (Full HD)",
+                            "1280x720 (HD)",
+                            "800x600 (SVGA)",
+                            "640x480 (VGA)"
+                        ]
+
+                        current_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                        current_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                        current_res = f"{current_width}x{current_height}"
+
+                        ctk.CTkLabel(
+                            resolution_frame,
+                            text="Resolution:",
+                            font=("Arial", 12)
+                        ).pack(side="left", padx=5)
+
+                        def change_resolution(choice):
+                            try:
+                                width, height = map(int, choice.split()[0].split('x'))
+                                cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                                actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+                                if actual_width == width and actual_height == height:
+                                    status_label.configure(text=f"Resolution changed to {width}x{height}")
+                                else:
+                                    status_label.configure(
+                                        text=f"Actual resolution: {actual_width}x{actual_height}"
+                                    )
+                                dialog.after(2000, lambda: status_label.configure(text=""))
+                            except Exception as e:
+                                status_label.configure(text=f"Error changing resolution: {str(e)}")
+                                dialog.after(2000, lambda: status_label.configure(text=""))
+
+                        resolution_menu = ctk.CTkOptionMenu(
+                            resolution_frame,
+                            values=resolutions,
+                            command=change_resolution,
+                            width=150
+                        )
+                        resolution_menu.pack(side="left", padx=5)
+
+                        # Set current resolution in menu
+                        for res in resolutions:
+                            if res.startswith(current_res):
+                                resolution_menu.set(res)
+                                break
+
+                        # File management functions
+                        def get_save_location(default_name, file_type):
+                            """Get save location with custom filename"""
+                            file_types = {
+                                'photo': [('PNG files', '*.png'), ('JPEG files', '*.jpg')],
+                                'video': [('MP4 files', '*.mp4'), ('AVI files', '*.avi')]
+                            }
+
+                            initialdir = os.path.abspath('media_files')
+                            if not os.path.exists(initialdir):
+                                os.makedirs(initialdir)
+
+                            return filedialog.asksaveasfilename(
+                                initialfile=default_name,
+                                defaultextension=file_types[file_type][0][1],
+                                filetypes=file_types[file_type],
+                                initialdir=initialdir,
+                                title=f"Save {file_type.title()} As"
+                            )
+
+                        def capture_photo():
+                            """Enhanced photo capture with custom save location"""
+                            try:
+                                ret, frame = cap.read()
+                                if ret:
+                                    # Convert to RGB for PIL
+                                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                    image = Image.fromarray(rgb_frame)
+
+                                    # Default filename
+                                    timestamp = time.strftime("%Y%m%d-%H%M%S")
+                                    default_name = f"camera_photo_{timestamp}.png"
+
+                                    # Get save location
+                                    filepath = get_save_location(default_name, 'photo')
+                                    if not filepath:  # User cancelled
+                                        return
+
+                                    # Save image
+                                    image.save(filepath)
+
+                                    # Update media entry with relative path if in media_files
+                                    rel_path = os.path.relpath(filepath, 'media_files')
+                                    if not rel_path.startswith('..'):
+                                        self.media_entry.delete(0, 'end')
+                                        self.media_entry.insert(0, f"\\file media_files/{rel_path}")
+                                    else:
+                                        self.media_entry.delete(0, 'end')
+                                        self.media_entry.insert(0, f"\\file {filepath}")
+
+                                    # Show success message
+                                    status_label.configure(text="✓ Photo saved!")
+                                    dialog.after(2000, lambda: status_label.configure(text=""))
+
+                                    # Flash effect
+                                    preview_frame.configure(fg_color="white")
+                                    dialog.after(100, lambda: preview_frame.configure(fg_color="black"))
+
+                            except Exception as e:
+                                status_label.configure(text=f"Error: {str(e)}")
+                                dialog.after(2000, lambda: status_label.configure(text=""))
+
+                        def toggle_recording():
+                            """Enhanced video recording with custom save location"""
+                            try:
+                                if not recording_data['is_recording']:
+                                    # Get save location first
+                                    timestamp = time.strftime("%Y%m%d-%H%M%S")
+                                    default_name = f"camera_video_{timestamp}.mp4"
+                                    filepath = get_save_location(default_name, 'video')
+
+                                    if not filepath:  # User cancelled
+                                        return
+
+                                    # Start recording
+                                    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                                    fps = int(cap.get(cv2.CAP_PROP_FPS))
+
+                                    # Create video writer
+                                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                                    recording_data['output'] = cv2.VideoWriter(
+                                        filepath, fourcc, fps, (width, height)
+                                    )
+                                    recording_data['current_file'] = filepath
+                                    recording_data['is_recording'] = True
+                                    recording_data['start_time'] = time.time()
+
+                                    # Update UI
+                                    record_button.configure(
+                                        text="Stop Recording",
+                                        fg_color="#FF4444",
+                                        hover_color="#CC3333"
+                                    )
+                                    photo_button.configure(state="disabled")
+                                    resolution_menu.configure(state="disabled")
+                                    update_recording_time()
+
+                                else:
+                                    # Stop recording
+                                    recording_data['is_recording'] = False
+                                    if recording_data['output']:
+                                        recording_data['output'].release()
+
+                                    # Update media entry with relative path if in media_files
+                                    filepath = recording_data['current_file']
+                                    rel_path = os.path.relpath(filepath, 'media_files')
+                                    if not rel_path.startswith('..'):
+                                        self.media_entry.delete(0, 'end')
+                                        self.media_entry.insert(0, f"\\file media_files/{rel_path}")
+                                    else:
+                                        self.media_entry.delete(0, 'end')
+                                        self.media_entry.insert(0, f"\\file {filepath}")
+
+                                    # Reset UI
+                                    record_button.configure(
+                                        text="Record Video",
+                                        fg_color="#4A90E2",
+                                        hover_color="#357ABD"
+                                    )
+                                    photo_button.configure(state="normal")
+                                    resolution_menu.configure(state="normal")
+                                    status_label.configure(text="✓ Video saved!")
+                                    dialog.after(2000, lambda: status_label.configure(text=""))
+
+                            except Exception as e:
+                                status_label.configure(text=f"Error: {str(e)}")
+                                dialog.after(2000, lambda: status_label.configure(text=""))
+                                recording_data['is_recording'] = False
+                                photo_button.configure(state="normal")
+                                resolution_menu.configure(state="normal")
+
+                        def update_recording_time():
+                            """Update recording duration display"""
+                            if recording_data['is_recording']:
+                                elapsed = time.time() - recording_data['start_time']
+                                minutes = int(elapsed // 60)
+                                seconds = int(elapsed % 60)
+                                status_label.configure(
+                                    text=f"Recording: {minutes:02d}:{seconds:02d} ({os.path.basename(recording_data['current_file'])})"
+                                )
+                                dialog.after(1000, update_recording_time)
+
+                        # Create control buttons
+                        control_frame = ctk.CTkFrame(dialog)
+                        control_frame.pack(fill="x", padx=10, pady=5)
+
+                        photo_button = ctk.CTkButton(
+                            control_frame,
+                            text="Take Photo",
+                            command=capture_photo,
+                            width=120,
+                            font=("Arial", 13),
+                            fg_color="#4A90E2",
+                            hover_color="#357ABD"
+                        )
+                        photo_button.pack(side="left", padx=5)
+
+                        record_button = ctk.CTkButton(
+                            control_frame,
+                            text="Record Video",
+                            command=toggle_recording,
+                            width=120,
+                            font=("Arial", 13),
+                            fg_color="#4A90E2",
+                            hover_color="#357ABD"
+                        )
+                        record_button.pack(side="left", padx=5)
+
+                        close_button = ctk.CTkButton(
+                            control_frame,
+                            text="Close",
+                            command=dialog.destroy,
+                            width=100,
+                            font=("Arial", 13),
+                            fg_color="#FF4444",
+                            hover_color="#CC3333"
+                        )
+                        close_button.pack(side="right", padx=5)
+
+                        return photo_button, record_button, resolution_menu
+
+
+
+                    def close_camera():
+                        """Clean up and close camera"""
+                        try:
+                            # Stop recording if active
+                            if recording_data['is_recording']:
+                                recording_data['is_recording'] = False
+                                if recording_data['output']:
+                                    recording_data['output'].release()
+
+                            # Release camera
+                            cap.release()
+                            dialog.destroy()
+
+                        except Exception as e:
+                            print(f"Error closing camera: {str(e)}")
+                            dialog.destroy()
+
+                    # Create controls
+                    photo_button, record_button, resolution_menu = create_camera_controls(
+                        dialog, cap, preview_frame, status_label, recording_data
+                    )
+
+                    close_button = ctk.CTkButton(
+                        control_frame,
+                        text="Close",
+                        command=close_camera,
+                        width=100,
+                        font=("Arial", 13),
+                        fg_color="#FF4444",
+                        hover_color="#CC3333"
+                    )
+                    close_button.pack(side="right", padx=5)
+
+                    def update_preview():
+                        """Update camera preview"""
+                        if cap.isOpened():
+                            ret, frame = cap.read()
+                            if ret:
+                                # Record frame if recording
+                                if recording_data['is_recording']:
+                                    recording_data['output'].write(frame)
+
+                                # Convert frame for display
+                                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                image = Image.fromarray(rgb_frame)
+
+                                # Scale for display
+                                display_size = (800, 600)
+                                image.thumbnail(display_size, Image.Resampling.LANCZOS)
+
+                                # Convert to PhotoImage
+                                photo = ImageTk.PhotoImage(image=image)
+                                preview_label.configure(image=photo)
+                                preview_label.image = photo  # Keep reference
+
+                                # Schedule next update
+                                dialog.after(10, update_preview)
+
+                    # Start preview
+                    update_preview()
+
+                    # Handle window closing
+                    dialog.protocol("WM_DELETE_WINDOW", close_camera)
+
+                except Exception as e:
+                    messagebox.showerror("Error", f"Camera initialization failed: {str(e)}")
+                    dialog.destroy()
+
+            # Main camera initialization
+            cameras = get_available_cameras()
+            if not cameras:
+                messagebox.showerror(
+                    "No Cameras",
+                    "No working cameras found.\nPlease connect a camera and try again."
+                )
+                return
+
+            # Create camera selection dialog if multiple cameras found
+            if len(cameras) > 1:
+                select_dialog = ctk.CTkToplevel(self)
+                select_dialog.title("Select Camera")
+                select_dialog.geometry("400x400")
+                select_dialog.transient(self)
+                select_dialog.grab_set()
+
+                # Center dialog
+                select_dialog.update_idletasks()
+                x = (select_dialog.winfo_screenwidth() - 400) // 2
+                y = (select_dialog.winfo_screenheight() - 400) // 2
+                select_dialog.geometry(f"+{x}+{y}")
+
+                # Title label
+                ctk.CTkLabel(
+                    select_dialog,
+                    text="Available Cameras",
+                    font=("Arial", 16, "bold")
+                ).pack(pady=10, padx=20)
+
+                # Create scrollable frame for camera options
+                scroll_frame = ctk.CTkScrollableFrame(
+                    select_dialog,
+                    width=360,
+                    height=280
+                )
+                scroll_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+                # Camera selection variable
+                selected_camera = tk.StringVar(value="0")  # Default to first camera
+
+                # Create radio buttons for each camera
+                for camera in cameras:
+                    # Create frame for each camera option
+                    camera_frame = ctk.CTkFrame(scroll_frame)
+                    camera_frame.pack(fill="x", padx=5, pady=5)
+
+                    # Radio button with camera name
+                    rb = ctk.CTkRadioButton(
+                        camera_frame,
+                        text=camera['name'],
+                        variable=selected_camera,
+                        value=str(camera['index']),
+                        font=("Arial", 13)
+                    )
+                    rb.pack(side="top", padx=10, pady=2, anchor="w")
+
+                    # Add resolution and FPS info
+                    info_text = f"Resolution: {camera['current_resolution']}"
+                    if camera.get('supported_resolutions'):
+                        info_text += f"\nSupported: {', '.join(camera['supported_resolutions'][:3])}"
+                    if camera.get('fps'):
+                        info_text += f"\nFPS: {camera['fps']}"
+
+                    info_label = ctk.CTkLabel(
+                        camera_frame,
+                        text=info_text,
+                        font=("Arial", 12),
+                        justify="left",
+                        text_color="gray"
+                    )
+                    info_label.pack(side="top", padx=30, pady=2, anchor="w")
+
+                # Create buttons frame
+                button_frame = ctk.CTkFrame(select_dialog)
+                button_frame.pack(fill="x", padx=10, pady=10)
+
+                def on_camera_selected():
+                    camera_index = int(selected_camera.get())
+                    select_dialog.destroy()
+                    # Start capture with selected camera
+                    start_camera_capture(camera_index)
+
+                # Select button
+                ctk.CTkButton(
+                    button_frame,
+                    text="Open Camera",
+                    command=on_camera_selected,
+                    width=200,
+                    font=("Arial", 13),
+                    fg_color="#4A90E2",
+                    hover_color="#357ABD"
+                ).pack(side="left", padx=10)
+
+                # Cancel button
+                ctk.CTkButton(
+                    button_frame,
+                    text="Cancel",
+                    command=select_dialog.destroy,
+                    width=100,
+                    font=("Arial", 13),
+                    fg_color="#FF4444",
+                    hover_color="#CC3333"
+                ).pack(side="right", padx=10)
+
+            else:
+                # If only one camera, use it directly
+                start_camera_capture(cameras[0]['index'])
+
+        except ImportError as e:
+            messagebox.showerror(
+                "Missing Dependencies",
+                "Camera capture requires additional modules.\n" +
+                "Please install required packages:\n\n" +
+                "pip install opencv-python pillow"
+            )
+        except Exception as e:
+            messagebox.showerror(
+                "Camera Error",
+                f"Camera initialization failed:\n{str(e)}\n\n" +
+                "Please check your camera connection and permissions."
+            )
 
     def set_notes_mode(self, mode: str) -> None:
         """Set notes mode and update UI"""
