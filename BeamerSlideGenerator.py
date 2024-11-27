@@ -252,7 +252,9 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 """
 
     # Institution setup (variable part)
-    inst_setup = f"\\makeatletter\n\\def\\insertshortinstitute{{{short_institute if short_institute else institution}}}\n\\makeatother\n"
+    inst_setup = "\\makeatletter\n\\def\\insertshortinstitute{{{0}}}\n\\makeatother\n".format(
+        short_institute if short_institute else institution
+    )
 
     # Footline template (static)
     footline_template = r"""
@@ -283,40 +285,50 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 """
 
     # Title setup (variable part)
-    title_setup = f"""
-% Title setup
-\\title{{{title}}}
-{f'\\subtitle{{{subtitle}}}' if subtitle else ''}
-\\author{{{author}}}
-\\institute{{\\textcolor{{mygreen}}{{{institution}}}}}
-\\date{{{date}}}
-
-\\begin{{document}}
-"""
+    title_setup = (
+        "\n% Title setup\n"
+        "\\title{{{0}}}\n"
+        "{1}"
+        "\\author{{{2}}}\n"
+        "\\institute{{\\textcolor{{mygreen}}{{{3}}}}}\n"
+        "\\date{{{4}}}\n"
+        "\n\\begin{{document}}\n"
+    ).format(
+        title,
+        "\\subtitle{{{0}}}\n".format(subtitle) if subtitle else '',
+        author,
+        institution,
+        date
+    )
 
     # Title page template (variable part)
-    title_page = f"""
-% Title page
-\\begin{{frame}}[plain]
-    \\begin{{tikzpicture}}[overlay,remember picture]
-        % Background gradient
-        \\fill[top color=black!90,bottom color=black!70,middle color=myblue!30]
-        (current page.south west) rectangle (current page.north east);
-
-        % Title with glow effect
-        \\node[align=center] at (current page.center) {{
-            \\glowtext[glowblue]{{\\Huge\\textbf{{{title}}}}}
-            {f'\\\\[1em]\\glowtext[glowyellow]{{\\large {subtitle}}}' if subtitle else ''}
-            \\\\[2em]
-            \\glowtext[glowgreen]{{\\large {author}}}
-            \\\\[0.5em]
-            \\textcolor{{white}}{{\\small {institution}}}
-            \\\\[1em]
-            \\textcolor{{white}}{{\\small {date}}}
-        }};
-    \\end{{tikzpicture}}
-\\end{{frame}}
-"""
+    title_page = (
+        "\n% Title page\n"
+        "\\begin{{frame}}[plain]\n"
+        "    \\begin{{tikzpicture}}[overlay,remember picture]\n"
+        "        % Background gradient\n"
+        "        \\fill[top color=black!90,bottom color=black!70,middle color=myblue!30]\n"
+        "        (current page.south west) rectangle (current page.north east);\n\n"
+        "        % Title with glow effect\n"
+        "        \\node[align=center] at (current page.center) {{\n"
+        "            \\glowtext[glowblue]{{\\Huge\\textbf{{{0}}}}}          \n"
+        "            {1}"
+        "            \\\\[2em]\n"
+        "            \\glowtext[glowgreen]{{\\large {2}}}\n"
+        "            \\\\[0.5em]\n"
+        "            \\textcolor{{white}}{{\\small {3}}}\n"
+        "            \\\\[1em]\n"
+        "            \\textcolor{{white}}{{\\small {4}}}\n"
+        "        }};\n"
+        "    \\end{{tikzpicture}}\n"
+        "\\end{{frame}}"
+    ).format(
+        title,
+        "\\\\[1em]\\glowtext[glowyellow]{\\large " + subtitle + "}\n" if subtitle else '',
+        author,
+        institution,
+        date
+    )
 
     # Combine all parts
     return "\n".join([
@@ -330,50 +342,50 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
     ])
 
 def get_footline_template():
-    """
-    Returns the correct footline template for Beamer.
-    """
-    return """% Setup footline template with proper short institute handling
-\\makeatletter
-\\defbeamertemplate*{footline}{custom}
-{
-  \\leavevmode%
-  \\hbox{%
-    \\begin{beamercolorbox}[wd=.333333\\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
-      \\usebeamerfont{author in head/foot}\\insertshortauthor~(\\usebeamercolor[fg]{author in head/foot}\\insertshortinstitute)
-    \\end{beamercolorbox}%
-    \\begin{beamercolorbox}[wd=.333333\\paperwidth,ht=2.25ex,dp=1ex,center]{title in head/foot}%
-      \\usebeamerfont{title in head/foot}\\insertshorttitle
-    \\end{beamercolorbox}%
-    \\begin{beamercolorbox}[wd=.333333\\paperwidth,ht=2.25ex,dp=1ex,right]{date in head/foot}%
-      \\usebeamerfont{date in head/foot}\\insertshortdate{\\,}\\hspace*{2em}
-      \\insertframenumber{} / \\inserttotalframenumber\\hspace*{2ex}
-    \\end{beamercolorbox}}%
-  \\vskip0pt%
-}
-\\setbeamertemplate{footline}[custom]
-\\makeatother
-"""
+    """Returns the correct footline template for Beamer"""
+    return (
+        r"% Setup footline template with proper short institute handling" "\n"
+        r"\makeatletter" "\n"
+        r"\defbeamertemplate*{footline}{custom}" "\n"
+        r"{" "\n"
+        r"  \leavevmode%" "\n"
+        r"  \hbox{%" "\n"
+        r"    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%" "\n"
+        r"      \usebeamerfont{author in head/foot}\insertshortauthor~(\usebeamercolor[fg]{author in head/foot}\insertshortinstitute)" "\n"
+        r"    \end{beamercolorbox}%" "\n"
+        r"    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{title in head/foot}%" "\n"
+        r"      \usebeamerfont{title in head/foot}\insertshorttitle" "\n"
+        r"    \end{beamercolorbox}%" "\n"
+        r"    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,right]{date in head/foot}%" "\n"
+        r"      \usebeamerfont{date in head/foot}\insertshortdate{\,}\hspace*{2em}" "\n"
+        r"      \insertframenumber{} / \inserttotalframenumber\hspace*{2ex}" "\n"
+        r"    \end{beamercolorbox}}%" "\n"
+        r"  \vskip0pt%" "\n"
+        r"}" "\n"
+        r"\setbeamertemplate{footline}[custom]" "\n"
+        r"\makeatother"
+    )
+
 def format_url_footnote(url):
-    """
-    Format URL footnotes with proper hyperlinks.
-    Now used for footnotes instead of tikzpicture sources.
-    """
+    """Format URL footnotes with proper hyperlinks"""
     try:
         parsed = urlparse(url)
-        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        base_url = "{0}://{1}".format(parsed.scheme, parsed.netloc)
+
         if 'youtube.com' in parsed.netloc or 'youtu.be' in parsed.netloc:
-            return f"\\footnote{{YouTube video: \\href{{{url}}}{{\\textcolor{{blue}}{{[Watch Video]}}}} }}"
+            return "\\footnote{{YouTube video: \\href{{{0}}}{{\\textcolor{{blue}}{{[Watch Video]}}}} }}".format(url)
         elif 'github.com' in parsed.netloc:
-            return f"\\footnote{{GitHub: \\href{{{url}}}{{\\textcolor{{blue}}{{[View Repository]}}}} }}"
+            return "\\footnote{{GitHub: \\href{{{0}}}{{\\textcolor{{blue}}{{[View Repository]}}}} }}".format(url)
         else:
-            if len(url) > 50:  # Threshold for abbreviation
+            if len(url) > 50:
                 display_url = base_url + '/...' + parsed.path[-20:] if len(parsed.path) > 20 else base_url
-                return f"\\footnote{{Source: {display_url} \\href{{{url}}}{{\\textcolor{{blue}}{{[link]}}}} }}"
+                return "\\footnote{{Source: {0} \\href{{{1}}}{{\\textcolor{{blue}}{{[link]}}}} }}".format(
+                    display_url, url
+                )
             else:
-                return f"\\footnote{{Source: \\href{{{url}}}{{\\textcolor{{blue}}{{{url}}}}} }}"
+                return "\\footnote{{Source: \\href{{{0}}}{{\\textcolor{{blue}}{{{0}}}}} }}".format(url)
     except:
-        return f"\\footnote{{Source: {url}}}"
+        return "\\footnote{{Source: {0}}}".format(url)
 
 def create_new_input_file(file_path):
     """
@@ -900,6 +912,7 @@ class MediaConverter:
         except Exception as e:
             print(f"Error converting document: {str(e)}")
             return False
+
 def convert_media(url_or_path: str, output_folder: str = 'media_files') -> tuple:
     """
     High-level function to convert media from URL or local file.
@@ -2250,7 +2263,7 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                 )
 
                 if latex_code:
-                    # Process frame and notes [existing code...]
+                    # Process frame and notes
                     frame_end = latex_code.rfind('\\end{frame}')
                     if frame_end != -1:
                         latex_code = latex_code[:frame_end]
@@ -2258,7 +2271,7 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                     if current_notes:
                         latex_code += "\n    % Presentation notes\n"
                         for note in current_notes:
-                            latex_code += f"    \\note{{{note}}}\n"
+                            latex_code += "    \\note{{{0}}}\n".format(note)
 
                     latex_code += "\\end{frame}\n\n"
 
@@ -2283,7 +2296,9 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                 else:
                     failed += 1
                     if ide_callback:
-                        ide_callback("error", {'message': f"Failed to process slide {current_slide_index + 1}"})
+                        ide_callback("error", {
+                            'message': "Failed to process slide {0}".format(current_slide_index + 1)
+                        })
 
                 # Reset for next slide
                 content = []
@@ -2309,11 +2324,12 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
         return processed, failed, errors
 
     except Exception as e:
-        error_msg = f"Error processing slide {processed + failed}:\n"
-        error_msg += f"Title: {title}\n"
+        error_msg = "Error processing slide {0}:\n".format(processed + failed)
+        error_msg += "Title: {0}\n".format(title)
         if content:
-            error_msg += f"Content:\n{''.join(['  ' + l + '\n' for l in content])}"
-        error_msg += f"Error: {str(e)}\n"
+            content_lines = ['  ' + l + '\n' for l in content]
+            error_msg += "Content:\n{0}".format(''.join(content_lines))
+        error_msg += "Error: {0}\n".format(str(e))
         errors.append(error_msg)
         if ide_callback:
             ide_callback("error", {'message': error_msg})

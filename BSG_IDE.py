@@ -35,12 +35,7 @@ def launch_ide():
         if str(current_dir) not in sys.path:
             sys.path.insert(0, str(current_dir))
 
-        # Now try to import BeamerSlideEditor
-        try:
-            from BSG_IDE import BeamerSlideEditor
-        except ImportError:
-            # If that fails, try as local import
-            from .BSG_IDE import BeamerSlideEditor
+
 
         # Create and run the IDE
         app = BeamerSlideEditor()
@@ -340,7 +335,328 @@ def install_system_dependencies():
     except Exception as e:
         print(f"Error installing system dependencies: {str(e)}")
         return False
+#------------------------------------------------------------
+def install_bsg_ide(fix_mode=False):
+    """Main installation function"""
+    try:
+        # Create a temporary root window if no parent is available
+        temp_root = None
+        try:
+            # Try to get existing Tk root
+            temp_root = tk.Tk()
+            temp_root.withdraw()  # Hide the window
+        except:
+            pass
 
+        installer = InstallationManager(temp_root)
+        install_type = "system-wide" if installer.is_admin else "user"
+
+        print(f"\nStarting BSG-IDE {'fix' if fix_mode else 'installation'} ({install_type})")
+        print(f"Detected OS: {installer.system}")
+
+        # Create directory structure
+        installer.create_directory_structure()
+
+        # Copy resources
+        package_root = Path(__file__).resolve().parent
+        installer.copy_resources(package_root)
+
+        # Create launcher
+        installer.create_launcher()
+
+        # Setup OS integration
+        #installer.setup_os_integration()
+
+
+        print(f"\nBSG-IDE {'fix' if fix_mode else 'installation'} completed successfully!")
+        print("\nYou can now run BSG-IDE by:")
+        if installer.system == "Windows":
+            print("1. Using the Start Menu shortcut")
+            print("2. Running 'bsg-ide' from Command Prompt")
+        elif installer.system == "Darwin":
+            print("1. Opening BSG-IDE from Applications")
+            print("2. Running 'bsg-ide' from Terminal")
+        else:
+            print("1. Using the application menu")
+            print("2. Running 'bsg-ide' from terminal")
+
+        return True
+
+    except Exception as e:
+        print(f"\n✗ Error during {'fix' if fix_mode else 'installation'}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    finally:
+        # Clean up temporary root window if we created one
+        if temp_root is not None:
+            try:
+                temp_root.destroy()
+            except:
+                pass
+
+def verify_installation():
+    import site
+    import sys
+    from pathlib import Path
+
+    """Verify BSG-IDE whether running from source or installed"""
+    try:
+        package_root, resources_dir = setup_paths()
+        all_ok = True
+
+        print("\nChecking installation...")
+        print(f"Package root: {package_root}")
+        print(f"Resources directory: {resources_dir}")
+
+        # 1. Check core files
+        required_files = {
+            'BSG_IDE.py': package_root,
+            'BeamerSlideGenerator.py': package_root,
+            'requirements.txt': package_root,
+            'airis4d_logo.png': resources_dir,
+            'bsg-ide.png': resources_dir
+        }
+
+        print("\nChecking required files:")
+        for filename, directory in required_files.items():
+            path = directory / filename
+            if path.exists():
+                print(f"✓ Found {filename} in {directory}")
+            else:
+                print(f"✗ Missing {filename}")
+                all_ok = False
+
+        # 2. Check Python paths
+        print("\nChecking Python paths:")
+        if str(package_root) in sys.path:
+            print("✓ Package root in Python path")
+        else:
+            print("✗ Package root not in Python path")
+            all_ok = False
+
+        try:
+
+            # Get all possible site-packages locations
+            site_packages_paths = {
+                'user': Path(site.getusersitepackages()),
+                'venv': Path(sys.prefix) / 'lib' / f'python{sys.version_info.major}.{sys.version_info.minor}' / 'site-packages',
+                'system': Path(site.getsitepackages()[0]) if site.getsitepackages() else None
+            }
+
+            found = False
+            for location, path in site_packages_paths.items():
+                if path and str(path) in sys.path:
+                    print(f"✓ Found {location} site-packages in Python path: {path}")
+                    found = True
+
+            if not found:
+                print("✗ No site-packages directories found in Python path")
+                all_ok = False
+
+            # Also check if BSG-IDE is importable
+            try:
+                import BeamerSlideGenerator
+                print("✓ BSG-IDE package is importable")
+            except ImportError as e:
+                print(f"✗ Cannot import BSG-IDE package: {e}")
+                all_ok = False
+
+        except Exception as e:
+            print(f"! Warning: Could not check site-packages: {e}")
+
+        # 3. Check launcher script
+        print("\nChecking launcher script:")
+        if sys.platform == "win32":
+            launcher_name = 'bsg-ide.bat'
+        else:
+            launcher_name = 'bsg-ide'
+
+        launcher_locations = [
+            Path.home() / '.local/bin',
+            Path('/usr/local/bin'),
+            package_root / 'bin'
+        ]
+
+        launcher_found = False
+        for loc in launcher_locations:
+            launcher_path = loc / launcher_name
+            if launcher_path.exists():
+                print(f"✓ Found launcher at: {launcher_path}")
+                launcher_found = True
+                # Check permissions on Unix-like systems
+                if sys.platform != "win32":
+                    if os.access(launcher_path, os.X_OK):
+                        print("✓ Launcher has correct permissions")
+                    else:
+                        print("✗ Launcher missing executable permission")
+                        all_ok = False
+                break
+
+        if not launcher_found:
+            print("✗ Launcher script not found")
+            all_ok = False
+
+        # 4. Check desktop integration
+        print("\nChecking desktop integration:")
+        if sys.platform.startswith('linux'):
+            # Check desktop entry
+            desktop_locations = [
+                Path.home() / '.local/share/applications',
+                Path('/usr/share/applications')
+            ]
+            desktop_found = False
+            for loc in desktop_locations:
+                desktop_path = loc / 'bsg-ide.desktop'
+                if desktop_path.exists():
+                    print(f"✓ Found desktop entry at: {desktop_path}")
+                    desktop_found = True
+                    break
+
+            if not desktop_found:
+                print("✗ Desktop entry not found")
+                all_ok = False
+
+            # Check icons
+            icon_found = False
+            icon_sizes = ['16x16', '32x32', '48x48', '64x64', '128x128', '256x256']
+            for size in icon_sizes:
+                icon_locations = [
+                    Path.home() / f'.local/share/icons/hicolor/{size}/apps',
+                    Path(f'/usr/share/icons/hicolor/{size}/apps')
+                ]
+                for loc in icon_locations:
+                    icon_path = loc / 'bsg-ide.png'
+                    if icon_path.exists():
+                        if not icon_found:  # Only print first found
+                            print(f"✓ Found application icon at: {icon_path.parent.parent.parent}")
+                        icon_found = True
+
+            if not icon_found:
+                print("✗ Application icon not found")
+                all_ok = False
+
+        elif sys.platform == "darwin":  # macOS
+            app_locations = [
+                Path.home() / 'Applications/BSG-IDE.app',
+                Path('/Applications/BSG-IDE.app')
+            ]
+            app_found = False
+            for loc in app_locations:
+                if loc.exists():
+                    print(f"✓ Found application bundle at: {loc}")
+                    app_found = True
+                    # Check Info.plist
+                    if (loc / 'Contents/Info.plist').exists():
+                        print("✓ Found Info.plist")
+                    else:
+                        print("✗ Missing Info.plist")
+                        all_ok = False
+                    break
+
+            if not app_found:
+                print("✗ Application bundle not found")
+                all_ok = False
+
+        elif sys.platform == "win32":  # Windows
+            # Check Start Menu shortcut
+            start_menu_locations = [
+                Path(os.environ['APPDATA']) / 'Microsoft/Windows/Start Menu/Programs',
+                Path(os.environ['PROGRAMDATA']) / 'Microsoft/Windows/Start Menu/Programs'
+            ]
+            shortcut_found = False
+            for loc in start_menu_locations:
+                shortcut_path = loc / 'BSG-IDE/BSG-IDE.lnk'
+                if shortcut_path.exists():
+                    print(f"✓ Found Start Menu shortcut at: {shortcut_path}")
+                    shortcut_found = True
+                    break
+
+            if not shortcut_found:
+                print("✗ Start Menu shortcut not found")
+                all_ok = False
+
+        # 5. Check imports
+        print("\nChecking imports:")
+        try:
+            import BeamerSlideGenerator
+            print("✓ Can import BeamerSlideGenerator")
+        except ImportError as e:
+            print(f"✗ Cannot import BeamerSlideGenerator: {e}")
+            all_ok = False
+
+
+
+        # Final status
+        print("\nVerification result:")
+        if all_ok:
+            print("✓ All checks passed successfully!")
+        else:
+            print("✗ Some checks failed. Please run 'bsg-ide --fix' to repair the installation")
+
+        return all_ok
+
+    except Exception as e:
+        print(f"\n✗ Error during verification: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+
+
+def get_package_root():
+    """Get the package root directory whether installed or running from source"""
+    try:
+        # First check if we're running from source
+        current_file = Path(__file__).resolve()
+        current_dir = current_file.parent
+
+        # Check if we're in source directory (look for key files)
+        if all((current_dir / f).exists() for f in ['BeamerSlideGenerator.py', 'BSG_IDE.py']):
+            return current_dir
+
+        # If not in source, check if we're pip installed
+        try:
+            import bsg_ide
+            return Path(bsg_ide.__file__).parent
+        except ImportError:
+            pass
+
+        # Finally check standard installation locations
+        standard_locations = [
+            Path.home() / '.local/lib/bsg-ide',
+            Path.home() / '.local/share/bsg-ide',
+            Path('/usr/local/share/bsg-ide')
+        ]
+
+        for loc in standard_locations:
+            if (loc / 'BSG_IDE.py').exists():
+                return loc
+
+        # If we get here, return current directory as fallback
+        return current_dir
+
+    except Exception as e:
+        print(f"Warning: Could not determine package root: {e}")
+        return Path(__file__).parent
+
+def setup_paths():
+    """Setup Python paths for both source and installed runs"""
+    package_root = get_package_root()
+
+    # Add package root to Python path if not already there
+    if str(package_root) not in sys.path:
+        sys.path.insert(0, str(package_root))
+
+    # Find resources directory
+    resources_dir = package_root / 'resources'
+    if not resources_dir.exists():
+        resources_dir = package_root  # Fallback to package root
+
+    return package_root, resources_dir
+#-----------------------------------------------------------
 
 
 def create_desktop_entry():
@@ -2314,435 +2630,572 @@ Created by {self.__author__}
             self.deiconify()
 
 
+ #-------------------------------Get Camera and Set Camera--------------------------------------------
     def open_camera(self) -> None:
-        """Enhanced cross-platform camera capture with full feature set"""
-        try:
-            # Check for required imports
-            import cv2
-            from PIL import Image, ImageTk
-            import platform
-            from pathlib import Path
-            import subprocess
-            import time
-            import sys
+            """Enhanced cross-platform camera capture with full feature set"""
+            try:
+                # Check for required imports
+                import cv2
+                from PIL import Image, ImageTk
+                import platform
+                from pathlib import Path
+                import subprocess
+                import time
+                import sys
 
-            # Create media_files directory if it doesn't exist
-            os.makedirs('media_files', exist_ok=True)
+                # Create media_files directory if it doesn't exist
+                os.makedirs('media_files', exist_ok=True)
 
-            def get_available_cameras():
-                """Get list of available cameras with proper device detection"""
-                available_cameras = []
-                system = platform.system()
+                def get_available_cameras():
+                    """Get list of available cameras with proper device detection for all platforms"""
+                    available_cameras = []
+                    system = platform.system()
 
-                def check_camera(index, device_name=None):
-                    """Helper to check if a camera works"""
-                    cap = cv2.VideoCapture(index)
-                    if cap.isOpened():
+                    def check_camera(index, device_path=None, device_name=None):
+                        """Helper to check camera capabilities across different platforms"""
                         try:
-                            ret, _ = cap.read()
-                            if ret:
-                                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                                fps = int(cap.get(cv2.CAP_PROP_FPS))
+                            # Initialize camera based on platform
+                            if device_path and system == "Linux":
+                                cap = cv2.VideoCapture(device_path)
+                            elif system == "Windows":
+                                cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)  # Use DirectShow on Windows
+                            else:
+                                cap = cv2.VideoCapture(index)
 
-                                if not device_name:
-                                    device_name = f"Camera {index}"
+                            if cap.isOpened():
+                                ret, _ = cap.read()
+                                if ret:
+                                    # Store original settings
+                                    original_settings = {
+                                        cv2.CAP_PROP_FRAME_WIDTH: cap.get(cv2.CAP_PROP_FRAME_WIDTH),
+                                        cv2.CAP_PROP_FRAME_HEIGHT: cap.get(cv2.CAP_PROP_FRAME_HEIGHT),
+                                        cv2.CAP_PROP_FPS: cap.get(cv2.CAP_PROP_FPS),
+                                        cv2.CAP_PROP_BRIGHTNESS: cap.get(cv2.CAP_PROP_BRIGHTNESS),
+                                        cv2.CAP_PROP_CONTRAST: cap.get(cv2.CAP_PROP_CONTRAST),
+                                        cv2.CAP_PROP_SATURATION: cap.get(cv2.CAP_PROP_SATURATION)
+                                    }
 
-                                # Try to get supported resolutions
-                                resolutions = []
-                                for res in [(3840, 2160), (1920, 1080), (1280, 720), (640, 480)]:
-                                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, res[0])
-                                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, res[1])
-                                    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                                    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                                    if actual_w > 0 and actual_h > 0:
-                                        resolutions.append(f"{actual_w}x{actual_h}")
+                                    # Test resolutions with platform-specific considerations
+                                    test_resolutions = [
+                                        (3840, 2160),  # 4K
+                                        (2560, 1440),  # 2K
+                                        (1920, 1080),  # Full HD
+                                        (1280, 720),   # HD
+                                        (800, 600),    # SVGA
+                                        (640, 480)     # VGA
+                                    ]
 
-                                return {
-                                    'index': index,
-                                    'name': device_name,
-                                    'current_resolution': f"{width}x{height}",
-                                    'supported_resolutions': resolutions,
-                                    'fps': fps
-                                }
+                                    supported_resolutions = []
+                                    highest_resolution = None
+
+                                    for width, height in test_resolutions:
+                                        try:
+                                            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                                            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                                            actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                            actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+                                            # Verify resolution with actual capture
+                                            if actual_w > 0 and actual_h > 0:
+                                                test_ret, test_frame = cap.read()
+                                                if test_ret and test_frame is not None:
+                                                    resolution = f"{actual_w}x{actual_h}"
+                                                    if resolution not in supported_resolutions:
+                                                        supported_resolutions.append(resolution)
+                                                        if not highest_resolution or (actual_w * actual_h > highest_resolution[0] * highest_resolution[1]):
+                                                            highest_resolution = (actual_w, actual_h)
+                                        except:
+                                            continue
+
+                                    # Restore original settings
+                                    for prop, value in original_settings.items():
+                                        try:
+                                            cap.set(prop, value)
+                                        except:
+                                            pass
+
+                                    # Get current settings after restore
+                                    current_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                    current_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                                    current_fps = int(cap.get(cv2.CAP_PROP_FPS))
+
+                                    # Build camera info dictionary with platform-specific details
+                                    camera_info = {
+                                        'index': index,
+                                        'device_path': device_path,
+                                        'name': device_name or f"Camera {index}",
+                                        'current_resolution': f"{current_width}x{current_height}",
+                                        'supported_resolutions': supported_resolutions,
+                                        'highest_resolution': highest_resolution,
+                                        'fps': current_fps,
+                                        'original_settings': original_settings,
+                                        'platform': system
+                                    }
+
+                                    cap.release()
+                                    return camera_info
+
+                            if cap.isOpened():
+                                cap.release()
                         except Exception as e:
                             print(f"Error checking camera {index}: {e}")
-                        finally:
-                            cap.release()
-                    return None
+                        return None
 
-                # Check primary camera (index 0) first
-                if system == "Linux":
-                    # Check for video0 device name
-                    try:
-                        video0_name = Path("/sys/class/video4linux/video0/name")
-                        if video0_name.exists():
-                            device_name = video0_name.read_text().strip()
-                        else:
-                            device_name = "Primary Camera"
-                    except:
-                        device_name = "Primary Camera"
-
-                    camera = check_camera(0, device_name)
-                    if camera:
-                        available_cameras.append(camera)
-
-                    # Check additional video devices
-                    for i in range(1, 5):  # Check up to video4
+                    # Platform-specific camera detection
+                    if system == "Linux":
+                        # Linux: Check /dev/video* devices with udev information
                         try:
-                            video_path = Path(f"/sys/class/video4linux/video{i}/name")
-                            if video_path.exists():
-                                device_name = video_path.read_text().strip()
-                                camera = check_camera(i, device_name)
+                            import glob
+                            import pyudev
+                            video_devices = sorted(glob.glob('/dev/video*'))
+                            context = pyudev.Context()
+
+                            for device_path in video_devices:
+                                try:
+                                    device = pyudev.Devices.from_device_file(context, device_path)
+                                    # Get detailed device information
+                                    device_name = device.get('ID_MODEL', '')
+                                    vendor = device.get('ID_VENDOR_ID', '')
+                                    product = device.get('ID_MODEL_ID', '')
+
+                                    if not device_name:
+                                        device_name = f"Camera ({device_path})"
+                                    elif vendor and product:
+                                        device_name = f"{device_name} ({vendor}:{product})"
+
+                                    index = int(device_path.split('video')[-1])
+                                    camera = check_camera(index, device_path, device_name)
+                                    if camera:
+                                        # Add additional Linux-specific information
+                                        camera['device_info'] = {
+                                            'vendor': vendor,
+                                            'product': product,
+                                            'subsystem': device.get('SUBSYSTEM', ''),
+                                            'driver': device.get('ID_V4L_DRIVER', '')
+                                        }
+                                        available_cameras.append(camera)
+                                except Exception as e:
+                                    print(f"Error processing Linux device {device_path}: {e}")
+                                    continue
+
+                        except ImportError:
+                            # Fallback if pyudev not available
+                            for i in range(10):  # Check first 10 indices
+                                camera = check_camera(i)
                                 if camera:
                                     available_cameras.append(camera)
-                        except:
-                            continue
 
-                elif system == "Darwin":  # macOS
-                    # Try built-in camera first
-                    camera = check_camera(0, "FaceTime Camera")
-                    if camera:
-                        available_cameras.append(camera)
-                    # Check additional cameras
-                    for i in range(1, 3):
-                        camera = check_camera(i)
+                    elif system == "Darwin":  # macOS
+                        # Try built-in camera first with specific name
+                        camera = check_camera(0, device_name="FaceTime Camera")
                         if camera:
+                            # Add macOS-specific information
+                            camera['is_builtin'] = True
                             available_cameras.append(camera)
 
-                else:  # Windows
-                    # Check first 5 camera indices
-                    for i in range(5):
-                        camera = check_camera(i)
-                        if camera:
-                            if i == 0:
-                                camera['name'] = "Default Camera"
-                            available_cameras.append(camera)
+                        # Check additional cameras
+                        for i in range(1, 5):
+                            camera = check_camera(i)
+                            if camera:
+                                camera['is_builtin'] = False
+                                available_cameras.append(camera)
 
-                return available_cameras
+                    else:  # Windows
+                        try:
+                            # Try using Windows Management Instrumentation for device info
+                            import win32com.client
+                            wmi = win32com.client.GetObject("winmgmts:")
 
-            def start_camera_capture(camera_index):
-                """Initialize and start camera capture with preview"""
-                try:
-                    # Create camera dialog
-                    dialog = ctk.CTkToplevel(self)
-                    dialog.title("Camera Capture")
-                    dialog.geometry("800x600")
-                    dialog.transient(self)
-                    dialog.grab_set()
+                            # Get all video devices from WMI
+                            cameras_wmi = {}
+                            for device in wmi.InstancesOf("Win32_PnPEntity"):
+                                if "Camera" in device.Name or "Webcam" in device.Name:
+                                    cameras_wmi[device.DeviceID] = device.Name
 
-                    # Center the dialog
-                    dialog.update_idletasks()
-                    x = (dialog.winfo_screenwidth() - 800) // 2
-                    y = (dialog.winfo_screenheight() - 600) // 2
-                    dialog.geometry(f"+{x}+{y}")
+                            # Check available cameras with DirectShow
+                            for i in range(10):  # Check first 10 indices
+                                try:
+                                    cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+                                    if cap.isOpened():
+                                        # Try to match with WMI device
+                                        device_name = next(
+                                            (name for id, name in cameras_wmi.items() if str(i) in id),
+                                            f"Camera {i}"
+                                        )
+                                        camera = check_camera(i, device_name=device_name)
+                                        if camera:
+                                            available_cameras.append(camera)
+                                    cap.release()
+                                except:
+                                    continue
 
-                    # Initialize camera
-                    cap = cv2.VideoCapture(camera_index)
-                    if not cap.isOpened():
-                        raise Exception(f"Could not open camera {camera_index}")
+                        except ImportError:
+                            # Fallback if WMI access fails
+                            for i in range(10):
+                                camera = check_camera(i)
+                                if camera:
+                                    available_cameras.append(camera)
 
-                    # Try to set highest available resolution
-                    resolutions = [
-                        (3840, 2160),  # 4K
-                        (1920, 1080),  # Full HD
-                        (1280, 720),   # HD
-                        (800, 600),    # SVGA
-                        (640, 480)     # VGA
-                    ]
+                    return available_cameras
 
-                    max_res = None
-                    for width, height in resolutions:
-                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-                        actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        if actual_width > 0 and actual_height > 0:
+                def start_camera_capture(camera_index, camera_info=None):  # Modified to accept camera_info
+                    """Initialize and start camera capture with camera-specific highest resolution"""
+                    try:
+                        # Create camera dialog
+                        dialog = ctk.CTkToplevel(self)
+                        dialog.title("Camera Capture")
+                        dialog.geometry("800x600")
+                        dialog.transient(self)
+                        dialog.grab_set()
+
+                        # Center the dialog
+                        dialog.update_idletasks()
+                        x = (dialog.winfo_screenwidth() - 800) // 2
+                        y = (dialog.winfo_screenheight() - 600) // 2
+                        dialog.geometry(f"+{x}+{y}")
+
+                        # Initialize camera
+                        #cap = cv2.VideoCapture(camera_index)
+                        # Initialize camera with default settings
+                        if platform.system() == "Linux" and camera_info.get('device_path'):
+                            cap = cv2.VideoCapture(camera_info['device_path'])
+                        else:
+                            cap = cv2.VideoCapture(camera_index)
+                        if not cap.isOpened():
+                            raise Exception(f"Could not open camera {camera_index}")
+                        max_res=None
+                        # Only set resolution if highest_resolution is available for this camera
+                        if camera_info.get('highest_resolution'):
+                            width, height = camera_info['highest_resolution']
+                            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
+                            # Get actual resolution achieved
+                            actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                            actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                            actual_fps = int(cap.get(cv2.CAP_PROP_FPS))
                             max_res = (actual_width, actual_height)
-                            break
 
-                    # Create main content frame
-                    content_frame = ctk.CTkFrame(dialog)
-                    content_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
-                    # Preview frame
-                    preview_frame = ctk.CTkFrame(content_frame)
-                    preview_frame.pack(fill="both", expand=True, padx=5, pady=5)
+                        # Create main content frame
+                        content_frame = ctk.CTkFrame(dialog)
+                        content_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
-                    preview_label = tk.Label(preview_frame, background="black")
-                    preview_label.pack(fill="both", expand=True)
+                        # Preview frame
+                        preview_frame = ctk.CTkFrame(content_frame)
+                        preview_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
-                    # Status frame
-                    status_frame = ctk.CTkFrame(dialog)
-                    status_frame.pack(fill="x", padx=10, pady=5)
+                        preview_label = tk.Label(preview_frame, background="black")
+                        preview_label.pack(fill="both", expand=True)
 
-                    # Resolution label
-                    if max_res:
-                        res_text = f"Resolution: {max_res[0]}x{max_res[1]}"
-                    else:
-                        res_text = "Resolution: Unknown"
+                        # Status frame
+                        status_frame = ctk.CTkFrame(dialog)
+                        status_frame.pack(fill="x", padx=10, pady=5)
 
-                    resolution_label = ctk.CTkLabel(
-                        status_frame,
-                        text=res_text,
-                        font=("Arial", 12)
-                    )
-                    resolution_label.pack(side="left", padx=5)
+                        # Resolution label
+                        if max_res:
+                            res_text = f"Resolution: {max_res[0]}x{max_res[1]}"
+                        else:
+                            res_text = "Resolution: Unknown"
 
-                    # Status label
-                    status_label = ctk.CTkLabel(
-                        status_frame,
-                        text="",
-                        font=("Arial", 12)
-                    )
-                    status_label.pack(side="right", padx=5)
-
-                    # Control frame
-                    control_frame = ctk.CTkFrame(dialog)
-                    control_frame.pack(fill="x", padx=10, pady=5)
-
-                    # Variables for recording
-                    recording_data = {
-                        'is_recording': False,
-                        'start_time': None,
-                        'output': None,
-                        'current_file': None
-                    }
-
-                    def create_camera_controls(dialog, cap, preview_frame, status_label, recording_data):
-                        """Create enhanced camera controls with resolution and file management"""
-                        # Create control panels
-                        settings_frame = ctk.CTkFrame(dialog)
-                        settings_frame.pack(fill="x", padx=10, pady=5)
-
-                        # Resolution controls
-                        resolution_frame = ctk.CTkFrame(settings_frame)
-                        resolution_frame.pack(side="left", padx=5, pady=5, fill="x", expand=True)
-
-                        resolutions = [
-                            "3840x2160 (4K)",
-                            "1920x1080 (Full HD)",
-                            "1280x720 (HD)",
-                            "800x600 (SVGA)",
-                            "640x480 (VGA)"
-                        ]
-
-                        current_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        current_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        current_res = f"{current_width}x{current_height}"
-
-                        ctk.CTkLabel(
-                            resolution_frame,
-                            text="Resolution:",
+                        resolution_label = ctk.CTkLabel(
+                            status_frame,
+                            text=res_text,
                             font=("Arial", 12)
-                        ).pack(side="left", padx=5)
-
-                        def change_resolution(choice):
-                            try:
-                                width, height = map(int, choice.split()[0].split('x'))
-                                cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-                                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-                                actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                                actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-                                if actual_width == width and actual_height == height:
-                                    status_label.configure(text=f"Resolution changed to {width}x{height}")
-                                else:
-                                    status_label.configure(
-                                        text=f"Actual resolution: {actual_width}x{actual_height}"
-                                    )
-                                dialog.after(2000, lambda: status_label.configure(text=""))
-                            except Exception as e:
-                                status_label.configure(text=f"Error changing resolution: {str(e)}")
-                                dialog.after(2000, lambda: status_label.configure(text=""))
-
-                        resolution_menu = ctk.CTkOptionMenu(
-                            resolution_frame,
-                            values=resolutions,
-                            command=change_resolution,
-                            width=150
                         )
-                        resolution_menu.pack(side="left", padx=5)
+                        resolution_label.pack(side="left", padx=5)
 
-                        # Set current resolution in menu
-                        for res in resolutions:
-                            if res.startswith(current_res):
-                                resolution_menu.set(res)
-                                break
+                        # Status label
+                        status_label = ctk.CTkLabel(
+                            status_frame,
+                            text="",
+                            font=("Arial", 12)
+                        )
+                        status_label.pack(side="right", padx=5)
 
-                        # File management functions
-                        def get_save_location(default_name, file_type):
-                            """Get save location with custom filename"""
-                            file_types = {
-                                'photo': [('PNG files', '*.png'), ('JPEG files', '*.jpg')],
-                                'video': [('MP4 files', '*.mp4'), ('AVI files', '*.avi')]
-                            }
+                        # Control frame
+                        control_frame = ctk.CTkFrame(dialog)
+                        control_frame.pack(fill="x", padx=10, pady=5)
 
-                            initialdir = os.path.abspath('media_files')
-                            if not os.path.exists(initialdir):
-                                os.makedirs(initialdir)
+                        # Variables for recording
+                        recording_data = {
+                            'is_recording': False,
+                            'start_time': None,
+                            'output': None,
+                            'current_file': None
+                        }
 
-                            return filedialog.asksaveasfilename(
-                                initialfile=default_name,
-                                defaultextension=file_types[file_type][0][1],
-                                filetypes=file_types[file_type],
-                                initialdir=initialdir,
-                                title=f"Save {file_type.title()} As"
-                            )
+                        def create_camera_controls(dialog, cap, preview_frame, status_label, recording_data):
+                            """Create enhanced camera controls with resolution and file management"""
+                            # Create control panels
+                            settings_frame = ctk.CTkFrame(dialog)
+                            settings_frame.pack(fill="x", padx=10, pady=5)
 
-                        def capture_photo():
-                            """Enhanced photo capture with custom save location"""
-                            try:
-                                ret, frame = cap.read()
-                                if ret:
-                                    # Convert to RGB for PIL
-                                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                                    image = Image.fromarray(rgb_frame)
+                            # Resolution controls
+                            resolution_frame = ctk.CTkFrame(settings_frame)
+                            resolution_frame.pack(side="left", padx=5, pady=5, fill="x", expand=True)
 
-                                    # Default filename
-                                    timestamp = time.strftime("%Y%m%d-%H%M%S")
-                                    default_name = f"camera_photo_{timestamp}.png"
+                            resolutions = [
+                                "3840x2160 (4K)",
+                                "1920x1080 (Full HD)",
+                                "1280x720 (HD)",
+                                "800x600 (SVGA)",
+                                "640x480 (VGA)"
+                            ]
 
-                                    # Get save location
-                                    filepath = get_save_location(default_name, 'photo')
-                                    if not filepath:  # User cancelled
-                                        return
+                            current_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                            current_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                            current_res = f"{current_width}x{current_height}"
 
-                                    # Save image
-                                    image.save(filepath)
+                            ctk.CTkLabel(
+                                resolution_frame,
+                                text="Resolution:",
+                                font=("Arial", 12)
+                            ).pack(side="left", padx=5)
 
-                                    # Update media entry with relative path if in media_files
-                                    rel_path = os.path.relpath(filepath, 'media_files')
-                                    if not rel_path.startswith('..'):
-                                        self.media_entry.delete(0, 'end')
-                                        self.media_entry.insert(0, f"\\file media_files/{rel_path}")
+                            def change_resolution(choice):
+                                try:
+                                    width, height = map(int, choice.split()[0].split('x'))
+                                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                                    actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                    actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+                                    if actual_width == width and actual_height == height:
+                                        status_label.configure(text=f"Resolution changed to {width}x{height}")
                                     else:
-                                        self.media_entry.delete(0, 'end')
-                                        self.media_entry.insert(0, f"\\file {filepath}")
-
-                                    # Show success message
-                                    status_label.configure(text="✓ Photo saved!")
+                                        status_label.configure(
+                                            text=f"Actual resolution: {actual_width}x{actual_height}"
+                                        )
+                                    dialog.after(2000, lambda: status_label.configure(text=""))
+                                except Exception as e:
+                                    status_label.configure(text=f"Error changing resolution: {str(e)}")
                                     dialog.after(2000, lambda: status_label.configure(text=""))
 
-                                    # Flash effect
-                                    preview_frame.configure(fg_color="white")
-                                    dialog.after(100, lambda: preview_frame.configure(fg_color="black"))
+                            resolution_menu = ctk.CTkOptionMenu(
+                                resolution_frame,
+                                values=resolutions,
+                                command=change_resolution,
+                                width=150
+                            )
+                            resolution_menu.pack(side="left", padx=5)
 
-                            except Exception as e:
-                                status_label.configure(text=f"Error: {str(e)}")
-                                dialog.after(2000, lambda: status_label.configure(text=""))
+                            # Set current resolution in menu
+                            for res in resolutions:
+                                if res.startswith(current_res):
+                                    resolution_menu.set(res)
+                                    break
 
-                        def toggle_recording():
-                            """Enhanced video recording with custom save location"""
+                            # File management functions
+                            def get_save_location(default_name, file_type):
+                                """Get save location with custom filename"""
+                                file_types = {
+                                    'photo': [('PNG files', '*.png'), ('JPEG files', '*.jpg')],
+                                    'video': [('MP4 files', '*.mp4'), ('AVI files', '*.avi')]
+                                }
+
+                                initialdir = os.path.abspath('media_files')
+                                if not os.path.exists(initialdir):
+                                    os.makedirs(initialdir)
+
+                                return filedialog.asksaveasfilename(
+                                    initialfile=default_name,
+                                    defaultextension=file_types[file_type][0][1],
+                                    filetypes=file_types[file_type],
+                                    initialdir=initialdir,
+                                    title=f"Save {file_type.title()} As"
+                                )
+
+                            def capture_photo():
+                                """Enhanced photo capture with custom save location"""
+                                try:
+                                    ret, frame = cap.read()
+                                    if ret:
+                                        # Convert to RGB for PIL
+                                        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                        image = Image.fromarray(rgb_frame)
+
+                                        # Default filename
+                                        timestamp = time.strftime("%Y%m%d-%H%M%S")
+                                        default_name = f"camera_photo_{timestamp}.png"
+
+                                        # Get save location
+                                        filepath = get_save_location(default_name, 'photo')
+                                        if not filepath:  # User cancelled
+                                            return
+
+                                        # Save image
+                                        image.save(filepath)
+
+                                        # Update media entry with relative path if in media_files
+                                        rel_path = os.path.relpath(filepath, 'media_files')
+                                        if not rel_path.startswith('..'):
+                                            self.media_entry.delete(0, 'end')
+                                            self.media_entry.insert(0, f"\\file media_files/{rel_path}")
+                                        else:
+                                            self.media_entry.delete(0, 'end')
+                                            self.media_entry.insert(0, f"\\file {filepath}")
+
+                                        # Show success message
+                                        status_label.configure(text="✓ Photo saved!")
+                                        dialog.after(2000, lambda: status_label.configure(text=""))
+
+                                        # Flash effect
+                                        preview_frame.configure(fg_color="white")
+                                        dialog.after(100, lambda: preview_frame.configure(fg_color="black"))
+
+                                except Exception as e:
+                                    status_label.configure(text=f"Error: {str(e)}")
+                                    dialog.after(2000, lambda: status_label.configure(text=""))
+
+                            def toggle_recording():
+                                """Enhanced video recording with custom save location"""
+                                try:
+                                    if not recording_data['is_recording']:
+                                        # Get save location first
+                                        timestamp = time.strftime("%Y%m%d-%H%M%S")
+                                        default_name = f"camera_video_{timestamp}.mp4"
+                                        filepath = get_save_location(default_name, 'video')
+
+                                        if not filepath:  # User cancelled
+                                            return
+
+                                        # Start recording
+                                        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                                        fps = int(cap.get(cv2.CAP_PROP_FPS))
+
+                                        # Create video writer
+                                        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                                        recording_data['output'] = cv2.VideoWriter(
+                                            filepath, fourcc, fps, (width, height)
+                                        )
+                                        recording_data['current_file'] = filepath
+                                        recording_data['is_recording'] = True
+                                        recording_data['start_time'] = time.time()
+
+                                        # Update UI
+                                        record_button.configure(
+                                            text="Stop Recording",
+                                            fg_color="#FF4444",
+                                            hover_color="#CC3333"
+                                        )
+                                        photo_button.configure(state="disabled")
+                                        resolution_menu.configure(state="disabled")
+                                        update_recording_time()
+
+                                    else:
+                                        # Stop recording
+                                        recording_data['is_recording'] = False
+                                        if recording_data['output']:
+                                            recording_data['output'].release()
+
+                                        # Update media entry with relative path if in media_files
+                                        filepath = recording_data['current_file']
+                                        rel_path = os.path.relpath(filepath, 'media_files')
+                                        if not rel_path.startswith('..'):
+                                            self.media_entry.delete(0, 'end')
+                                            self.media_entry.insert(0, f"\\file media_files/{rel_path}")
+                                        else:
+                                            self.media_entry.delete(0, 'end')
+                                            self.media_entry.insert(0, f"\\file {filepath}")
+
+                                        # Reset UI
+                                        record_button.configure(
+                                            text="Record Video",
+                                            fg_color="#4A90E2",
+                                            hover_color="#357ABD"
+                                        )
+                                        photo_button.configure(state="normal")
+                                        resolution_menu.configure(state="normal")
+                                        status_label.configure(text="✓ Video saved!")
+                                        dialog.after(2000, lambda: status_label.configure(text=""))
+
+                                except Exception as e:
+                                    status_label.configure(text=f"Error: {str(e)}")
+                                    dialog.after(2000, lambda: status_label.configure(text=""))
+                                    recording_data['is_recording'] = False
+                                    photo_button.configure(state="normal")
+                                    resolution_menu.configure(state="normal")
+
+                            def update_recording_time():
+                                """Update recording duration display"""
+                                if recording_data['is_recording']:
+                                    elapsed = time.time() - recording_data['start_time']
+                                    minutes = int(elapsed // 60)
+                                    seconds = int(elapsed % 60)
+                                    status_label.configure(
+                                        text=f"Recording: {minutes:02d}:{seconds:02d} ({os.path.basename(recording_data['current_file'])})"
+                                    )
+                                    dialog.after(1000, update_recording_time)
+
+                            # Create control buttons
+                            control_frame = ctk.CTkFrame(dialog)
+                            control_frame.pack(fill="x", padx=10, pady=5)
+
+                            photo_button = ctk.CTkButton(
+                                control_frame,
+                                text="Take Photo",
+                                command=capture_photo,
+                                width=120,
+                                font=("Arial", 13),
+                                fg_color="#4A90E2",
+                                hover_color="#357ABD"
+                            )
+                            photo_button.pack(side="left", padx=5)
+
+                            record_button = ctk.CTkButton(
+                                control_frame,
+                                text="Record Video",
+                                command=toggle_recording,
+                                width=120,
+                                font=("Arial", 13),
+                                fg_color="#4A90E2",
+                                hover_color="#357ABD"
+                            )
+                            record_button.pack(side="left", padx=5)
+
+                            close_button = ctk.CTkButton(
+                                control_frame,
+                                text="Close",
+                                command=dialog.destroy,
+                                width=100,
+                                font=("Arial", 13),
+                                fg_color="#FF4444",
+                                hover_color="#CC3333"
+                            )
+                            close_button.pack(side="right", padx=5)
+
+                            return photo_button, record_button, resolution_menu
+
+
+
+                        def close_camera():
+                            """Clean up and close camera"""
                             try:
-                                if not recording_data['is_recording']:
-                                    # Get save location first
-                                    timestamp = time.strftime("%Y%m%d-%H%M%S")
-                                    default_name = f"camera_video_{timestamp}.mp4"
-                                    filepath = get_save_location(default_name, 'video')
-
-                                    if not filepath:  # User cancelled
-                                        return
-
-                                    # Start recording
-                                    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                                    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                                    fps = int(cap.get(cv2.CAP_PROP_FPS))
-
-                                    # Create video writer
-                                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                                    recording_data['output'] = cv2.VideoWriter(
-                                        filepath, fourcc, fps, (width, height)
-                                    )
-                                    recording_data['current_file'] = filepath
-                                    recording_data['is_recording'] = True
-                                    recording_data['start_time'] = time.time()
-
-                                    # Update UI
-                                    record_button.configure(
-                                        text="Stop Recording",
-                                        fg_color="#FF4444",
-                                        hover_color="#CC3333"
-                                    )
-                                    photo_button.configure(state="disabled")
-                                    resolution_menu.configure(state="disabled")
-                                    update_recording_time()
-
-                                else:
-                                    # Stop recording
+                                # Stop recording if active
+                                if recording_data['is_recording']:
                                     recording_data['is_recording'] = False
                                     if recording_data['output']:
                                         recording_data['output'].release()
 
-                                    # Update media entry with relative path if in media_files
-                                    filepath = recording_data['current_file']
-                                    rel_path = os.path.relpath(filepath, 'media_files')
-                                    if not rel_path.startswith('..'):
-                                        self.media_entry.delete(0, 'end')
-                                        self.media_entry.insert(0, f"\\file media_files/{rel_path}")
-                                    else:
-                                        self.media_entry.delete(0, 'end')
-                                        self.media_entry.insert(0, f"\\file {filepath}")
-
-                                    # Reset UI
-                                    record_button.configure(
-                                        text="Record Video",
-                                        fg_color="#4A90E2",
-                                        hover_color="#357ABD"
-                                    )
-                                    photo_button.configure(state="normal")
-                                    resolution_menu.configure(state="normal")
-                                    status_label.configure(text="✓ Video saved!")
-                                    dialog.after(2000, lambda: status_label.configure(text=""))
+                                # Release camera
+                                cap.release()
+                                dialog.destroy()
 
                             except Exception as e:
-                                status_label.configure(text=f"Error: {str(e)}")
-                                dialog.after(2000, lambda: status_label.configure(text=""))
-                                recording_data['is_recording'] = False
-                                photo_button.configure(state="normal")
-                                resolution_menu.configure(state="normal")
+                                print(f"Error closing camera: {str(e)}")
+                                dialog.destroy()
 
-                        def update_recording_time():
-                            """Update recording duration display"""
-                            if recording_data['is_recording']:
-                                elapsed = time.time() - recording_data['start_time']
-                                minutes = int(elapsed // 60)
-                                seconds = int(elapsed % 60)
-                                status_label.configure(
-                                    text=f"Recording: {minutes:02d}:{seconds:02d} ({os.path.basename(recording_data['current_file'])})"
-                                )
-                                dialog.after(1000, update_recording_time)
-
-                        # Create control buttons
-                        control_frame = ctk.CTkFrame(dialog)
-                        control_frame.pack(fill="x", padx=10, pady=5)
-
-                        photo_button = ctk.CTkButton(
-                            control_frame,
-                            text="Take Photo",
-                            command=capture_photo,
-                            width=120,
-                            font=("Arial", 13),
-                            fg_color="#4A90E2",
-                            hover_color="#357ABD"
+                        # Create controls
+                        photo_button, record_button, resolution_menu = create_camera_controls(
+                            dialog, cap, preview_frame, status_label, recording_data
                         )
-                        photo_button.pack(side="left", padx=5)
-
-                        record_button = ctk.CTkButton(
-                            control_frame,
-                            text="Record Video",
-                            command=toggle_recording,
-                            width=120,
-                            font=("Arial", 13),
-                            fg_color="#4A90E2",
-                            hover_color="#357ABD"
-                        )
-                        record_button.pack(side="left", padx=5)
 
                         close_button = ctk.CTkButton(
                             control_frame,
                             text="Close",
-                            command=dialog.destroy,
+                            command=close_camera,
                             width=100,
                             font=("Arial", 13),
                             fg_color="#FF4444",
@@ -2750,201 +3203,176 @@ Created by {self.__author__}
                         )
                         close_button.pack(side="right", padx=5)
 
-                        return photo_button, record_button, resolution_menu
+                        def update_preview():
+                            """Update camera preview"""
+                            if cap.isOpened():
+                                ret, frame = cap.read()
+                                if ret:
+                                    # Record frame if recording
+                                    if recording_data['is_recording']:
+                                        recording_data['output'].write(frame)
 
+                                    # Convert frame for display
+                                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                    image = Image.fromarray(rgb_frame)
 
+                                    # Scale for display
+                                    display_size = (800, 600)
+                                    image.thumbnail(display_size, Image.Resampling.LANCZOS)
 
-                    def close_camera():
-                        """Clean up and close camera"""
-                        try:
-                            # Stop recording if active
-                            if recording_data['is_recording']:
-                                recording_data['is_recording'] = False
-                                if recording_data['output']:
-                                    recording_data['output'].release()
+                                    # Convert to PhotoImage
+                                    photo = ImageTk.PhotoImage(image=image)
+                                    preview_label.configure(image=photo)
+                                    preview_label.image = photo  # Keep reference
 
-                            # Release camera
-                            cap.release()
-                            dialog.destroy()
+                                    # Schedule next update
+                                    dialog.after(10, update_preview)
 
-                        except Exception as e:
-                            print(f"Error closing camera: {str(e)}")
-                            dialog.destroy()
+                        # Start preview
+                        update_preview()
 
-                    # Create controls
-                    photo_button, record_button, resolution_menu = create_camera_controls(
-                        dialog, cap, preview_frame, status_label, recording_data
+                        # Handle window closing
+                        dialog.protocol("WM_DELETE_WINDOW", close_camera)
+
+                    except Exception as e:
+                        messagebox.showerror("Error", f"Camera initialization failed: {str(e)}")
+                        dialog.destroy()
+
+                # Main camera initialization
+                cameras = get_available_cameras()
+                if not cameras:
+                    messagebox.showerror(
+                        "No Cameras",
+                        "No working cameras found.\nPlease connect a camera and try again."
                     )
+                    return
 
-                    close_button = ctk.CTkButton(
-                        control_frame,
-                        text="Close",
-                        command=close_camera,
+                # Create camera selection dialog if multiple cameras found
+                if len(cameras) > 1:
+                    select_dialog = ctk.CTkToplevel(self)
+                    select_dialog.title("Select Camera")
+                    select_dialog.geometry("400x400")
+                    select_dialog.transient(self)
+                    select_dialog.grab_set()
+
+                    # Center dialog
+                    select_dialog.update_idletasks()
+                    x = (select_dialog.winfo_screenwidth() - 400) // 2
+                    y = (select_dialog.winfo_screenheight() - 400) // 2
+                    select_dialog.geometry(f"+{x}+{y}")
+
+                    # Title label
+                    ctk.CTkLabel(
+                        select_dialog,
+                        text="Available Cameras",
+                        font=("Arial", 16, "bold")
+                    ).pack(pady=10, padx=20)
+
+                    # Create scrollable frame for camera options
+                    scroll_frame = ctk.CTkScrollableFrame(
+                        select_dialog,
+                        width=360,
+                        height=280
+                    )
+                    scroll_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+                    # Camera selection variable
+                    selected_camera = tk.StringVar(value="0")  # Default to first camera
+
+                    # Create radio buttons for each camera
+                    for camera in cameras:
+                        # Create frame for each camera option
+                        camera_frame = ctk.CTkFrame(scroll_frame)
+                        camera_frame.pack(fill="x", padx=5, pady=5)
+
+                        # Radio button with camera name
+                        rb = ctk.CTkRadioButton(
+                            camera_frame,
+                            text=camera['name'],
+                            variable=selected_camera,
+                            value=str(camera['index']),
+                            font=("Arial", 13)
+                        )
+                        rb.pack(side="top", padx=10, pady=2, anchor="w")
+
+                        # Add resolution and FPS info
+                        info_text = f"Resolution: {camera['current_resolution']}"
+                        if camera.get('supported_resolutions'):
+                            info_text += f"\nSupported: {', '.join(camera['supported_resolutions'][:3])}"
+                        if camera.get('fps'):
+                            info_text += f"\nFPS: {camera['fps']}"
+
+                        info_label = ctk.CTkLabel(
+                            camera_frame,
+                            text=info_text,
+                            font=("Arial", 12),
+                            justify="left",
+                            text_color="gray"
+                        )
+                        info_label.pack(side="top", padx=30, pady=2, anchor="w")
+
+                    # Create buttons frame
+                    button_frame = ctk.CTkFrame(select_dialog)
+                    button_frame.pack(fill="x", padx=10, pady=10)
+
+                    def on_camera_selected():
+                        camera_index = int(selected_camera.get())
+                        selected_camera_info = next(
+                            (cam for cam in cameras if cam['index'] == camera_index),
+                            None
+                        )
+                        select_dialog.destroy()
+                        # Start capture with selected camera
+                        if selected_camera_info:
+                            start_camera_capture(camera_index, selected_camera_info)
+
+
+                        #start_camera_capture(camera_index)
+
+                    # Select button
+                    ctk.CTkButton(
+                        button_frame,
+                        text="Open Camera",
+                        command=on_camera_selected,
+                        width=200,
+                        font=("Arial", 13),
+                        fg_color="#4A90E2",
+                        hover_color="#357ABD"
+                    ).pack(side="left", padx=10)
+
+                    # Cancel button
+                    ctk.CTkButton(
+                        button_frame,
+                        text="Cancel",
+                        command=select_dialog.destroy,
                         width=100,
                         font=("Arial", 13),
                         fg_color="#FF4444",
                         hover_color="#CC3333"
-                    )
-                    close_button.pack(side="right", padx=5)
+                    ).pack(side="right", padx=10)
 
-                    def update_preview():
-                        """Update camera preview"""
-                        if cap.isOpened():
-                            ret, frame = cap.read()
-                            if ret:
-                                # Record frame if recording
-                                if recording_data['is_recording']:
-                                    recording_data['output'].write(frame)
+                else:
+                    # If only one camera, use it directly with its info
+                    start_camera_capture(cameras[0]['index'], cameras[0])
+                    # If only one camera, use it directly
+                    #start_camera_capture(cameras[0]['index'])
 
-                                # Convert frame for display
-                                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                                image = Image.fromarray(rgb_frame)
-
-                                # Scale for display
-                                display_size = (800, 600)
-                                image.thumbnail(display_size, Image.Resampling.LANCZOS)
-
-                                # Convert to PhotoImage
-                                photo = ImageTk.PhotoImage(image=image)
-                                preview_label.configure(image=photo)
-                                preview_label.image = photo  # Keep reference
-
-                                # Schedule next update
-                                dialog.after(10, update_preview)
-
-                    # Start preview
-                    update_preview()
-
-                    # Handle window closing
-                    dialog.protocol("WM_DELETE_WINDOW", close_camera)
-
-                except Exception as e:
-                    messagebox.showerror("Error", f"Camera initialization failed: {str(e)}")
-                    dialog.destroy()
-
-            # Main camera initialization
-            cameras = get_available_cameras()
-            if not cameras:
+            except ImportError as e:
                 messagebox.showerror(
-                    "No Cameras",
-                    "No working cameras found.\nPlease connect a camera and try again."
+                    "Missing Dependencies",
+                    "Camera capture requires additional modules.\n" +
+                    "Please install required packages:\n\n" +
+                    "pip install opencv-python pillow"
                 )
-                return
-
-            # Create camera selection dialog if multiple cameras found
-            if len(cameras) > 1:
-                select_dialog = ctk.CTkToplevel(self)
-                select_dialog.title("Select Camera")
-                select_dialog.geometry("400x400")
-                select_dialog.transient(self)
-                select_dialog.grab_set()
-
-                # Center dialog
-                select_dialog.update_idletasks()
-                x = (select_dialog.winfo_screenwidth() - 400) // 2
-                y = (select_dialog.winfo_screenheight() - 400) // 2
-                select_dialog.geometry(f"+{x}+{y}")
-
-                # Title label
-                ctk.CTkLabel(
-                    select_dialog,
-                    text="Available Cameras",
-                    font=("Arial", 16, "bold")
-                ).pack(pady=10, padx=20)
-
-                # Create scrollable frame for camera options
-                scroll_frame = ctk.CTkScrollableFrame(
-                    select_dialog,
-                    width=360,
-                    height=280
+            except Exception as e:
+                messagebox.showerror(
+                    "Camera Error",
+                    f"Camera initialization failed:\n{str(e)}\n\n" +
+                    "Please check your camera connection and permissions."
                 )
-                scroll_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
-                # Camera selection variable
-                selected_camera = tk.StringVar(value="0")  # Default to first camera
 
-                # Create radio buttons for each camera
-                for camera in cameras:
-                    # Create frame for each camera option
-                    camera_frame = ctk.CTkFrame(scroll_frame)
-                    camera_frame.pack(fill="x", padx=5, pady=5)
-
-                    # Radio button with camera name
-                    rb = ctk.CTkRadioButton(
-                        camera_frame,
-                        text=camera['name'],
-                        variable=selected_camera,
-                        value=str(camera['index']),
-                        font=("Arial", 13)
-                    )
-                    rb.pack(side="top", padx=10, pady=2, anchor="w")
-
-                    # Add resolution and FPS info
-                    info_text = f"Resolution: {camera['current_resolution']}"
-                    if camera.get('supported_resolutions'):
-                        info_text += f"\nSupported: {', '.join(camera['supported_resolutions'][:3])}"
-                    if camera.get('fps'):
-                        info_text += f"\nFPS: {camera['fps']}"
-
-                    info_label = ctk.CTkLabel(
-                        camera_frame,
-                        text=info_text,
-                        font=("Arial", 12),
-                        justify="left",
-                        text_color="gray"
-                    )
-                    info_label.pack(side="top", padx=30, pady=2, anchor="w")
-
-                # Create buttons frame
-                button_frame = ctk.CTkFrame(select_dialog)
-                button_frame.pack(fill="x", padx=10, pady=10)
-
-                def on_camera_selected():
-                    camera_index = int(selected_camera.get())
-                    select_dialog.destroy()
-                    # Start capture with selected camera
-                    start_camera_capture(camera_index)
-
-                # Select button
-                ctk.CTkButton(
-                    button_frame,
-                    text="Open Camera",
-                    command=on_camera_selected,
-                    width=200,
-                    font=("Arial", 13),
-                    fg_color="#4A90E2",
-                    hover_color="#357ABD"
-                ).pack(side="left", padx=10)
-
-                # Cancel button
-                ctk.CTkButton(
-                    button_frame,
-                    text="Cancel",
-                    command=select_dialog.destroy,
-                    width=100,
-                    font=("Arial", 13),
-                    fg_color="#FF4444",
-                    hover_color="#CC3333"
-                ).pack(side="right", padx=10)
-
-            else:
-                # If only one camera, use it directly
-                start_camera_capture(cameras[0]['index'])
-
-        except ImportError as e:
-            messagebox.showerror(
-                "Missing Dependencies",
-                "Camera capture requires additional modules.\n" +
-                "Please install required packages:\n\n" +
-                "pip install opencv-python pillow"
-            )
-        except Exception as e:
-            messagebox.showerror(
-                "Camera Error",
-                f"Camera initialization failed:\n{str(e)}\n\n" +
-                "Please check your camera connection and permissions."
-            )
-
+ #----------------------------------------------------------------------------
     def set_notes_mode(self, mode: str) -> None:
         """Set notes mode and update UI"""
         self.notes_mode.set(mode)
@@ -4357,7 +4785,7 @@ Created by {self.__author__}
             messagebox.showinfo("Success", "Preamble updated successfully!")
 
 
-    def present_with_notes(self):
+    def present_with_notes(self) -> None:
         """Present PDF using pympress for dual-screen display with notes"""
         if not self.current_file:
             messagebox.showwarning("Warning", "Please save your file first!")
@@ -4378,40 +4806,55 @@ Created by {self.__author__}
                     messagebox.showerror("Error", "Failed to generate PDF presentation.")
                     return
 
-            # Verify pympress is installed and accessible
-            self.write_to_terminal("Checking pympress installation...")
-            if not setup_pympress():
-                messagebox.showerror(
-                    "Error",
-                    "Failed to setup pympress. Please install it manually:\n" +
-                    "https://github.com/pympress/pympress#installation"
-                )
-                return
+            # Get virtual environment path
+            venv_path = Path.home() / 'my_python'
+            if platform.system() == "Windows":
+                pympress_path = venv_path / "Scripts" / "pympress.exe"
+                python_path = venv_path / "Scripts" / "python.exe"
+            else:
+                pympress_path = venv_path / "bin" / "pympress"
+                python_path = venv_path / "bin" / "python"
+
+            # Setup environment variables
+            env = os.environ.copy()
+
+            # Add virtual environment to PATH
+            if platform.system() == "Windows":
+                env["PATH"] = f"{venv_path / 'Scripts'};{env.get('PATH', '')}"
+            else:
+                env["PATH"] = f"{venv_path / 'bin'}:{env.get('PATH', '')}"
+
+            # Add virtual environment's site-packages to PYTHONPATH
+            site_packages = venv_path / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+            env["PYTHONPATH"] = f"{site_packages}{os.pathsep}{env.get('PYTHONPATH', '')}"
 
             # Launch presentation with pympress using absolute path
             self.write_to_terminal("Launching pympress presentation viewer...")
             try:
-                if sys.platform.startswith('win'):
-                    # Windows path handling
-                    subprocess.Popen(['pympress', abs_pdf_path], shell=True)
-                else:
-                    # Linux/MacOS path handling
-                    pympress_path = shutil.which('pympress')
-                    if pympress_path:
-                        subprocess.Popen([pympress_path, abs_pdf_path])
+                if platform.system() == "Windows":
+                    if pympress_path.exists():
+                        subprocess.Popen([str(pympress_path), abs_pdf_path], env=env)
                     else:
-                        # Try alternative locations
+                        # Fall back to using python to run pympress module
+                        subprocess.Popen([str(python_path), "-m", "pympress", abs_pdf_path], env=env)
+                else:
+                    if pympress_path.exists():
+                        subprocess.Popen([str(pympress_path), abs_pdf_path], env=env)
+                    else:
+                        # Try alternative locations while maintaining venv context
                         possible_paths = [
-                            '/usr/bin/pympress',
-                            '/usr/local/bin/pympress',
-                            os.path.expanduser('~/.local/bin/pympress')
+                            venv_path / "bin" / "pympress",
+                            Path("/usr/local/bin/pympress"),
+                            Path("/usr/bin/pympress"),
+                            Path.home() / '.local/bin/pympress'
                         ]
                         for path in possible_paths:
-                            if os.path.exists(path):
-                                subprocess.Popen([path, abs_pdf_path])
+                            if path.exists():
+                                subprocess.Popen([str(path), abs_pdf_path], env=env)
                                 break
                         else:
-                            raise FileNotFoundError("pympress executable not found")
+                            # If no pympress found, try using python -m pympress
+                            subprocess.Popen([str(python_path), "-m", "pympress", abs_pdf_path], env=env)
 
                 self.write_to_terminal("✓ Presentation launched successfully\n", "green")
                 self.write_to_terminal("\nPympress Controls:\n")
@@ -4425,23 +4868,14 @@ Created by {self.__author__}
             except Exception as e:
                 error_msg = f"Error launching pympress: {str(e)}\n"
                 self.write_to_terminal(error_msg, "red")
-                if "executable not found" in str(e):
-                    # Try to help user locate pympress
-                    self.write_to_terminal("\nTrying to locate pympress...\n")
-                    try:
-                        result = subprocess.run(['which', 'pympress'],
-                                             capture_output=True,
-                                             text=True)
-                        if result.stdout:
-                            self.write_to_terminal(f"pympress found at: {result.stdout}\n")
-                        else:
-                            self.write_to_terminal("pympress not found in PATH\n")
-                    except:
-                        pass
+                self.write_to_terminal("\nTrying to locate pympress...\n")
 
-                    # Show guidance for manual launch
-                    self.write_to_terminal("\nYou can try launching manually:\n")
-                    self.write_to_terminal(f"pympress '{abs_pdf_path}'\n")
+                # Check pympress in virtual environment
+                self.write_to_terminal(f"Checking virtual environment: {venv_path}\n")
+                if pympress_path.exists():
+                    self.write_to_terminal(f"✓ Found pympress at: {pympress_path}\n", "green")
+                else:
+                    self.write_to_terminal("✗ pympress not found in virtual environment\n", "red")
 
         except Exception as e:
             self.write_to_terminal(f"✗ Error launching presentation: {str(e)}\n", "red")
@@ -5206,7 +5640,7 @@ from BSG_terminal import InteractiveTerminal, SimpleRedirector
 
 # Import and run main program
 try:
-    from BSG_IDE import BeamerSlideEditor
+    #from BSG_IDE import BeamerSlideEditor
 
     # Create application instance
     app = BeamerSlideEditor()
@@ -6758,398 +7192,8 @@ def check_bsg_file():
             shutil.copy2(bsg_file, 'BeamerSlideGenerator.py')
         except Exception as e:
             print(f"Warning: Could not copy BeamerSlideGenerator.py to current directory: {e}")
-#-------------------------------------------------------------Installation ---------------------------------------------------
-def setup_program_icon(install_dir: Path, system: str) -> None:
-    """Set up program icon in appropriate locations"""
-    try:
-        # Create icons directory
-        icons_dir = install_dir / 'icons'
-        os.makedirs(icons_dir, exist_ok=True)
 
-        # Copy icon to installation directory
-        icon_source = Path('bsg-ide.png')  # Assuming the icon is named bsg-ide.png
-        if icon_source.exists():
-            # Copy to installation icons directory
-            shutil.copy2(icon_source, icons_dir / 'bsg-ide.png')
 
-            if system == "Linux":
-                # Set up icons in standard Linux locations
-                icon_sizes = ['16x16', '32x32', '48x48', '64x64', '128x128', '256x256']
-                for size in icon_sizes:
-                    target_dir = Path.home() / '.local' / 'share' / 'icons' / 'hicolor' / size / 'apps'
-                    os.makedirs(target_dir, exist_ok=True)
-                    shutil.copy2(icon_source, target_dir / 'bsg-ide.png')
-
-            elif system == "Windows":
-                # For Windows, create .ico version
-                try:
-                    from PIL import Image
-                    img = Image.open(icon_source)
-                    ico_path = icons_dir / 'bsg-ide.ico'
-                    img.save(ico_path, format='ICO', sizes=[(32, 32), (64, 64), (128, 128)])
-                except Exception as e:
-                    print(f"Warning: Could not create ICO file: {e}")
-
-            elif system == "Darwin":  # macOS
-                resources_dir = install_dir / 'Resources'
-                os.makedirs(resources_dir, exist_ok=True)
-                shutil.copy2(icon_source, resources_dir / 'bsg-ide.png')
-
-            print(f"✓ Icon installed successfully")
-            return True
-        else:
-            print("Warning: Icon file not found")
-            return False
-
-    except Exception as e:
-        print(f"Warning: Could not set up program icon: {e}")
-        return False
-
-def setup_linux_integration(install_paths):
-    """Set up Linux-specific integration"""
-    try:
-        # Set up icons
-        icon_sizes = ['16x16', '32x32', '48x48', '64x64', '128x128', '256x256']
-        icon_source = install_paths['resources'] / 'bsg-ide.png'
-
-        if icon_source.exists():
-            for size in icon_sizes:
-                icon_dir = install_paths['icons'] / size / 'apps'
-                icon_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(icon_source, icon_dir / 'bsg-ide.png')
-            print("✓ Installed system icons")
-
-            # Create desktop entry
-            desktop_entry = f"""[Desktop Entry]
-Version=1.0
-Type=Application
-Name=BSG-IDE
-Comment=Beamer Slide Generator IDE
-Exec={install_paths['bin']}/bsg-ide
-Icon=bsg-ide
-Terminal=false
-Categories=Office;Development;Education;
-Keywords=presentation;latex;beamer;slides;
-StartupWMClass=bsg-ide
-"""
-            desktop_file = install_paths['applications'] / 'bsg-ide.desktop'
-            desktop_file.write_text(desktop_entry)
-            desktop_file.chmod(0o755)
-            print("✓ Created desktop entry")
-        else:
-            print("! Warning: Icon file not found")
-    except Exception as e:
-        print(f"! Warning: Error in Linux integration: {str(e)}")
-
-def setup_macos_integration(install_paths):
-    """Set up macOS-specific integration"""
-    try:
-        # Create Info.plist
-        info_plist = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key>
-    <string>BSG-IDE</string>
-    <key>CFBundleDisplayName</key>
-    <string>BSG-IDE</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.airis4d.bsg-ide</string>
-    <key>CFBundleVersion</key>
-    <string>1.0</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleSignature</key>
-    <string>????</string>
-    <key>CFBundleIconFile</key>
-    <string>bsg-ide.icns</string>
-    <key>CFBundleExecutable</key>
-    <string>bsg-ide</string>
-</dict>
-</plist>"""
-        (install_paths['base'] / 'Info.plist').write_text(info_plist)
-        print("✓ Created Info.plist")
-
-        # Convert PNG icon to ICNS
-        try:
-            from PIL import Image
-            icon_source = install_paths['resources'] / 'bsg-ide.png'
-            if icon_source.exists():
-                img = Image.open(icon_source)
-                icns_path = install_paths['resources'] / 'bsg-ide.icns'
-                # Save multiple sizes for icns
-                sizes = [(16,16), (32,32), (64,64), (128,128), (256,256), (512,512)]
-                img.save(icns_path, format='ICNS', sizes=sizes)
-                print("✓ Created application icon")
-            else:
-                print("! Warning: Icon file not found")
-        except ImportError:
-            print("! Warning: PIL not available, skipping icon conversion")
-    except Exception as e:
-        print(f"! Warning: Error in macOS integration: {str(e)}")
-
-def setup_windows_integration(install_paths):
-    """Set up Windows-specific integration"""
-    try:
-        # Create Windows icon
-        try:
-            from PIL import Image
-            icon_source = install_paths['resources'] / 'bsg-ide.png'
-            if icon_source.exists():
-                img = Image.open(icon_source)
-                ico_path = install_paths['resources'] / 'bsg-ide.ico'
-                # Save multiple sizes for ico
-                sizes = [(16,16), (32,32), (48,48), (256,256)]
-                img.save(ico_path, format='ICO', sizes=sizes)
-                print("✓ Created Windows icon")
-
-                # Create Start Menu shortcut
-                try:
-                    import winshell
-                    from win32com.client import Dispatch
-                    shell = Dispatch('WScript.Shell')
-                    install_paths['start_menu'].mkdir(parents=True, exist_ok=True)
-                    shortcut = shell.CreateShortCut(str(install_paths['start_menu'] / "BSG-IDE.lnk"))
-                    # Point to pythonw for no console window
-                    shortcut.Targetpath = sys.executable
-                    shortcut.Arguments = f'-m bsg_ide'
-                    shortcut.IconLocation = str(ico_path)
-                    shortcut.save()
-                    print("✓ Created Start Menu shortcut")
-                except ImportError:
-                    print("! Warning: winshell not available, skipping shortcut creation")
-            else:
-                print("! Warning: Icon file not found")
-        except ImportError:
-            print("! Warning: PIL not available, skipping icon creation")
-
-        # Add to PATH if admin installation
-        if ctypes.windll.shell32.IsUserAnAdmin():
-            try:
-                import winreg
-                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
-                                   'SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment',
-                                   0, winreg.KEY_ALL_ACCESS)
-                path = winreg.QueryValueEx(key, 'Path')[0]
-                bin_path = str(install_paths['bin'])
-                if bin_path not in path:
-                    new_path = f"{path};{bin_path}"
-                    winreg.SetValueEx(key, 'Path', 0, winreg.REG_EXPAND_SZ, new_path)
-                    print("✓ Added to system PATH")
-                winreg.CloseKey(key)
-            except Exception as e:
-                print(f"! Warning: Could not modify PATH: {str(e)}")
-    except Exception as e:
-        print(f"! Warning: Error in Windows integration: {str(e)}")
-
-def setup_system_installation():
-    """Set up system-wide installation with icon support"""
-    try:
-        system, paths = get_installation_paths()
-
-        # Create installation directories
-        install_dir = paths['share'] / 'bsg-ide' if system != "Windows" else paths['bin']
-        os.makedirs(install_dir, exist_ok=True)
-
-        # Set up program icon
-        setup_program_icon(install_dir, system)
-
-        # Update desktop entry for Linux to include icon
-        if system == "Linux":
-            desktop_entry = f"""[Desktop Entry]
-Version=1.0
-Type=Application
-Name=BSG-IDE
-Comment=Beamer Slide Generator IDE
-Exec={paths['bin']}/bsg-ide
-Icon=bsg-ide
-Terminal=false
-Categories=Office;Development;Education;
-Keywords=presentation;slides;beamer;latex;
-"""
-            # Write desktop entry
-            desktop_path = paths['apps'] / 'bsg-ide.desktop'
-            desktop_path.write_text(desktop_entry)
-            desktop_path.chmod(0o755)
-            # Main installation directory in user's home
-            install_dir = Path.home() / '.local' / 'lib' / 'bsg-ide'
-            bin_dir = Path.home() / '.local' / 'bin'
-        elif system == "Windows":
-            install_dir = Path(os.getenv('APPDATA')) / 'BSG-IDE'
-            bin_dir = install_dir / 'bin'
-        else:  # macOS
-            install_dir = Path.home() / 'Library' / 'Application Support' / 'BSG-IDE'
-            bin_dir = Path.home() / '.local' / 'bin'
-
-        # Create directories
-        install_dir.mkdir(parents=True, exist_ok=True)
-        bin_dir.mkdir(parents=True, exist_ok=True)
-
-        # Get current script directory
-        script_dir = Path(__file__).parent.resolve()
-
-        # Copy required Python files
-        required_files = {
-            'BSG_IDE.py': 'BSG_IDE.py',  # Rename to valid module name
-            'BeamerSlideGenerator.py': 'BeamerSlideGenerator.py',
-            'Beam2odp.py': 'Beam2odp.py' , # if you have this file
-            'BSG_terminal':'BSG_terminal',
-            'requirements.txt': 'requirements.txt',
-            'airis4d_logo.png' : 'airis4d_logo.png' , # Add logo to required files
-            'bsg-ide.png':'bsg-ide.png'
-        }
-
-        # Copy all required files to installation directory
-        for src_name, dest_name in required_files.items():
-            src_file = script_dir / src_name
-            if src_file.exists():
-                shutil.copy2(src_file, install_dir / dest_name)
-                print(f"✓ Copied {src_name} to {install_dir / dest_name}")
-
-        # Create __init__.py in installation directory
-        (install_dir / '__init__.py').touch()
-
-        # Create launcher script based on platform
-        if system == "Linux":
-            launcher_script = f"""#!/usr/bin/env python3
-import sys
-import os
-from pathlib import Path
-
-# Add installation directory to Python path
-install_dir = Path('{install_dir}')
-sys.path.insert(0, str(install_dir))
-
-# Import and run main program
-from BSG_IDE import main
-
-if __name__ == '__main__':
-    main()
-"""
-            # Create launcher in bin directory
-            launcher_path = bin_dir / 'bsg-ide'
-            launcher_path.write_text(launcher_script)
-            make_executable(launcher_path)
-            print(f"✓ Created launcher at {launcher_path}")
-
-            # Create desktop entry
-            apps_dir = Path.home() / '.local' / 'share' / 'applications'
-            apps_dir.mkdir(parents=True, exist_ok=True)
-
-            desktop_entry = f"""[Desktop Entry]
-Version=1.0
-Type=Application
-Name=BSG-IDE
-Comment=Beamer Slide Generator IDE
-Exec={launcher_path}
-Icon=bsg-ide
-Terminal=false
-Categories=Office;Documentation;
-Keywords=presentation;slides;beamer;latex;
-"""
-            desktop_file = apps_dir / 'bsg-ide.desktop'
-            desktop_file.write_text(desktop_entry)
-            make_executable(desktop_file)
-
-        elif system == "Windows":
-            launcher_script = f"""@echo off
-set PYTHONPATH={install_dir};%PYTHONPATH%
-python -c "from BSG_IDE import main; main()" %*
-"""
-            # Create batch file in bin directory
-            launcher_path = bin_dir / 'bsg-ide.bat'
-            launcher_path.write_text(launcher_script)
-            print(f"✓ Created launcher at {launcher_path}")
-
-            # Create Start Menu shortcut
-            try:
-                import winshell
-                from win32com.client import Dispatch
-                programs_path = Path(winshell.folder("CSIDL_PROGRAMS")) / "BSG-IDE"
-                programs_path.mkdir(parents=True, exist_ok=True)
-
-                shortcut_path = programs_path / "BSG-IDE.lnk"
-                shell = Dispatch('WScript.Shell')
-                shortcut = shell.CreateShortCut(str(shortcut_path))
-                shortcut.Targetpath = str(launcher_path)
-                shortcut.save()
-            except ImportError:
-                print("Warning: Could not create Windows shortcut")
-
-        else:  # macOS
-            launcher_script = f"""#!/usr/bin/env python3
-import sys
-import os
-from pathlib import Path
-
-# Add installation directory to Python path
-install_dir = Path('{install_dir}')
-sys.path.insert(0, str(install_dir))
-
-# Ensure BeamerSlideGenerator.py is available
-bsg_file = install_dir / 'BeamerSlideGenerator.py'
-if not bsg_file.exists():
-    print("Error: BeamerSlideGenerator.py not found")
-    sys.exit(1)
-
-# Import and run main program
-from BSG_IDE import main
-
-if __name__ == '__main__':
-    main()
-"""
-            # Create launcher in bin directory
-            launcher_path = bin_dir / 'bsg-ide'
-            launcher_path.write_text(launcher_script)
-            make_executable(launcher_path)
-            print(f"✓ Created launcher at {launcher_path}")
-
-        # Add installation directory to PYTHONPATH in shell rc file
-        if system != "Windows":
-            shell_rc = Path.home() / ('.zshrc' if os.path.exists(Path.home() / '.zshrc') else '.bashrc')
-            pythonpath_line = f'\nexport PYTHONPATH="{install_dir}:$PYTHONPATH"\n'
-            path_line = f'\nexport PATH="{bin_dir}:$PATH"\n'
-
-            if shell_rc.exists():
-                content = shell_rc.read_text()
-                if pythonpath_line not in content:
-                    shell_rc.write_text(content + pythonpath_line + path_line)
-            else:
-                shell_rc.write_text(pythonpath_line + path_line)
-
-        print(f"""
-Installation completed successfully:
-- Files installed to: {install_dir}
-- Launcher created at: {launcher_path}
-- Python path updated to include installation directory
-""")
-
-        return True
-
-    except Exception as e:
-        print(f"Installation error: {str(e)}")
-        traceback.print_exc()
-        return False
-
-def check_installation():
-    """Check if BSG-IDE is installed system-wide"""
-    try:
-        system, paths = get_installation_paths()
-        if system == "Linux":
-            desktop_entry = paths['apps'] / 'bsg-ide.desktop'
-            icon_path = paths['icons'] / '128x128' / 'apps' / 'bsg-ide.png'
-            bin_path = paths['bin'] / 'bsg-ide'
-            return desktop_entry.exists() and icon_path.exists() and bin_path.exists()
-        elif system == "Windows":
-            shortcut_path = paths['shortcut'] / "BSG-IDE.lnk"
-            return shortcut_path.exists()
-        elif system == "Darwin":  # macOS
-            app_path = paths['app']
-            return app_path.exists()
-        return False
-    except Exception as e:
-        print(f"Warning: Could not check installation status: {e}")
-        return False
 #-------------------------------------INSTALLATION----------------------------
 import os
 import sys
@@ -7222,6 +7266,19 @@ class InstallationManager:
         self.parent = parent
         self.dialog = None
         self.system = platform.system()
+        # Set is_admin attribute first
+        self.is_admin = False  # Default value
+        try:
+            if self.system == "Windows":
+                import ctypes
+                self.is_admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
+            else:
+                self.is_admin = os.geteuid() == 0
+        except Exception as e:
+            print(f"Warning: Could not determine admin status: {e}")
+            self.is_admin = False
+
+        # Now get installation paths after is_admin is set
         self.install_paths = self._get_install_paths()
 
     def install(self):
@@ -7240,6 +7297,10 @@ class InstallationManager:
             # Copy files
             self.dialog.update_progress(0.4, "Copying required files...")
             self._copy_files()
+
+            # Create launcher
+            if not self.create_launcher():
+                return False
 
             # Setup OS integration
             self.dialog.update_progress(0.6, "Setting up system integration...")
@@ -7261,6 +7322,7 @@ class InstallationManager:
             self.dialog.after(2000, self.dialog.destroy)
             return True
 
+
         except Exception as e:
             if self.dialog:
                 self.dialog.write(f"✗ Installation failed: {str(e)}", "red")
@@ -7268,6 +7330,339 @@ class InstallationManager:
                 self.dialog.write(traceback.format_exc(), "red")
                 # Keep dialog open for error review
             return False
+
+    def create_launcher(self):
+        """Create platform-specific launcher scripts and shortcuts"""
+        try:
+            if self.system == "Linux":
+                return self._create_linux_launcher()
+            elif self.system == "Windows":
+                return self._create_windows_launcher()
+            else:  # macOS
+                return self._create_macos_launcher()
+        except Exception as e:
+            if self.dialog:
+                self.dialog.write(f"✗ Error creating launcher: {str(e)}", "red")
+            else:
+                print(f"✗ Error creating launcher: {str(e)}")
+            return False
+
+    def _create_linux_launcher(self):
+        """Create Linux launcher script and desktop entry"""
+        try:
+            # Create launcher script
+            launcher_path = self.install_paths['bin'] / 'bsg-ide'
+            launcher_content = f"""#!/usr/bin/env python3
+import sys
+import os
+from pathlib import Path
+
+# Add installation directory to Python path
+sys.path.insert(0, "{self.install_paths['base']}")
+
+# Import and run main program
+try:
+    from BSG_IDE import main
+    main()
+except Exception as e:
+    print(f"Error starting BSG-IDE: {{str(e)}}")
+    import traceback
+    traceback.print_exc()
+"""
+            # Write launcher script
+            launcher_path.write_text(launcher_content)
+            launcher_path.chmod(0o755)  # Make executable
+
+            if self.dialog:
+                self.dialog.write(f"✓ Created launcher script: {launcher_path}", "green")
+            else:
+                print(f"✓ Created launcher script: {launcher_path}")
+
+            # Create desktop entry
+            desktop_entry_content = f"""[Desktop Entry]
+Version=1.0
+Type=Application
+Name=BSG-IDE
+Comment=Beamer Slide Generator IDE
+Exec={launcher_path}
+Icon=bsg-ide
+Terminal=false
+Categories=Office;Development;Education;
+Keywords=presentation;latex;beamer;slides;
+"""
+            desktop_path = self.install_paths['applications'] / 'bsg-ide.desktop'
+            desktop_path.write_text(desktop_entry_content)
+            desktop_path.chmod(0o755)
+
+            if self.dialog:
+                self.dialog.write("✓ Created desktop entry", "green")
+            else:
+                print("✓ Created desktop entry")
+
+            return True
+
+        except Exception as e:
+            if self.dialog:
+                self.dialog.write(f"✗ Error creating Linux launcher: {str(e)}", "red")
+            else:
+                print(f"✗ Error creating Linux launcher: {str(e)}")
+            return False
+
+    def _create_windows_launcher(self):
+        """Create Windows launcher script and shortcuts"""
+        try:
+            # Create batch file
+            launcher_path = self.install_paths['bin'] / 'bsg-ide.bat'
+            launcher_content = f"""@echo off
+set PYTHONPATH={self.install_paths['base']};%PYTHONPATH%
+python -c "from BSG_IDE import main; main()" %*
+"""
+            launcher_path.write_text(launcher_content)
+
+            if self.dialog:
+                self.dialog.write(f"✓ Created launcher script: {launcher_path}", "green")
+            else:
+                print(f"✓ Created launcher script: {launcher_path}")
+
+            # Create Start Menu shortcut
+            try:
+                import winshell
+                from win32com.client import Dispatch
+                shortcut_dir = self.install_paths['start_menu'] / "BSG-IDE"
+                shortcut_dir.mkdir(parents=True, exist_ok=True)
+
+                shell = Dispatch('WScript.Shell')
+                shortcut = shell.CreateShortCut(str(shortcut_dir / "BSG-IDE.lnk"))
+                shortcut.Targetpath = str(launcher_path)
+                shortcut.save()
+
+                if self.dialog:
+                    self.dialog.write("✓ Created Start Menu shortcut", "green")
+                else:
+                    print("✓ Created Start Menu shortcut")
+            except ImportError:
+                if self.dialog:
+                    self.dialog.write("! Warning: Could not create Start Menu shortcut", "yellow")
+                else:
+                    print("! Warning: Could not create Start Menu shortcut")
+
+            return True
+
+        except Exception as e:
+            if self.dialog:
+                self.dialog.write(f"✗ Error creating Windows launcher: {str(e)}", "red")
+            else:
+                print(f"✗ Error creating Windows launcher: {str(e)}")
+            return False
+
+    def _create_macos_launcher(self):
+        """Create macOS launcher script and application bundle"""
+        try:
+            # Create launcher script
+            launcher_path = self.install_paths['bin'] / 'bsg-ide'
+            launcher_content = f"""#!/usr/bin/env python3
+import sys
+import os
+from pathlib import Path
+
+# Add installation directory to Python path
+sys.path.insert(0, "{self.install_paths['base']}")
+
+# Import and run main program
+try:
+    from BSG_IDE import main
+    main()
+except Exception as e:
+    print(f"Error starting BSG-IDE: {{str(e)}}")
+    import traceback
+    traceback.print_exc()
+"""
+            launcher_path.write_text(launcher_content)
+            launcher_path.chmod(0o755)
+
+            if self.dialog:
+                self.dialog.write(f"✓ Created launcher script: {launcher_path}", "green")
+            else:
+                print(f"✓ Created launcher script: {launcher_path}")
+
+            return True
+
+        except Exception as e:
+            if self.dialog:
+                self.dialog.write(f"✗ Error creating macOS launcher: {str(e)}", "red")
+            else:
+                print(f"✗ Error creating macOS launcher: {str(e)}")
+            return False
+
+    def copy_resources(self, source_dir):
+            """Copy required resources to installation directories"""
+            try:
+                # Define required files to copy
+                required_files = {
+                    'BSG_IDE.py': ['base', 'python_site'],
+                    'BeamerSlideGenerator.py': ['base', 'python_site'],
+                    'requirements.txt': ['base'],
+                    'airis4d_logo.png': ['resources'],
+                    'bsg-ide.png': ['resources']
+                }
+
+                # Copy each required file
+                for filename, destinations in required_files.items():
+                    source_file = source_dir / filename
+                    if source_file.exists():
+                        for dest_type in destinations:
+                            if dest_type in self.install_paths:
+                                dest_path = self.install_paths[dest_type] / filename
+                                try:
+                                    shutil.copy2(source_file, dest_path)
+                                    if self.dialog:
+                                        self.dialog.write(f"✓ Copied {filename} to {dest_path}", "green")
+                                    else:
+                                        print(f"✓ Copied {filename} to {dest_path}")
+                                except Exception as e:
+                                    if self.dialog:
+                                        self.dialog.write(f"! Warning: Could not copy {filename}: {e}", "yellow")
+                                    else:
+                                        print(f"! Warning: Could not copy {filename}: {e}")
+                    else:
+                        if self.dialog:
+                            self.dialog.write(f"! Warning: Source file {filename} not found", "yellow")
+                        else:
+                            print(f"! Warning: Source file {filename} not found")
+
+                return True
+
+            except Exception as e:
+                if self.dialog:
+                    self.dialog.write(f"✗ Error copying resources: {str(e)}", "red")
+                else:
+                    print(f"✗ Error copying resources: {str(e)}")
+                return False
+
+    def create_directory_structure(self):
+        """Create all required directories for installation"""
+        try:
+            # Create all directories from install_paths
+            for path_type, path in self.install_paths.items():
+                try:
+                    # Skip creation of python_site as it's handled by pip
+                    if path_type == 'python_site':
+                        continue
+
+                    path.mkdir(parents=True, exist_ok=True)
+                    if self.dialog:
+                        self.dialog.write(f"✓ Created directory: {path}", "green")
+                    else:
+                        print(f"✓ Created directory: {path}")
+                except Exception as e:
+                    if self.dialog:
+                        self.dialog.write(f"! Warning: Could not create {path}: {e}", "yellow")
+                    else:
+                        print(f"! Warning: Could not create {path}: {e}")
+
+            # Create additional required subdirectories
+            media_dirs = [
+                self.install_paths['base'] / 'media_files',
+                self.install_paths['resources'] / 'templates',
+                self.install_paths['resources'] / 'icons'
+            ]
+
+            for directory in media_dirs:
+                try:
+                    directory.mkdir(parents=True, exist_ok=True)
+                    if self.dialog:
+                        self.dialog.write(f"✓ Created directory: {directory}", "green")
+                    else:
+                        print(f"✓ Created directory: {directory}")
+                except Exception as e:
+                    if self.dialog:
+                        self.dialog.write(f"! Warning: Could not create {directory}: {e}", "yellow")
+                    else:
+                        print(f"! Warning: Could not create {directory}: {e}")
+
+            # Create .keep files in empty directories to ensure they're tracked
+            for directory in self.install_paths.values():
+                if directory.is_dir() and not any(directory.iterdir()):
+                    keep_file = directory / '.keep'
+                    try:
+                        keep_file.touch()
+                    except Exception:
+                        pass
+
+            return True
+
+        except Exception as e:
+            if self.dialog:
+                self.dialog.write(f"✗ Error creating directory structure: {str(e)}", "red")
+            else:
+                print(f"✗ Error creating directory structure: {str(e)}")
+            return False
+
+    def _get_install_paths(self):
+        """Get installation paths based on platform and permissions"""
+        paths = {}
+
+        # Get user's home directory
+        home_dir = Path.home()
+
+        if self.is_admin:
+            # System-wide installation paths
+            if self.system == "Linux":
+                paths.update({
+                    'base': Path('/usr/local/lib/bsg-ide'),
+                    'bin': Path('/usr/local/bin'),
+                    'share': Path('/usr/local/share/bsg-ide'),
+                    'resources': Path('/usr/local/share/bsg-ide/resources'),
+                    'applications': Path('/usr/share/applications'),
+                    'icons': Path('/usr/share/icons/hicolor'),
+                    'python_site': Path(site.getsitepackages()[0]) / 'bsg_ide'
+                })
+            elif self.system == "Windows":
+                program_files = Path(os.environ.get('PROGRAMFILES', 'C:\\Program Files'))
+                paths.update({
+                    'base': program_files / 'BSG-IDE',
+                    'bin': program_files / 'BSG-IDE' / 'bin',
+                    'resources': program_files / 'BSG-IDE' / 'resources',
+                    'start_menu': Path(os.environ['PROGRAMDATA']) / 'Microsoft/Windows/Start Menu/Programs',
+                    'python_site': Path(site.getsitepackages()[0]) / 'bsg_ide'
+                })
+            else:  # macOS
+                paths.update({
+                    'base': Path('/Applications/BSG-IDE.app/Contents'),
+                    'resources': Path('/Applications/BSG-IDE.app/Contents/Resources'),
+                    'bin': Path('/usr/local/bin'),
+                    'python_site': Path(site.getsitepackages()[0]) / 'bsg_ide'
+                })
+        else:
+            # User-specific installation paths
+            if self.system == "Linux":
+                paths.update({
+                    'base': home_dir / '.local/lib/bsg-ide',
+                    'bin': home_dir / '.local/bin',
+                    'share': home_dir / '.local/share/bsg-ide',
+                    'resources': home_dir / '.local/share/bsg-ide/resources',
+                    'applications': home_dir / '.local/share/applications',
+                    'icons': home_dir / '.local/share/icons/hicolor',
+                    'python_site': Path(site.getusersitepackages()) / 'bsg_ide'
+                })
+            elif self.system == "Windows":
+                appdata = Path(os.environ['APPDATA'])
+                paths.update({
+                    'base': appdata / 'BSG-IDE',
+                    'bin': appdata / 'BSG-IDE' / 'bin',
+                    'resources': appdata / 'BSG-IDE' / 'resources',
+                    'start_menu': appdata / 'Microsoft/Windows/Start Menu/Programs',
+                    'python_site': Path(site.getusersitepackages()) / 'bsg_ide'
+                })
+            else:  # macOS
+                paths.update({
+                    'base': home_dir / 'Applications/BSG-IDE.app/Contents',
+                    'resources': home_dir / 'Applications/BSG-IDE.app/Contents/Resources',
+                    'bin': home_dir / '.local/bin',
+                    'python_site': Path(site.getusersitepackages()) / 'bsg_ide'
+                })
+
+        return paths
 
     def _verify_python_env(self):
         """Verify Python environment and dependencies"""
@@ -7354,290 +7749,6 @@ class InstallationManager:
                 self.dialog.write(f"! {problem}", "yellow")
 
 
-def install_bsg_ide(fix_mode=False):
-    """Main installation function"""
-    try:
-        installer = InstallationManager()
-        install_type = "system-wide" if installer.is_admin else "user"
-
-        print(f"\nStarting BSG-IDE {'fix' if fix_mode else 'installation'} ({install_type})")
-        print(f"Detected OS: {installer.system}")
-
-        # Create directory structure
-        installer.create_directory_structure()
-
-        # Copy resources
-        package_root = Path(__file__).resolve().parent
-        installer.copy_resources(package_root)
-
-        # Create launcher
-        installer.create_launcher()
-
-        # Setup OS integration
-        installer.setup_os_integration()
-
-        print(f"\nBSG-IDE {'fix' if fix_mode else 'installation'} completed successfully!")
-        print("\nYou can now run BSG-IDE by:")
-        if installer.system == "Windows":
-            print("1. Using the Start Menu shortcut")
-            print("2. Running 'bsg-ide' from Command Prompt")
-        elif installer.system == "Darwin":
-            print("1. Opening BSG-IDE from Applications")
-            print("2. Running 'bsg-ide' from Terminal")
-        else:
-            print("1. Using the application menu")
-            print("2. Running 'bsg-ide' from terminal")
-
-        return True
-
-    except Exception as e:
-        print(f"\n✗ Error during {'fix' if fix_mode else 'installation'}: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def verify_installation():
-    """Verify BSG-IDE whether running from source or installed"""
-    try:
-        package_root, resources_dir = setup_paths()
-        all_ok = True
-
-        print("\nChecking installation...")
-        print(f"Package root: {package_root}")
-        print(f"Resources directory: {resources_dir}")
-
-        # 1. Check core files
-        required_files = {
-            'BSG_IDE.py': package_root,
-            'BeamerSlideGenerator.py': package_root,
-            'requirements.txt': package_root,
-            'airis4d_logo.png': resources_dir,
-            'bsg-ide.png': resources_dir
-        }
-
-        print("\nChecking required files:")
-        for filename, directory in required_files.items():
-            path = directory / filename
-            if path.exists():
-                print(f"✓ Found {filename} in {directory}")
-            else:
-                print(f"✗ Missing {filename}")
-                all_ok = False
-
-        # 2. Check Python paths
-        print("\nChecking Python paths:")
-        if str(package_root) in sys.path:
-            print("✓ Package root in Python path")
-        else:
-            print("✗ Package root not in Python path")
-            all_ok = False
-
-        try:
-            import site
-            python_site = Path(site.getusersitepackages()) / 'bsg_ide'
-            if str(python_site) in sys.path:
-                print("✓ Python site-packages directory in Python path")
-            else:
-                print("✗ Python site-packages directory not in Python path")
-                all_ok = False
-        except Exception as e:
-            print(f"! Warning: Could not check site-packages: {e}")
-
-        # 3. Check launcher script
-        print("\nChecking launcher script:")
-        if sys.platform == "win32":
-            launcher_name = 'bsg-ide.bat'
-        else:
-            launcher_name = 'bsg-ide'
-
-        launcher_locations = [
-            Path.home() / '.local/bin',
-            Path('/usr/local/bin'),
-            package_root / 'bin'
-        ]
-
-        launcher_found = False
-        for loc in launcher_locations:
-            launcher_path = loc / launcher_name
-            if launcher_path.exists():
-                print(f"✓ Found launcher at: {launcher_path}")
-                launcher_found = True
-                # Check permissions on Unix-like systems
-                if sys.platform != "win32":
-                    if os.access(launcher_path, os.X_OK):
-                        print("✓ Launcher has correct permissions")
-                    else:
-                        print("✗ Launcher missing executable permission")
-                        all_ok = False
-                break
-
-        if not launcher_found:
-            print("✗ Launcher script not found")
-            all_ok = False
-
-        # 4. Check desktop integration
-        print("\nChecking desktop integration:")
-        if sys.platform.startswith('linux'):
-            # Check desktop entry
-            desktop_locations = [
-                Path.home() / '.local/share/applications',
-                Path('/usr/share/applications')
-            ]
-            desktop_found = False
-            for loc in desktop_locations:
-                desktop_path = loc / 'bsg-ide.desktop'
-                if desktop_path.exists():
-                    print(f"✓ Found desktop entry at: {desktop_path}")
-                    desktop_found = True
-                    break
-
-            if not desktop_found:
-                print("✗ Desktop entry not found")
-                all_ok = False
-
-            # Check icons
-            icon_found = False
-            icon_sizes = ['16x16', '32x32', '48x48', '64x64', '128x128', '256x256']
-            for size in icon_sizes:
-                icon_locations = [
-                    Path.home() / f'.local/share/icons/hicolor/{size}/apps',
-                    Path(f'/usr/share/icons/hicolor/{size}/apps')
-                ]
-                for loc in icon_locations:
-                    icon_path = loc / 'bsg-ide.png'
-                    if icon_path.exists():
-                        if not icon_found:  # Only print first found
-                            print(f"✓ Found application icon at: {icon_path.parent.parent.parent}")
-                        icon_found = True
-
-            if not icon_found:
-                print("✗ Application icon not found")
-                all_ok = False
-
-        elif sys.platform == "darwin":  # macOS
-            app_locations = [
-                Path.home() / 'Applications/BSG-IDE.app',
-                Path('/Applications/BSG-IDE.app')
-            ]
-            app_found = False
-            for loc in app_locations:
-                if loc.exists():
-                    print(f"✓ Found application bundle at: {loc}")
-                    app_found = True
-                    # Check Info.plist
-                    if (loc / 'Contents/Info.plist').exists():
-                        print("✓ Found Info.plist")
-                    else:
-                        print("✗ Missing Info.plist")
-                        all_ok = False
-                    break
-
-            if not app_found:
-                print("✗ Application bundle not found")
-                all_ok = False
-
-        elif sys.platform == "win32":  # Windows
-            # Check Start Menu shortcut
-            start_menu_locations = [
-                Path(os.environ['APPDATA']) / 'Microsoft/Windows/Start Menu/Programs',
-                Path(os.environ['PROGRAMDATA']) / 'Microsoft/Windows/Start Menu/Programs'
-            ]
-            shortcut_found = False
-            for loc in start_menu_locations:
-                shortcut_path = loc / 'BSG-IDE/BSG-IDE.lnk'
-                if shortcut_path.exists():
-                    print(f"✓ Found Start Menu shortcut at: {shortcut_path}")
-                    shortcut_found = True
-                    break
-
-            if not shortcut_found:
-                print("✗ Start Menu shortcut not found")
-                all_ok = False
-
-        # 5. Check imports
-        print("\nChecking imports:")
-        try:
-            import BeamerSlideGenerator
-            print("✓ Can import BeamerSlideGenerator")
-        except ImportError as e:
-            print(f"✗ Cannot import BeamerSlideGenerator: {e}")
-            all_ok = False
-
-        try:
-            from BSG_IDE import BeamerSlideEditor
-            print("✓ Can import BeamerSlideEditor")
-        except ImportError as e:
-            print(f"✗ Cannot import BeamerSlideEditor: {e}")
-            all_ok = False
-
-        # Final status
-        print("\nVerification result:")
-        if all_ok:
-            print("✓ All checks passed successfully!")
-        else:
-            print("✗ Some checks failed. Please run 'bsg-ide --fix' to repair the installation")
-
-        return all_ok
-
-    except Exception as e:
-        print(f"\n✗ Error during verification: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
-
-
-def get_package_root():
-    """Get the package root directory whether installed or running from source"""
-    try:
-        # First check if we're running from source
-        current_file = Path(__file__).resolve()
-        current_dir = current_file.parent
-
-        # Check if we're in source directory (look for key files)
-        if all((current_dir / f).exists() for f in ['BeamerSlideGenerator.py', 'BSG_IDE.py']):
-            return current_dir
-
-        # If not in source, check if we're pip installed
-        try:
-            import bsg_ide
-            return Path(bsg_ide.__file__).parent
-        except ImportError:
-            pass
-
-        # Finally check standard installation locations
-        standard_locations = [
-            Path.home() / '.local/lib/bsg-ide',
-            Path.home() / '.local/share/bsg-ide',
-            Path('/usr/local/share/bsg-ide')
-        ]
-
-        for loc in standard_locations:
-            if (loc / 'BSG_IDE.py').exists():
-                return loc
-
-        # If we get here, return current directory as fallback
-        return current_dir
-
-    except Exception as e:
-        print(f"Warning: Could not determine package root: {e}")
-        return Path(__file__).parent
-
-def setup_paths():
-    """Setup Python paths for both source and installed runs"""
-    package_root = get_package_root()
-
-    # Add package root to Python path if not already there
-    if str(package_root) not in sys.path:
-        sys.path.insert(0, str(package_root))
-
-    # Find resources directory
-    resources_dir = package_root / 'resources'
-    if not resources_dir.exists():
-        resources_dir = package_root  # Fallback to package root
-
-    return package_root, resources_dir
 
 def main():
     """Main entry point for both source and installed runs"""
@@ -7658,18 +7769,14 @@ def main():
 
         args = parser.parse_args()
 
-        if args.verify:
-            success = verify_installation()
-            sys.exit(0 if success else 1)
-        elif args.fix or args.install:
+        if args.fix or args.install:
             #from installation import install_bsg_ide
             success = install_bsg_ide(fix_mode=args.fix)
-            if success and not args.verify:
-                verify_installation()
+            verify_installation()
             sys.exit(0 if success else 1)
 
         # Launch IDE
-        from BSG_IDE import BeamerSlideEditor
+
         app = BeamerSlideEditor()
         app.mainloop()
 
@@ -7688,5 +7795,4 @@ def main():
 if __name__ == "__main__":
     main()
 #---------------------------------------------------------------------------------------
-
 
