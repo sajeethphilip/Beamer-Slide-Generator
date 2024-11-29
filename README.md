@@ -1,5 +1,14 @@
 For the impatient:
 
+1. Create a virtual Python environment in your OS: python -m venv venv
+2. activate it by typing  : source venv/bin/activate
+3. pip install bsg-ide
+4. bsg-ide --fix
+
+Your file menu should now show the bsg-ide icon under the ofie menu.
+
+OR
+
 1. Download the files.
 2. Unzip it
 3. run:> python BSG-IDE.py --fix
