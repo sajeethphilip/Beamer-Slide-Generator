@@ -2219,13 +2219,13 @@ def update_generate_latex_code(media_info, content, title, notes=None):
 
     return "\n".join(latex_code)
 
+#------------------------------------------------------
 def process_input_file(file_path, output_filename='movie.tex', ide_callback=None):
     """Process input file to convert to TeX format with proper slide navigation"""
-    url_updates = {}
-    errors = []
     processed = 0
     failed = 0
-    stored_notes=[]
+    errors = []
+
     try:
         with open(file_path, 'r') as f:
             lines = f.readlines()
@@ -2233,252 +2233,112 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
         # Get preamble information first
         has_preamble, preamble_lines, content_lines, has_titlepage, has_maketitle = detect_preamble(lines)
 
-        # Initialize the output .tex file
-        with open(output_filename, 'w') as f:
+        with open(output_filename, 'w') as outfile:
+            # Write preamble
             if has_preamble:
-                f.writelines(preamble_lines)
-                # Add special commands if not already in preamble
+                outfile.writelines(preamble_lines)
                 if '\\newcommand{\\spotlight}' not in ''.join(preamble_lines):
-                    f.write(generate_special_commands())
+                    outfile.write(generate_special_commands())
                 if not has_maketitle:
-                    f.write("\\maketitle\n")
+                    outfile.write("\\maketitle\n")
                 if not has_titlepage:
-                    f.write("\\begin{frame}\n\\titlepage\n\\end{frame}\n\n")
+                    outfile.write("\\begin{frame}\n\\titlepage\n\\end{frame}\n\n")
             else:
-                f.write("\\documentclass[12pt]{beamer}\n")
-                f.write("\\usepackage{graphicx}\n\\usepackage{multimedia}\n")
-                f.write("\\usepackage{tcolorbox}\n")
-                f.write(generate_special_commands())
-                f.write("\\begin{document}\n\n")
+                outfile.write("\\documentclass[12pt]{beamer}\n")
+                outfile.write("\\usepackage{graphicx}\n\\usepackage{multimedia}\n")
+                outfile.write("\\usepackage{tcolorbox}\n")
+                outfile.write(generate_special_commands())
+                outfile.write("\\begin{document}\n\n")
 
-        i = 0
-        title = None
-        content = []
-        current_url = None
-        current_notes = []
-        in_content_block = False
-        in_notes_block = False
-        current_slide_index = 0
+            i = 0
+            current_frame_notes = []
+            current_frame_content = []
+            current_frame_title = None
+            current_media = None
+            in_content_block = False
+            in_notes_block = False
 
-        # Store initial states
-        original_media = None
-        original_title = None
-        original_content = None
+            while i < len(content_lines):
+                line = content_lines[i].strip()
 
-        while i < len(content_lines):
-            line = content_lines[i].strip()
+                # Handle document end
+                if line.startswith('\\end{document}'):
+                    if current_frame_content:
+                        # Process last frame
+                        process_frame(outfile, current_frame_title, current_frame_content,
+                                   current_frame_notes, current_media)
+                        processed += 1
+                    outfile.write("\\end{document}\n")
+                    break
 
-            # Process document end
-            if line.startswith('\\end{document}'):
-                if in_content_block:
-                    if ide_callback:
-                        ide_callback("show_current_slide", {
-                            'index': current_slide_index,
-                            'title': title,
-                            'media': current_url if current_url else "\\None",
-                            'content': content,
-                            'notes': current_notes
-                        })
-
-                    latex_code, new_directive = process_media(
-                        current_url if current_url else "\\None",
-                        content.copy() if content else None,
-                        title,
-                        False,
-                        slide_index=current_slide_index,
-                        callback=ide_callback
-                    )
-
-                    if latex_code:
-                        # Insert notes before frame end
-                        frame_end = latex_code.rfind('\\end{frame}')
-                        if frame_end != -1:
-                            notes_text = ""
-                            if current_notes:
-                                for note in current_notes:
-                                    if note.strip():
-                                        notes_text += f"    \\note{{{note.strip()}}}\n"
-                            latex_code = latex_code[:frame_end] + notes_text + latex_code[frame_end:]
-
-                        with open(output_filename, 'a') as f:
-                            f.write(latex_code)
+                # Handle new frame
+                if line.startswith('\\title'):
+                    # Process previous frame if exists
+                    if current_frame_content:
+                        process_frame(outfile, current_frame_title, current_frame_content,
+                                   current_frame_notes, current_media)
                         processed += 1
 
-                with open(output_filename, 'a') as f:
-                    f.write("\\end{document}\n")
-                break
+                    # Start new frame
+                    current_frame_title = line[6:].strip()  # Remove '\title' prefix
+                    current_frame_content = []
+                    current_frame_notes = []
+                    current_media = None
 
-            if not line:
+                # Handle Content blocks
+                elif line.startswith('\\begin{Content}'):
+                    in_content_block = True
+                    if len(line) > len('\\begin{Content}'):
+                        current_media = line[len('\\begin{Content}'):].strip()
+
+                elif line.startswith('\\end{Content}'):
+                    in_content_block = False
+
+                # Handle Notes blocks
+                elif line.startswith('\\begin{Notes}'):
+                    in_notes_block = True
+                elif line.startswith('\\end{Notes}'):
+                    in_notes_block = False
+
+                # Process content
+                elif in_content_block:
+                    current_frame_content.append(line)
+                # Process notes
+                elif in_notes_block:
+                    if line.strip() and not line.startswith('%'):
+                        current_frame_notes.append(line.strip())
+
                 i += 1
-                continue
-            if line.startswith("\\title"):
-                # Process previous slide if it exists
-                if in_content_block:
-                    latex_code, new_directive = process_media(
-                        current_url if current_url else "\\None",
-                        content.copy() if content else None,
-                        title,
-                        False,
-                        slide_index=current_slide_index,
-                        callback=ide_callback
-                    )
-
-                    if latex_code:
-                        # Insert notes before frame end
-                        frame_end = latex_code.rfind('\\end{frame}')
-                        if frame_end != -1:
-                            notes_text = ""
-                            if current_notes:
-                                for note in current_notes:
-                                    if note.strip():
-                                        notes_text += f"    \\note{{{note.strip()}}}\n"
-                            latex_code = latex_code[:frame_end] + notes_text + latex_code[frame_end:]
-
-                        with open(output_filename, 'a') as f:
-                            f.write(latex_code)
-                        processed += 1
-
-                        if new_directive and current_url and new_directive != current_url:
-                            if isinstance(new_directive, tuple):
-                                url_updates[current_url] = new_directive
-                            else:
-                                url_updates[current_url] = (new_directive, new_directive)
-
-                # Start new slide
-                original_title = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else "Slide"
-                title = original_title
-                content = []
-                current_url = None
-                current_notes = []
-                in_content_block = False
-                in_notes_block = False
-
-                if ide_callback:
-                    ide_callback("update_current_slide", {
-                        'index': current_slide_index,
-                        'title': title
-                    })
-                    ide_callback("navigate_to_slide", {
-                        'index': current_slide_index,
-                        'focus': True
-                    })
-
-            elif line.startswith("\\begin{Content}"):
-                content = []
-                if not in_notes_block:  # Only clear notes if not in notes block
-                    current_notes = []
-                in_content_block = True
-                if len(line) > len("\\begin{Content}"):
-                    current_url = line[len("\\begin{Content}"):].strip()
-                    original_media = current_url
-                else:
-                    i += 1
-                    if i < len(content_lines):
-                        current_url = content_lines[i].strip()
-                        original_media = current_url
-                    else:
-                        current_url = None
-                        original_media = None
-
-                if ide_callback:
-                    ide_callback("update_media", {
-                        'index': current_slide_index,
-                        'media': original_media if original_media != "\\None" else None
-                    })
-
-            elif line.startswith("\\begin{Notes}"):
-                in_notes_block = True
-                print("In Notes Block")
-            elif line.startswith("\\end{Notes}"):
-                in_notes_block = False
-                print("Exiting Notes Block")
-            elif line.startswith("\\end{Content}"):
-                original_content = content.copy()
-
-                if ide_callback:
-                    ide_callback("update_content", {
-                        'index': current_slide_index,
-                        'content': content,
-                        'notes': current_notes
-                    })
-
-                latex_code, new_directive = process_media(
-                    current_url if current_url else "\\None",
-                    content.copy() if content else None,
-                    title,
-                    False,
-                    slide_index=current_slide_index,
-                    callback=ide_callback
-                )
-
-                if latex_code:
-                    frame_end = latex_code.rfind('\\end{frame}')
-                    if frame_end != -1  and stored_notes:
-                        # Process notes before frame end
-                        notes_latex = []
-                        for note in stored_notes:
-                            if note.strip():
-                                notes_latex.append(f"    \\note{{\n        {note.strip()}\n    }}")
-                        latex_code = latex_code[:frame_end] + '\n' + '\n'.join(notes_latex) + '\n' + latex_code[frame_end:]
-
-                    with open(output_filename, 'a') as f:
-                        f.write(latex_code)
-                    processed += 1
-
-                    if new_directive and current_url and new_directive != current_url:
-                        if isinstance(new_directive, tuple):
-                            url_updates[current_url] = new_directive
-                        else:
-                            url_updates[current_url] = (new_directive, new_directive)
-
-                    if ide_callback:
-                        ide_callback("show_current_slide", {
-                            'index': current_slide_index,
-                            'title': original_title,
-                            'media': original_media,
-                            'content': original_content,
-                            'notes': current_notes
-                        })
-                else:
-                    failed += 1
-                    if ide_callback:
-                        ide_callback("error", {'message': f"Failed to process slide {current_slide_index + 1}"})
-
-                # Reset for next slide
-                content = []
-                if not in_notes_block:  # Only clear notes if not in notes block
-                    current_notes = []
-                current_url = None
-                in_content_block = False
-
-            elif in_notes_block:
-                if line.strip():
-                    current_notes.append(line.strip())
-                    stored_notes= current_notes.copy()  # Store notes before processing
-                    #print(stored_notes)
-
-            elif in_content_block and not line.startswith(("\\begin{Notes}", "\\end{Notes}")):
-                content.append(line)
-                current_slide_index += 1
-
-            i += 1
-
-        # Update input file if needed
-        if url_updates:
-            update_input_file(output_filename, url_updates, is_tex_file=True)
 
         return processed, failed, errors
 
     except Exception as e:
-        error_msg = f"Error processing slide {processed + failed}:\n"
-        error_msg += f"Title: {title}\n"
-        if content:
-            error_msg += "Content:\n" + ''.join(['  ' + l + '\n' for l in content])
-        error_msg += f"Error: {str(e)}\n"
+        error_msg = f"Error processing file: {str(e)}"
         errors.append(error_msg)
         if ide_callback:
             ide_callback("error", {'message': error_msg})
         return processed, failed, errors
+
+def process_frame(outfile, title, content, notes, media):
+    """Process a single frame and write it to the output file"""
+    # Generate frame content
+    latex_code, directive = process_media(
+        media if media else "\\None",
+        content,
+        title,
+        False  # playable flag
+    )
+
+    # Insert notes before \end{frame}
+    if latex_code and notes:
+        frame_end = latex_code.rfind('\\end{frame}')
+        if frame_end != -1:
+            notes_text = '\n'.join(f'    \\note{{{note}}}' for note in notes)
+            latex_code = latex_code[:frame_end] + '\n' + notes_text + '\n' + latex_code[frame_end:]
+
+    outfile.write(latex_code + '\n')
+
+#------------------------------------------------------
 
 def main():
     """
