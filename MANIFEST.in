@@ -1,0 +1,8 @@
+include README.md
+include LICENSE
+recursive-include bsg_ide *.py
+recursive-include bsg_ide/icons *.png
+include bsg_ide/*.png
+include bsg_ide/icons/*.png
+include bsg_ide/resources/*.png
+include bsg_ide/requirements.txt

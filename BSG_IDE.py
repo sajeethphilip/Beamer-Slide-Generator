@@ -357,16 +357,42 @@ def install_bsg_ide(fix_mode=False):
         # Create directory structure
         installer.create_directory_structure()
 
-        # Copy resources
+        # Copy resources with enhanced PNG handling
         package_root = Path(__file__).resolve().parent
-        installer.copy_resources(package_root)
+        required_files = {
+            'BSG_IDE.py': ['base', 'python_site'],
+            'BeamerSlideGenerator.py': ['base', 'python_site'],
+            'requirements.txt': ['base'],
+            'airis4d_logo.png': ['base/resources', 'resources', 'share', 'icons'],
+            'bsg-ide.png': ['base/resources', 'resources', 'share', 'icons']
+        }
+
+        # Copy each file to its destinations
+        for filename, destinations in required_files.items():
+            source_file = package_root / filename
+            if source_file.exists():
+                for dest_type in destinations:
+                    try:
+                        # Handle nested paths
+                        if '/' in dest_type:
+                            base_type, subdir = dest_type.split('/')
+                            if base_type in installer.install_paths:
+                                dest_dir = installer.install_paths[base_type] / subdir
+                        else:
+                            dest_dir = installer.install_paths[dest_type]
+
+                        dest_dir.mkdir(parents=True, exist_ok=True)
+                        dest_path = dest_dir / filename
+                        shutil.copy2(source_file, dest_path)
+                        print(f"✓ Copied {filename} to {dest_path}")
+                    except Exception as e:
+                        print(f"! Warning: Could not copy {filename} to {dest_type}: {e}")
 
         # Create launcher
         installer.create_launcher()
 
         # Setup OS integration
         #installer.setup_os_integration()
-
 
         print(f"\nBSG-IDE {'fix' if fix_mode else 'installation'} completed successfully!")
         print("\nYou can now run BSG-IDE by:")
@@ -1153,8 +1179,12 @@ class BeamerSlideEditor(ctk.CTk):
         self.__author__ = "Ninan Sajeeth Philip"
         self.__license__ = "Creative Commons"
         self.logo_ascii = AIRIS4D_ASCII_LOGO
+
         # Initialize logo before creating widgets
         self.setup_logo()
+
+        # Initialize dictionary for notes buttons
+        self.notes_buttons = {}
 
         # Initialize paths
         self.package_root, self.resources_dir = setup_paths()
@@ -1299,7 +1329,7 @@ class BeamerSlideEditor(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
         # Create UI components
-        self.setup_top_menu()
+        #self.setup_top_menu()
         self.create_sidebar()
         self.create_main_editor()
         self.create_toolbar()
@@ -1347,41 +1377,46 @@ class BeamerSlideEditor(ctk.CTk):
 
 #-------------------------------------------------------------------------------------
     def setup_logo(self):
-        """Initialize logo with colored ASCII fallback and path tracking"""
+        """Initialize logo with correct path handling"""
         try:
-            # Store the original directory where the logo was found
-            self.logo_dir = None
+            # Get package paths
+            package_root, resources_dir = setup_paths()
 
-            # Check all possible logo locations
+            # Possible logo locations in priority order
             possible_paths = [
-                Path(__file__).parent / 'airis4d_logo.png',  # Current directory
-                Path(__file__).parent / 'resources' / 'airis4d_logo.png',  # Local resources
-                Path.home() / '.local' / 'lib' / 'bsg-ide' / 'airis4d_logo.png',  # User config directory
-                Path('/usr/local/share/bsg-ide/resources/airis4d_logo.png'),  # System-wide installation
-                Path(os.getenv('APPDATA', '')) / 'BSG-IDE' / 'resources' / 'airis4d_logo.png'  # Windows
+                resources_dir / 'airis4d_logo.png',  # In resources directory
+                package_root / 'icons' / 'airis4d_logo.png',  # In icons subdirectory
+                package_root / 'airis4d_logo.png',  # In package root
+                Path(__file__).parent / 'icons' / 'airis4d_logo.png',  # Relative to script
+                Path(os.path.abspath(sys.prefix)) / 'share' / 'bsg-ide' / 'resources' / 'airis4d_logo.png',  # System share
+                Path.home() / '.local' / 'share' / 'bsg-ide' / 'resources' / 'airis4d_logo.png'  # User data
             ]
 
-            logo_path = None
+            # Try each location
             for path in possible_paths:
                 if path.exists():
-                    logo_path = path
-                    self.logo_dir = path.parent
-                    break
+                    try:
+                        self.logo_image = ctk.CTkImage(
+                            light_image=Image.open(path),
+                            dark_image=Image.open(path),
+                            size=(50, 50)
+                        )
+                        self.has_logo = True
+                        self.logo_dir = path.parent
+                        print(f"✓ Found logo at: {path}")
+                        break
+                    except Exception as e:
+                        print(f"Warning: Could not load logo from {path}: {e}")
+                        continue
 
-            if logo_path:
-                self.logo_image = ctk.CTkImage(
-                    light_image=Image.open(logo_path),
-                    dark_image=Image.open(logo_path),
-                    size=(50, 50)
-                )
-                self.has_logo = True
-                print(f"✓ Loaded logo from {logo_path}")
-            else:
+            if not self.has_logo:
+                print("Warning: Using ASCII logo - no image found in:")
+                for path in possible_paths:
+                    print(f"  - {path}")
                 self.has_logo = False
-                print("Using ASCII logo fallback - logo image not found")
 
         except Exception as e:
-            print(f"Warning: Could not load logo image: {str(e)}")
+            print(f"Warning: Could not setup logo: {str(e)}")
             self.has_logo = False
 #---------------------------------------------------------------------------------------
 
@@ -1389,7 +1424,7 @@ class BeamerSlideEditor(ctk.CTk):
         """Create and initialize all UI widgets"""
         try:
             # Create menu frame first
-            self.setup_top_menu()
+            #self.setup_top_menu()
 
             # Configure grid
             self.grid_columnconfigure(1, weight=1)
@@ -1492,23 +1527,63 @@ class BeamerSlideEditor(ctk.CTk):
             self.destroy()
 
     def load_file(self, filename):
-        """Override load_file with error handling"""
+        """Load presentation from file with enhanced notes support"""
         try:
-            super().load_file(filename)  # Call original load_file
+            with open(filename, 'r') as f:
+                content = f.read()
 
-            # Update session data if available
-            if hasattr(self, 'session_data'):
-                self.session_data['last_file'] = filename
-                self.session_data['working_directory'] = os.path.dirname(filename) or '.'
-                self.update_recent_files(filename)
+            # Parse content
+            self.current_file = filename
+            self.slides = []
+            self.current_slide_index = -1
 
-                # Update terminal directory
-                if hasattr(self, 'terminal'):
-                    self.terminal.set_working_directory(self.session_data['working_directory'])
+            # Extract presentation info
+            import re
+            for key in self.presentation_info:
+                pattern = f"\\\\{key}{{(.*?)}}"
+                match = re.search(pattern, content)
+                if match:
+                    self.presentation_info[key] = match.group(1)
+
+            # Extract slides with notes using enhanced pattern
+            slide_pattern = r"\\title\s+(.*?)\n\\begin{Content}(.*?)\\end{Content}(?:\s*\\begin{Notes}(.*?)\\end{Notes})?"
+            slide_matches = re.finditer(slide_pattern, content, re.DOTALL)
+
+            for match in slide_matches:
+                title = match.group(1).strip()
+                content_block = match.group(2).strip()
+                notes_block = match.group(3).strip() if match.group(3) else ""
+
+                # Extract media directive if present
+                media = ""
+                content_lines = []
+                first_line = content_block.split('\n')[0].strip()
+                if first_line.startswith('\\'):
+                    media = first_line
+                    content_lines = content_block.split('\n')[1:]
+                else:
+                    content_lines = content_block.split('\n')
+
+                # Process notes
+                notes_lines = []
+                if notes_block:
+                    notes_lines = [line.strip() for line in notes_block.split('\n') if line.strip()]
+
+                self.slides.append({
+                    'title': title,
+                    'media': media,
+                    'content': [line for line in content_lines if line.strip()],
+                    'notes': notes_lines
+                })
+
+            if self.slides:
+                self.current_slide_index = 0
+                self.load_slide(0)
+
+            self.update_slide_list()
+
         except Exception as e:
-            print(f"Error loading file: {str(e)}")
-            messagebox.showerror("Error", f"Could not load file:\n{str(e)}")
-
+            messagebox.showerror("Error", f"Error loading file: {str(e)}")
 
 #--------------------------------------------------------------------------------
     def ide_callback(self, action, data):
@@ -1598,7 +1673,7 @@ class BeamerSlideEditor(ctk.CTk):
                 self.terminal.write(f"Error: {data.get('message', 'Unknown error')}\n", "red")
 
     def load_slide(self, index):
-        """Enhanced load_slide with proper media handling"""
+        """Enhanced load_slide with proper notes handling and cleanup"""
         if 0 <= index < len(self.slides):
             slide = self.slides[index]
 
@@ -1606,6 +1681,7 @@ class BeamerSlideEditor(ctk.CTk):
             self.title_entry.delete(0, 'end')
             self.media_entry.delete(0, 'end')
             self.content_editor.delete('1.0', 'end')
+            self.notes_editor.delete('1.0', 'end')  # Always clear notes
 
             # Update title
             self.title_entry.insert(0, slide.get('title', ''))
@@ -1623,6 +1699,17 @@ class BeamerSlideEditor(ctk.CTk):
                     if not item.startswith('-'):
                         item = f"- {item}"
                     self.content_editor.insert('end', f"{item}\n")
+
+            # Update notes - only if present and non-empty
+            if 'notes' in slide and slide['notes']:
+                notes = [note for note in slide['notes'] if note.strip()]
+                if notes:  # Only add notes if there are actual non-empty notes
+                    for note in notes:
+                        self.notes_editor.insert('end', f"{note}\n")
+                else:
+                    self.notes_editor.insert('end', "% No notes for this slide\n")
+            else:
+                self.notes_editor.insert('end', "% No notes for this slide\n")
 
             # Refresh syntax highlighting if active
             if hasattr(self, 'syntax_highlighter') and self.syntax_highlighter.active:
@@ -2104,7 +2191,7 @@ Created by {self.__author__}
             document_content = doc_match.group(1).strip()
 
             # Look for title frame content
-            title_frame = re.search(r'\\begin{frame}.*?\\titlepage.*?\\end{frame}',
+            title_frame = re.search(r'\\begin{frame}.*?\\titlepage.*?\\end{frame}\n',
                                   document_content,
                                   re.DOTALL)
             if title_frame:
@@ -2136,7 +2223,7 @@ Created by {self.__author__}
 
         # Find all frame blocks in the document body
         frame_blocks = re.finditer(
-            r'\\begin{frame}\s*(?:\{\\Large\\textbf{([^}]*?)}\}|\{([^}]*)\})?(.*?)\\end{frame}',
+            r'\\begin{frame}\s*(?:\{\\Large\\textbf{([^}]*?)}\}|\{([^}]*)\})?(.*?)\\end{frame}\n',
             document_content,
             re.DOTALL
         )
@@ -2353,7 +2440,7 @@ Created by {self.__author__}
                 messagebox.showwarning("Warning", "No slide to duplicate!")
 #---------------------------------------------------------------------------------------------------
     def create_main_editor(self) -> None:
-        """Create main editor area with enhanced media controls and all original features"""
+        """Create main editor area with enhanced media controls and editor options"""
         self.editor_frame = ctk.CTkFrame(self)
         self.editor_frame.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
 
@@ -2365,7 +2452,7 @@ Created by {self.__author__}
         self.title_entry = ctk.CTkEntry(title_frame, width=400)
         self.title_entry.pack(side="left", padx=5, fill="x", expand=True)
 
-        # Enhanced Media section
+        # Media section
         media_frame = ctk.CTkFrame(self.editor_frame)
         media_frame.pack(fill="x", padx=5, pady=5)
 
@@ -2377,46 +2464,37 @@ Created by {self.__author__}
         self.media_entry = ctk.CTkEntry(media_label_frame, width=300)
         self.media_entry.pack(side="left", padx=5, fill="x", expand=True)
 
-        # Media buttons with both standard and capture tools
+        # Media buttons frame
         media_buttons = ctk.CTkFrame(media_frame)
         media_buttons.pack(side="right", padx=5)
 
         # Standard media buttons
-        standard_buttons = [
+        button_configs = [
             ("Local File", self.browse_media, "Browse local media files"),
             ("YouTube", self.youtube_dialog, "Add YouTube video"),
-            ("Search Images", self.search_images, "Search for images online")
-        ]
-
-        for text, command, tooltip in standard_buttons:
-            btn = ctk.CTkButton(
-                media_buttons,
-                text=text,
-                command=command,
-                width=90
-            )
-            btn.pack(side="left", padx=2)
-            self.create_tooltip(btn, tooltip)
-
-        # Add separator
-        separator = ttk.Separator(media_buttons, orient="vertical")
-        separator.pack(side="left", padx=5, pady=5, fill="y")
-
-        # Capture buttons
-        capture_buttons = [
+            ("Search Images", self.search_images, "Search for images online"),
+            None,  # Separator
             ("📷 Camera", self.open_camera, "Capture from camera"),
             ("🖥️ Screen", self.capture_screen, "Capture screen area"),
             ("❌ No Media", lambda: self.media_entry.insert(0, "\\None"), "Create slide without media")
         ]
 
-        for text, command, tooltip in capture_buttons:
+        for config in button_configs:
+            if config is None:
+                # Add separator
+                ttk.Separator(media_buttons, orient="vertical").pack(side="left", padx=5, pady=5, fill="y")
+                continue
+
+            text, command, tooltip = config
+            is_capture = text.startswith(('📷', '🖥️', '❌'))
+
             btn = ctk.CTkButton(
                 media_buttons,
                 text=text,
                 command=command,
                 width=90,
-                fg_color="#4A90E2",
-                hover_color="#357ABD"
+                fg_color="#4A90E2" if is_capture else None,
+                hover_color="#357ABD" if is_capture else None
             )
             btn.pack(side="left", padx=2)
             self.create_tooltip(btn, tooltip)
@@ -2451,16 +2529,14 @@ Created by {self.__author__}
 
         # Initialize notes mode
         self.notes_mode = tk.StringVar(value="both")
-        self.notes_buttons = {}
 
-        # Define button configurations
+        # Notes mode buttons
         buttons_config = [
             ("slides", "Slides Only", "Generate slides without notes", "#2B87BB", "#1B5577"),
             ("notes", "Notes Only", "Generate notes only", "#27AE60", "#1A7340"),
             ("both", "Slides + Notes", "Generate slides with notes", "#8E44AD", "#5E2D73")
         ]
 
-        # Create the three buttons for notes control
         for mode, text, tooltip, active_color, hover_color in buttons_config:
             btn = ctk.CTkButton(
                 notes_buttons,
@@ -2472,14 +2548,28 @@ Created by {self.__author__}
             )
             btn.pack(side="left", padx=2)
             self.create_tooltip(btn, tooltip)
-
-            # Store button reference with its colors
             self.notes_buttons[mode] = {
                 'button': btn,
                 'active_color': active_color,
                 'hover_color': hover_color
             }
 
+        # Editor options row (new)
+        editor_options = ctk.CTkFrame(notes_frame)
+        editor_options.pack(fill="x", padx=5, pady=(10, 5))
+
+        # Add syntax highlighting switch
+        self.highlight_var = ctk.BooleanVar(value=True)
+        self.highlight_switch = ctk.CTkSwitch(
+            editor_options,
+            text="Syntax Highlighting",
+            variable=self.highlight_var,
+            command=self.toggle_highlighting,
+            width=150
+        )
+        self.highlight_switch.pack(side="left", padx=5)
+
+        # Notes editor
         self.notes_editor = ctk.CTkTextbox(notes_frame, height=150)
         self.notes_editor.pack(fill="both", expand=True, padx=5, pady=5)
 
@@ -2507,128 +2597,241 @@ Created by {self.__author__}
 
         return dependencies
 
+#-------------------------------------------------------Capture Screen ---------------------------------------
+
     def capture_screen(self) -> None:
-        """Enhanced screen capture with proper dependency checking"""
-        # Check only required dependencies for screen capture
-        deps = self.check_dependencies()
-        required_deps = ['PIL', 'pyautogui']
-        missing_deps = [deps[d]['package_name'] for d in required_deps if not deps[d]['installed']]
-
-        if missing_deps:
-            messagebox.showerror(
-                "Missing Dependencies",
-                f"Screen capture requires the following packages:\n{', '.join(missing_deps)}\n\n" +
-                "Please install using:\npip install " + " ".join(missing_deps)
-            )
-            return
-
+        """Cross-platform screen capture with animation support"""
         try:
+            import platform
             import pyautogui
-            from PIL import ImageGrab, ImageDraw
+            from PIL import ImageGrab
+            from screeninfo import get_monitors, ScreenInfoError
 
-            # Show information dialog
-            messagebox.showinfo(
-                "Screen Capture",
-                "1. This window will minimize\n" +
-                "2. Draw a rectangle by clicking and dragging\n" +
-                "3. Press ESC to cancel"
-            )
+            system = platform.system()
 
-            # Minimize the window
-            self.iconify()
-            self.update()
-            time.sleep(0.5)  # Give time for window to minimize
+            # Get monitor info safely
+            try:
+                monitors = get_monitors()
+                total_width = max(m.x + m.width for m in monitors)
+                total_height = max(m.y + m.height for m in monitors)
+                screen_left = min(m.x for m in monitors)
+                screen_top = min(m.y for m in monitors)
+            except (ScreenInfoError, ValueError):
+                # Fallback to primary screen
+                total_width = self.winfo_screenwidth()
+                total_height = self.winfo_screenheight()
+                screen_left = 0
+                screen_top = 0
 
-            # Create screen overlay for selection
+            # Create root window
             root = tk.Tk()
-            root.attributes('-fullscreen', True, '-alpha', 0.3)
-            root.configure(background='black')
+            root.withdraw()
 
-            # Variables for selection
-            start_x = start_y = end_x = end_y = 0
-            selection = None
-            is_selecting = False
+            # Create overlay window
+            overlay = tk.Toplevel(root)
+            overlay.title("Screen Capture")
 
-            def on_mouse_down(event):
-                nonlocal start_x, start_y, is_selecting
-                start_x, start_y = event.x, event.y
-                is_selecting = True
+            # OS-specific setup
+            if system == "Darwin":  # macOS
+                overlay.attributes('-transparent', True)
+                overlay.attributes('-alpha', 0.1)
+            elif system == "Windows":
+                overlay.attributes('-alpha', 0.01)
+                overlay.attributes('-transparentcolor', 'black')
+            else:  # Linux
+                overlay.attributes('-type', 'splash')
+                overlay.attributes('-alpha', 0.01)
 
-            def on_mouse_move(event):
-                nonlocal selection, end_x, end_y
-                if is_selecting:
-                    end_x, end_y = event.x, event.y
-                    if selection:
-                        root.delete(selection)
-                    selection = root.create_rectangle(
-                        start_x, start_y, end_x, end_y,
-                        outline='white'
-                    )
+            overlay.attributes('-topmost', True)
+            overlay.overrideredirect(True)
+            overlay.geometry(f"{total_width}x{total_height}+{screen_left}+{screen_top}")
 
-            def on_mouse_up(event):
-                nonlocal is_selecting
-                is_selecting = False
-                root.destroy()
+            # Create canvas
+            canvas = tk.Canvas(
+                overlay,
+                highlightthickness=0,
+                cursor="crosshair",
+                bg="black"
+            )
+            canvas.pack(fill='both', expand=True)
+
+            selection = {'start_x': None, 'start_y': None, 'current_rect': None}
+
+            def capture_area(bbox):
+                """Capture screen area with OS-specific handling"""
+                overlay.withdraw()
+                root.update()
+                time.sleep(0.2)
 
                 try:
-                    # Ensure coordinates are positive
-                    x1, x2 = min(start_x, end_x), max(start_x, end_x)
-                    y1, y2 = min(start_y, end_y), max(start_y, end_y)
+                    if system == "Darwin":
+                        try:
+                            import Quartz
+                            region = Quartz.CGRectMake(bbox[0], bbox[1],
+                                                     bbox[2]-bbox[0], bbox[3]-bbox[1])
+                            image = Quartz.CGWindowListCreateImage(
+                                region,
+                                Quartz.kCGWindowListOptionOnScreenOnly,
+                                Quartz.kCGNullWindowID,
+                                Quartz.kCGWindowImageDefault
+                            )
+                            width = Quartz.CGImageGetWidth(image)
+                            height = Quartz.CGImageGetHeight(image)
+                            data = Quartz.CGDataProviderCopyData(
+                                Quartz.CGImageGetDataProvider(image))
+                            return Image.frombytes("RGBA", (width, height), data)
+                        except ImportError:
+                            return ImageGrab.grab(bbox=bbox)
+                    else:
+                        return ImageGrab.grab(bbox=bbox)
+                finally:
+                    if not selection.get('is_cancelled'):
+                        overlay.deiconify()
 
-                    # Add padding to ensure we get the full selection
-                    padding = 2
-                    bbox = (x1-padding, y1-padding, x2+padding, y2+padding)
+            def on_mouse_down(event):
+                selection['start_x'] = event.x
+                selection['start_y'] = event.y
+                if selection.get('current_rect'):
+                    canvas.delete(selection['current_rect'])
 
-                    # Capture the selected area
-                    screenshot = ImageGrab.grab(bbox=bbox)
+            def on_mouse_move(event):
+                if selection['start_x'] is None:
+                    return
+                if selection.get('current_rect'):
+                    canvas.delete(selection['current_rect'])
 
-                    # Create media_files directory if it doesn't exist
-                    os.makedirs('media_files', exist_ok=True)
+                selection['current_rect'] = canvas.create_rectangle(
+                    selection['start_x'], selection['start_y'],
+                    event.x, event.y,
+                    outline='red',
+                    width=2
+                )
 
-                    # Save the image
-                    timestamp = time.strftime("%Y%m%d-%H%M%S")
-                    filename = f"screen_capture_{timestamp}.png"
-                    filepath = os.path.join('media_files', filename)
-                    screenshot.save(filepath)
+                # Show dimensions
+                width = abs(event.x - selection['start_x'])
+                height = abs(event.y - selection['start_y'])
+                canvas.delete('dimensions')
+                canvas.create_text(
+                    event.x + 10, event.y + 10,
+                    text=f"{width}x{height}",
+                    fill='red',
+                    anchor='nw',
+                    tags='dimensions'
+                )
 
-                    # Update media entry
-                    self.media_entry.delete(0, 'end')
-                    self.media_entry.insert(0, f"\\file media_files/{filename}")
+            def on_mouse_up(event):
+                if selection['start_x'] is None:
+                    return
 
-                    # Show success message
-                    messagebox.showinfo(
-                        "Success",
-                        f"Screen capture saved as:\n{filename}"
-                    )
+                try:
+                    # Calculate coordinates
+                    x1 = min(selection['start_x'], event.x)
+                    y1 = min(selection['start_y'], event.y)
+                    x2 = max(selection['start_x'], event.x)
+                    y2 = max(selection['start_y'], event.y)
+
+                    # Adjust for screen offset
+                    x1 += screen_left
+                    y1 += screen_top
+                    x2 += screen_left
+                    y2 += screen_top
+
+                    bbox = (x1, y1, x2, y2)
+
+                    if self.capture_mode.get() == "animation":
+                        frames = []
+                        progress = tk.Toplevel(root)
+                        progress.title("Capturing Animation")
+                        progress.transient(root)
+
+                        progress_label = tk.Label(progress, text="Capturing frames...")
+                        progress_label.pack(pady=10)
+
+                        pbar = ttk.Progressbar(progress, length=200, mode='determinate')
+                        pbar.pack(pady=10)
+
+                        try:
+                            for i in range(self.frame_count.get()):
+                                if selection.get('is_cancelled'):
+                                    break
+
+                                progress_label['text'] = f"Capturing frame {i+1}/{self.frame_count.get()}"
+                                pbar['value'] = (i + 1) / self.frame_count.get() * 100
+                                progress.update()
+
+                                frame = capture_area(bbox)
+                                if frame:
+                                    frames.append(frame)
+                                time.sleep(self.frame_delay.get())
+
+                            if frames and not selection.get('is_cancelled'):
+                                # Save as GIF
+                                os.makedirs('media_files', exist_ok=True)
+                                timestamp = time.strftime("%Y%m%d-%H%M%S")
+                                filename = f"screen_animation_{timestamp}.gif"
+                                filepath = os.path.join('media_files', filename)
+
+                                frames[0].save(
+                                    filepath,
+                                    save_all=True,
+                                    append_images=frames[1:],
+                                    duration=int(self.frame_delay.get() * 1000),
+                                    loop=0
+                                )
+
+                                self.media_entry.delete(0, 'end')
+                                self.media_entry.insert(0, f"\\file media_files/{filename}")
+                                messagebox.showinfo("Success", f"Animation saved as:\n{filename}")
+                        finally:
+                            progress.destroy()
+                    else:
+                        # Single frame capture
+                        screenshot = capture_area(bbox)
+                        if screenshot and not selection.get('is_cancelled'):
+                            os.makedirs('media_files', exist_ok=True)
+                            timestamp = time.strftime("%Y%m%d-%H%M%S")
+                            filename = f"screen_capture_{timestamp}.png"
+                            filepath = os.path.join('media_files', filename)
+                            screenshot.save(filepath)
+
+                            self.media_entry.delete(0, 'end')
+                            self.media_entry.insert(0, f"\\file media_files/{filename}")
+                            messagebox.showinfo("Success", f"Screenshot saved as:\n{filename}")
 
                 except Exception as e:
-                    messagebox.showerror(
-                        "Error",
-                        f"Failed to capture screen area:\n{str(e)}"
-                    )
+                    messagebox.showerror("Error", f"Capture failed:\n{str(e)}")
                 finally:
-                    # Restore window
-                    self.deiconify()
+                    cleanup()
+
+            def on_escape(event=None):
+                selection['is_cancelled'] = True
+                cleanup()
+
+            def cleanup():
+                try:
+                    overlay.destroy()
+                    root.destroy()
+                    root.quit()
+                except:
+                    pass
 
             # Bind events
-            root.bind('<Escape>', lambda e: (root.destroy(), self.deiconify()))
-            root.bind('<ButtonPress-1>', on_mouse_down)
-            root.bind('<B1-Motion>', on_mouse_move)
-            root.bind('<ButtonRelease-1>', on_mouse_up)
-
-            # Create canvas for drawing selection
-            canvas = tk.Canvas(root, highlightthickness=0)
-            canvas.pack(fill='both', expand=True)
+            canvas.bind('<Button-1>', on_mouse_down)
+            canvas.bind('<B1-Motion>', on_mouse_move)
+            canvas.bind('<ButtonRelease-1>', on_mouse_up)
+            overlay.bind('<Escape>', on_escape)
+            overlay.protocol("WM_DELETE_WINDOW", on_escape)
 
             root.mainloop()
 
         except Exception as e:
-            messagebox.showerror(
-                "Error",
-                f"Screen capture failed:\n{str(e)}"
-            )
-            self.deiconify()
-
+            messagebox.showerror("Error", f"Screen capture failed:\n{str(e)}")
+            traceback.print_exc()
+            if 'root' in locals():
+                try:
+                    root.destroy()
+                except:
+                    pass
 
  #-------------------------------Get Camera and Set Camera--------------------------------------------
     def open_camera(self) -> None:
@@ -3398,13 +3601,19 @@ Created by {self.__author__}
                     hover_color="#4A4A4A"
                 )
 
+
     def create_toolbar(self) -> None:
-        """Create main editor toolbar with presentation features"""
+        """Create main editor toolbar with presentation features and capture controls split into two rows"""
+        # Create main toolbar container
         self.toolbar = ctk.CTkFrame(self)
         self.toolbar.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
 
+        # Upper row for file and presentation operations
+        upper_row = ctk.CTkFrame(self.toolbar)
+        upper_row.pack(fill="x", padx=5, pady=(5, 2))
+
         # Basic file operations buttons
-        buttons = [
+        buttons_upper = [
             ("New", self.new_file, "Create new presentation"),
             ("Open", self.open_file, "Open existing presentation"),
             ("Save", self.save_file, "Save current presentation"),
@@ -3415,10 +3624,10 @@ Created by {self.__author__}
             ("Export to Overleaf", self.create_overleaf_zip, "Create Overleaf-compatible zip")
         ]
 
-        for text, command, tooltip in buttons:
+        for text, command, tooltip in buttons_upper:
             if text == "Export to Overleaf":
                 btn = ctk.CTkButton(
-                    self.toolbar,
+                    upper_row,
                     text=text,
                     command=command,
                     width=120,
@@ -3427,16 +3636,16 @@ Created by {self.__author__}
                 )
             elif text == "Present with Notes":
                 btn = ctk.CTkButton(
-                    self.toolbar,
+                    upper_row,
                     text=text,
                     command=command,
                     width=120,
-                    fg_color="#4A90E2",  # Distinctive blue color
+                    fg_color="#4A90E2",
                     hover_color="#357ABD"
                 )
             else:
                 btn = ctk.CTkButton(
-                    self.toolbar,
+                    upper_row,
                     text=text,
                     command=command,
                     width=100
@@ -3444,7 +3653,107 @@ Created by {self.__author__}
             btn.pack(side="left", padx=5)
             self.create_tooltip(btn, tooltip)
 
+        # Lower row for screen capture controls
+        lower_row = ctk.CTkFrame(self.toolbar)
+        lower_row.pack(fill="x", padx=5, pady=(2, 5))
 
+        # Left side - Screen capture controls
+        capture_frame = ctk.CTkFrame(lower_row, fg_color="transparent")
+        capture_frame.pack(side="left", padx=5)
+
+        # Screen capture label
+        capture_label = ctk.CTkLabel(capture_frame, text="Screen Capture:")
+        capture_label.pack(side="left", padx=5)
+        self.create_tooltip(capture_label, "Choose capture mode and settings")
+
+        # Initialize capture settings
+        self.capture_mode = tk.StringVar(value="single")
+        self.frame_count = tk.IntVar(value=10)
+        self.frame_delay = tk.DoubleVar(value=0.5)
+
+        # Single frame mode
+        single_btn = ctk.CTkRadioButton(
+            capture_frame,
+            text="Single",
+            variable=self.capture_mode,
+            value="single"
+        )
+        single_btn.pack(side="left", padx=5)
+        self.create_tooltip(single_btn, "Capture single screenshot")
+
+        # Animation mode
+        anim_btn = ctk.CTkRadioButton(
+            capture_frame,
+            text="Animation",
+            variable=self.capture_mode,
+            value="animation"
+        )
+        anim_btn.pack(side="left", padx=5)
+        self.create_tooltip(anim_btn, "Capture animated GIF")
+
+        # Animation settings (shown/hidden based on mode)
+        self.anim_settings = ctk.CTkFrame(capture_frame, fg_color="transparent")
+
+        # Frames control
+        frames_frame = ctk.CTkFrame(self.anim_settings, fg_color="transparent")
+        frames_frame.pack(side="left", padx=5)
+        ctk.CTkLabel(frames_frame, text="Frames:").pack(side="left")
+        frames_entry = ctk.CTkEntry(frames_frame, textvariable=self.frame_count, width=40)
+        frames_entry.pack(side="left", padx=2)
+        self.create_tooltip(frames_entry, "Number of frames to capture")
+
+        # Delay control
+        delay_frame = ctk.CTkFrame(self.anim_settings, fg_color="transparent")
+        delay_frame.pack(side="left", padx=5)
+        ctk.CTkLabel(delay_frame, text="Delay:").pack(side="left")
+        delay_entry = ctk.CTkEntry(delay_frame, textvariable=self.frame_delay, width=40)
+        delay_entry.pack(side="left", padx=2)
+        self.create_tooltip(delay_entry, "Delay between frames (seconds)")
+
+        # Capture button
+        capture_btn = ctk.CTkButton(
+            capture_frame,
+            text="Capture",
+            command=self.capture_screen,
+            width=80,
+            fg_color="#4A90E2",
+            hover_color="#357ABD"
+        )
+        capture_btn.pack(side="left", padx=5)
+        self.create_tooltip(capture_btn, "Start screen capture")
+
+        # Add separator
+        ttk.Separator(lower_row, orient="vertical").pack(side="left", padx=10, pady=5, fill="y")
+
+        # Right side - Moved buttons from top menu
+        right_buttons = [
+            ("Edit Preamble", self.edit_preamble, "Edit LaTeX preamble"),
+            ("Presentation Settings", self.show_settings_dialog, "Configure presentation settings"),
+            ("Get Source", self.get_source_from_tex, "Extract source from TEX file")
+        ]
+
+        for text, command, tooltip in right_buttons:
+            btn = ctk.CTkButton(
+                lower_row,
+                text=text,
+                command=command,
+                width=130
+            )
+            btn.pack(side="left", padx=5)
+            self.create_tooltip(btn, tooltip)
+
+        # Function to show/hide animation settings
+        def toggle_anim_settings(*args):
+            if self.capture_mode.get() == "animation":
+                self.anim_settings.pack(side='left', padx=5)
+            else:
+                self.anim_settings.pack_forget()
+
+        # Bind mode changes
+        self.capture_mode.trace('w', toggle_anim_settings)
+
+        # Initial state
+        toggle_anim_settings()
 #------------------------------------------------------------------------------------------------------
 
     def on_notes_mode_change(self, mode: str) -> None:
@@ -4015,6 +4324,7 @@ Created by {self.__author__}
 
             # Add slides in BeamerSlideGenerator's expected format
             for slide in self.slides:
+                content += "\n\n"  # Add two extra line break before new slide
                 content += f"\\title {slide['title']}\n"
                 content += "\\begin{Content}"
                 if slide['media']:
@@ -4035,6 +4345,10 @@ Created by {self.__author__}
                     content += "\\begin{Notes}\n"
                     for note in slide['notes']:
                         content += f"{note}\n"
+                    content += "\\end{Notes}\n"
+                else:
+                    content += "\\begin{Notes}\n"
+                    content += "\n"
                     content += "\\end{Notes}\n"
 
             content += "\\end{document}"
@@ -4442,8 +4756,8 @@ Created by {self.__author__}
 
 
 
-    def save_current_slide(self) -> None:
-        """Save current slide data including notes"""
+    def save_current_slide(self):
+        """Save current slide data with proper notes handling"""
         if self.current_slide_index >= 0:
             self.slides[self.current_slide_index] = {
                 'title': self.title_entry.get(),
@@ -4571,7 +4885,7 @@ Created by {self.__author__}
         return tex_content
 
     def load_file(self, filename: str) -> None:
-        """Load presentation from file"""
+        """Load presentation from file with notes support"""
         try:
             with open(filename, 'r') as f:
                 content = f.read()
@@ -4589,7 +4903,7 @@ Created by {self.__author__}
                 if match:
                     self.presentation_info[key] = match.group(1)
 
-            # Extract slides with notes
+            # Extract slides with notes using enhanced pattern
             slide_pattern = r"\\title\s+(.*?)\n\\begin{Content}(.*?)\\end{Content}(?:\s*\\begin{Notes}(.*?)\\end{Notes})?"
             slide_matches = re.finditer(slide_pattern, content, re.DOTALL)
 
@@ -4601,8 +4915,6 @@ Created by {self.__author__}
                 # Extract media directive if present
                 media = ""
                 content_lines = []
-                notes_lines = []
-
                 first_line = content_block.split('\n')[0].strip()
                 if first_line.startswith('\\'):
                     media = first_line
@@ -4610,7 +4922,8 @@ Created by {self.__author__}
                 else:
                     content_lines = content_block.split('\n')
 
-                # Process notes block if present
+                # Process notes
+                notes_lines = []
                 if notes_block:
                     notes_lines = [line.strip() for line in notes_block.split('\n') if line.strip()]
 
@@ -4624,6 +4937,12 @@ Created by {self.__author__}
             if self.slides:
                 self.current_slide_index = 0
                 self.load_slide(0)
+
+                # Display notes if present
+                if self.slides[0].get('notes'):
+                    self.notes_editor.delete('1.0', 'end')
+                    for note in self.slides[0]['notes']:
+                        self.notes_editor.insert('end', f"{note}\n")
 
             self.update_slide_list()
 
@@ -7494,50 +7813,142 @@ except Exception as e:
                 print(f"✗ Error creating macOS launcher: {str(e)}")
             return False
 
+ #------------------------------------------------------------------------------------
     def copy_resources(self, source_dir):
-            """Copy required resources to installation directories"""
-            try:
-                # Define required files to copy
-                required_files = {
-                    'BSG_IDE.py': ['base', 'python_site'],
-                    'BeamerSlideGenerator.py': ['base', 'python_site'],
-                    'requirements.txt': ['base'],
-                    'airis4d_logo.png': ['resources'],
-                    'bsg-ide.png': ['resources']
-                }
+        """Copy required resources to installation directories"""
+        try:
+            # Define required files and their destinations
+            required_files = {
+                'BSG_IDE.py': ['base', 'python_site'],
+                'BeamerSlideGenerator.py': ['base', 'python_site'],
+                'requirements.txt': ['base'],
+                'airis4d_logo.png': ['base', 'resources', 'share'],  # Added multiple destinations
+                'bsg-ide.png': ['base', 'resources', 'share']
+            }
 
-                # Copy each required file
-                for filename, destinations in required_files.items():
-                    source_file = source_dir / filename
-                    if source_file.exists():
-                        for dest_type in destinations:
-                            if dest_type in self.install_paths:
-                                dest_path = self.install_paths[dest_type] / filename
-                                try:
-                                    shutil.copy2(source_file, dest_path)
-                                    if self.dialog:
-                                        self.dialog.write(f"✓ Copied {filename} to {dest_path}", "green")
-                                    else:
-                                        print(f"✓ Copied {filename} to {dest_path}")
-                                except Exception as e:
-                                    if self.dialog:
-                                        self.dialog.write(f"! Warning: Could not copy {filename}: {e}", "yellow")
-                                    else:
-                                        print(f"! Warning: Could not copy {filename}: {e}")
-                    else:
-                        if self.dialog:
-                            self.dialog.write(f"! Warning: Source file {filename} not found", "yellow")
-                        else:
-                            print(f"! Warning: Source file {filename} not found")
+            # Copy each required file
+            for filename, destinations in required_files.items():
+                source_file = source_dir / filename
+                if source_file.exists():
+                    for dest_type in destinations:
+                        if dest_type in self.install_paths:
+                            # Create destination directory if needed
+                            dest_dir = self.install_paths[dest_type]
+                            dest_dir.mkdir(parents=True, exist_ok=True)
 
-                return True
+                            # For resources, ensure resources subdirectory exists
+                            if dest_type == 'base':
+                                resources_dir = dest_dir / 'resources'
+                                resources_dir.mkdir(parents=True, exist_ok=True)
+                                dest_path = resources_dir / filename
+                            else:
+                                dest_path = dest_dir / filename
 
-            except Exception as e:
-                if self.dialog:
-                    self.dialog.write(f"✗ Error copying resources: {str(e)}", "red")
+                            try:
+                                shutil.copy2(source_file, dest_path)
+                                if self.dialog:
+                                    self.dialog.write(f"✓ Copied {filename} to {dest_path}", "green")
+                                else:
+                                    print(f"✓ Copied {filename} to {dest_path}")
+                            except Exception as e:
+                                if self.dialog:
+                                    self.dialog.write(f"! Warning: Could not copy {filename} to {dest_path}: {e}", "yellow")
+                                else:
+                                    print(f"! Warning: Could not copy {filename} to {dest_path}: {e}")
                 else:
-                    print(f"✗ Error copying resources: {str(e)}")
-                return False
+                    if self.dialog:
+                        self.dialog.write(f"! Warning: Source file {filename} not found in {source_dir}", "yellow")
+                    else:
+                        print(f"! Warning: Source file {filename} not found in {source_dir}")
+
+            # Create additional resource directories if needed
+            for path_type in ['resources', 'share']:
+                if path_type in self.install_paths:
+                    resource_dir = self.install_paths[path_type] / 'resources'
+                    resource_dir.mkdir(parents=True, exist_ok=True)
+                    if self.dialog:
+                        self.dialog.write(f"✓ Created resource directory: {resource_dir}", "green")
+
+            return True
+
+        except Exception as e:
+            if self.dialog:
+                self.dialog.write(f"✗ Error copying resources: {str(e)}", "red")
+            else:
+                print(f"✗ Error copying resources: {str(e)}")
+            return False
+
+
+    def _get_install_paths(self):
+        """Get installation paths based on platform and permissions"""
+        paths = {}
+
+        # Get user's home directory
+        home_dir = Path.home()
+
+        if self.is_admin:
+            # System-wide installation paths
+            if self.system == "Linux":
+                paths.update({
+                    'base': Path('/usr/local/lib/bsg-ide'),
+                    'bin': Path('/usr/local/bin'),
+                    'share': Path('/usr/local/share/bsg-ide'),
+                    'resources': Path('/usr/local/share/bsg-ide/resources'),
+                    'applications': Path('/usr/share/applications'),
+                    'icons': Path('/usr/share/icons/hicolor'),
+                    'python_site': Path(site.getsitepackages()[0]) / 'bsg_ide'
+                })
+            elif self.system == "Windows":
+                program_files = Path(os.environ.get('PROGRAMFILES', 'C:\\Program Files'))
+                paths.update({
+                    'base': program_files / 'BSG-IDE',
+                    'bin': program_files / 'BSG-IDE' / 'bin',
+                    'share': program_files / 'BSG-IDE' / 'share',
+                    'resources': program_files / 'BSG-IDE' / 'resources',
+                    'start_menu': Path(os.environ['PROGRAMDATA']) / 'Microsoft/Windows/Start Menu/Programs',
+                    'python_site': Path(site.getsitepackages()[0]) / 'bsg_ide'
+                })
+            else:  # macOS
+                paths.update({
+                    'base': Path('/Applications/BSG-IDE.app/Contents'),
+                    'share': Path('/Applications/BSG-IDE.app/Contents/Resources'),
+                    'resources': Path('/Applications/BSG-IDE.app/Contents/Resources'),
+                    'bin': Path('/usr/local/bin'),
+                    'python_site': Path(site.getsitepackages()[0]) / 'bsg_ide'
+                })
+        else:
+            # User-specific installation paths
+            if self.system == "Linux":
+                paths.update({
+                    'base': home_dir / '.local/lib/bsg-ide',
+                    'bin': home_dir / '.local/bin',
+                    'share': home_dir / '.local/share/bsg-ide',
+                    'resources': home_dir / '.local/share/bsg-ide/resources',
+                    'applications': home_dir / '.local/share/applications',
+                    'icons': home_dir / '.local/share/icons/hicolor',
+                    'python_site': Path(site.getusersitepackages()) / 'bsg_ide'
+                })
+            elif self.system == "Windows":
+                appdata = Path(os.environ['APPDATA'])
+                paths.update({
+                    'base': appdata / 'BSG-IDE',
+                    'bin': appdata / 'BSG-IDE' / 'bin',
+                    'share': appdata / 'BSG-IDE' / 'share',
+                    'resources': appdata / 'BSG-IDE' / 'resources',
+                    'start_menu': appdata / 'Microsoft/Windows/Start Menu/Programs',
+                    'python_site': Path(site.getusersitepackages()) / 'bsg_ide'
+                })
+            else:  # macOS
+                paths.update({
+                    'base': home_dir / 'Applications/BSG-IDE.app/Contents',
+                    'share': home_dir / 'Library/Application Support/BSG-IDE',
+                    'resources': home_dir / 'Library/Application Support/BSG-IDE/resources',
+                    'bin': home_dir / '.local/bin',
+                    'python_site': Path(site.getusersitepackages()) / 'bsg_ide'
+                })
+
+        return paths
+ #-----------------------------------------------------------------------------------
 
     def create_directory_structure(self):
         """Create all required directories for installation"""
@@ -7598,7 +8009,7 @@ except Exception as e:
                 print(f"✗ Error creating directory structure: {str(e)}")
             return False
 
-    def _get_install_paths(self):
+    def _get_install_paths_old(self):
         """Get installation paths based on platform and permissions"""
         paths = {}
 
@@ -7705,13 +8116,98 @@ except Exception as e:
                 self.dialog.write(f"! Warning: {filename} not found", "yellow")
 
     def _setup_os_integration(self):
-        """Setup OS-specific integration features"""
-        if self.system == "Linux":
-            self._setup_linux()
-        elif self.system == "Darwin":
-            self._setup_macos()
-        else:
-            self._setup_windows()
+        """Setup OS-specific integration with proper icon handling"""
+        try:
+            # First ensure icons directory exists
+            icons_dir = self.install_paths['resources'] / 'icons'
+            icons_dir.mkdir(parents=True, exist_ok=True)
+
+            # Copy icons from package
+            source_icons = {
+                'airis4d_logo.png': (50, 50),
+                'bsg-ide.png': (256, 256)  # Main application icon
+            }
+
+            for icon_name, size in source_icons.items():
+                # Try multiple source locations
+                source_paths = [
+                    Path(__file__).parent / 'icons' / icon_name,
+                    Path(__file__).parent / icon_name,
+                    self.install_paths['base'] / 'icons' / icon_name
+                ]
+
+                icon_found = False
+                for src in source_paths:
+                    if src.exists():
+                        # Copy to resources directory
+                        dest = icons_dir / icon_name
+                        shutil.copy2(src, dest)
+
+                        # For the main application icon, create OS-specific entries
+                        if icon_name == 'bsg-ide.png':
+                            if self.system == "Linux":
+                                self._setup_linux_icons(src)
+                            elif self.system == "Windows":
+                                self._setup_windows_icons(src)
+                            elif self.system == "Darwin":
+                                self._setup_macos_icons(src)
+
+                        icon_found = True
+                        break
+
+                if not icon_found:
+                    self.dialog.write(f"! Warning: Could not find icon {icon_name}", "yellow")
+
+        except Exception as e:
+            self.dialog.write(f"! Warning: Error setting up icons: {str(e)}", "yellow")
+
+    def _setup_linux_icons(self, icon_src):
+        """Setup Linux icon themes"""
+        sizes = [16, 32, 48, 64, 128, 256]
+
+        for size in sizes:
+            icon_dir = self.install_paths['icons'] / f"{size}x{size}" / 'apps'
+            icon_dir.mkdir(parents=True, exist_ok=True)
+
+            # Resize and save icon
+            with Image.open(icon_src) as img:
+                resized = img.resize((size, size), Image.Resampling.LANCZOS)
+                resized.save(icon_dir / 'bsg-ide.png')
+
+    def _setup_windows_icons(self, icon_src):
+        """Setup Windows icons"""
+        import win32api
+        import win32con
+
+        # Create .ico file
+        ico_path = self.install_paths['resources'] / 'bsg-ide.ico'
+        img = Image.open(icon_src)
+        img.save(ico_path, format='ICO', sizes=[(16,16), (32,32), (48,48), (256,256)])
+
+        # Associate icon with file types
+        file_types = ['.bsg', '.tex']
+        for ext in file_types:
+            win32api.RegSetValue(
+                win32con.HKEY_CLASSES_ROOT,
+                f"BSG-IDE{ext}\\DefaultIcon",
+                win32con.REG_SZ,
+                str(ico_path)
+            )
+
+    def _setup_macos_icons(self, icon_src):
+        """Setup macOS icons"""
+        # Create .icns file for macOS
+        icns_path = self.install_paths['resources'] / 'bsg-ide.icns'
+
+        with Image.open(icon_src) as img:
+            # macOS icon sizes
+            sizes = [16, 32, 128, 256, 512]
+            icons = []
+            for size in sizes:
+                icons.append(img.resize((size, size), Image.Resampling.LANCZOS))
+
+            # Save as icns
+            icons[0].save(icns_path, format='ICNS', append_images=icons[1:])
 
     def _install_dependencies(self):
         """Install Python package dependencies"""
@@ -7795,4 +8291,3 @@ def main():
 if __name__ == "__main__":
     main()
 #---------------------------------------------------------------------------------------
-

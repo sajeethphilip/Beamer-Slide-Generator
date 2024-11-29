@@ -102,10 +102,8 @@ def generate_preview_frame(filepath, output_path=None):
         return None
 
 def get_beamer_preamble(title, subtitle, author, institution, short_institute, date):
-    """
-    Returns Beamer preamble with proper package dependency handling and contained frame titles
-    """
-    # Core part of preamble (static)
+    """Returns complete Beamer preamble including notes support"""
+
     core_preamble = r"""
 \documentclass[aspectratio=169]{beamer}
 
@@ -131,47 +129,47 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 
 % Original text effects
 \newcommand{\shadowtext}[2][2pt]{%
-    \begin{tikzpicture}[baseline]
-        \node[blur shadow={shadow blur steps=5,shadow xshift=0pt,shadow yshift=-#1,
-              shadow opacity=0.75}, text=white] {#2};
-    \end{tikzpicture}%
+   \begin{tikzpicture}[baseline]
+       \node[blur shadow={shadow blur steps=5,shadow xshift=0pt,shadow yshift=-#1,
+             shadow opacity=0.75}, text=white] {#2};
+   \end{tikzpicture}%
 }
 
 \newcommand{\glowtext}[2][myblue]{%
-    \begin{tikzpicture}[baseline]
-        \node[circle, inner sep=1pt,
-              blur shadow={shadow blur steps=10,shadow xshift=0pt,
-              shadow yshift=0pt,shadow blur radius=5pt,
-              shadow opacity=0.5,shadow color=#1},
-              text=white] {#2};
-    \end{tikzpicture}%
+   \begin{tikzpicture}[baseline]
+       \node[circle, inner sep=1pt,
+             blur shadow={shadow blur steps=10,shadow xshift=0pt,
+             shadow yshift=0pt,shadow blur radius=5pt,
+             shadow opacity=0.5,shadow color=#1},
+             text=white] {#2};
+   \end{tikzpicture}%
 }
 
 % Conditional definitions based on package availability
 \IfFileExists{tcolorbox.sty}{
-    \newtcolorbox{alertbox}[1][red]{
-        colback=#1!5!white,
-        colframe=#1!75!black,
-        fonttitle=\bfseries,
-        boxrule=0.5pt,
-        rounded corners,
-        shadow={2mm}{-1mm}{0mm}{black!50}
-    }
+   \newtcolorbox{alertbox}[1][red]{
+       colback=#1!5!white,
+       colframe=#1!75!black,
+       fonttitle=\bfseries,
+       boxrule=0.5pt,
+       rounded corners,
+       shadow={2mm}{-1mm}{0mm}{black!50}
+   }
 
-    \newtcolorbox{infobox}[1][blue]{
-        enhanced,
-        colback=#1!5!white,
-        colframe=#1!75!black,
-        arc=4mm,
-        boxrule=0.5pt,
-        fonttitle=\bfseries,
-        attach boxed title to top center={yshift=-3mm,yshifttext=-1mm},
-        boxed title style={size=small,colback=#1!75!black},
-        shadow={2mm}{-1mm}{0mm}{black!50}
-    }
+   \newtcolorbox{infobox}[1][blue]{
+       enhanced,
+       colback=#1!5!white,
+       colframe=#1!75!black,
+       arc=4mm,
+       boxrule=0.5pt,
+       fonttitle=\bfseries,
+       attach boxed title to top center={yshift=-3mm,yshifttext=-1mm},
+       boxed title style={size=small,colback=#1!75!black},
+       shadow={2mm}{-1mm}{0mm}{black!50}
+   }
 }{}
 
-% Base colors
+% Define colors
 \definecolor{myred}{RGB}{255,50,50}
 \definecolor{myblue}{RGB}{0,130,255}
 \definecolor{mygreen}{RGB}{0,200,100}
@@ -210,9 +208,14 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 \setbeamercolor{example text}{fg=mygreen}
 \setbeamercolor{background canvas}{bg=black}
 \setbeamercolor{frametitle}{fg=white,bg=black}
+
+% Notes support
+\usepackage{pgfpages}
+\setbeameroption{show notes on second screen=right}
+\setbeamertemplate{note page}{\pagecolor{yellow!5}\insertnote}
 """
 
-    # Progress bar and frame title setup (static)
+   # Progress bar template
     frame_setup = r"""
 % Progress bar setup
 \makeatletter
@@ -227,165 +230,148 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 \progressbar@pbht=1pt
 
 \def\progressbar@progressbar{%
-    \begin{tikzpicture}[very thin]
-        \shade[top color=myblue!50,bottom color=myblue]
-            (0pt, 0pt) rectangle (\insertframenumber\progressbar@pbwd/\inserttotalframenumber, \progressbar@pbht);
-    \end{tikzpicture}%
+   \begin{tikzpicture}[very thin]
+       \shade[top color=myblue!50,bottom color=myblue]
+           (0pt, 0pt) rectangle (\insertframenumber\progressbar@pbwd/\inserttotalframenumber, \progressbar@pbht);
+   \end{tikzpicture}%
 }
 
-% Modified frame title template with increased height and better spacing
+% Modified frame title template
 \setbeamertemplate{frametitle}{
-    \nointerlineskip
-    \vskip1ex
-    \begin{beamercolorbox}[wd=\paperwidth,ht=4ex,dp=2ex]{frametitle}
-        \begin{minipage}[t]{\dimexpr\paperwidth-4em}
-            \centering
-            \vspace{2pt}
-            \insertframetitle
-            \vspace{2pt}
-        \end{minipage}
-    \end{beamercolorbox}
-    \vskip.5ex
-    \progressbar@progressbar
+   \nointerlineskip
+   \vskip1ex
+   \begin{beamercolorbox}[wd=\paperwidth,ht=4ex,dp=2ex]{frametitle}
+       \begin{minipage}[t]{\dimexpr\paperwidth-4em}
+           \centering
+           \vspace{2pt}
+           \insertframetitle
+           \vspace{2pt}
+       \end{minipage}
+   \end{beamercolorbox}
+   \vskip.5ex
+   \progressbar@progressbar
 }
-\makeatother
-"""
+\makeatother"""
 
-    # Institution setup (variable part)
-    inst_setup = "\\makeatletter\n\\def\\insertshortinstitute{{{0}}}\n\\makeatother\n".format(
-        short_institute if short_institute else institution
-    )
+   # Institution setup
+    inst_setup = rf"\makeatletter{chr(10)}\def\insertshortinstitute{{{short_institute if short_institute else institution}}}{chr(10)}\makeatother"
 
-    # Footline template (static)
+   # Footline template
     footline_template = r"""
 % Footline template
 \setbeamertemplate{footline}{%
-  \leavevmode%
-  \hbox{%
-    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
-      \usebeamerfont{author in head/foot}\insertshortauthor~(\insertshortinstitute)%
-    \end{beamercolorbox}%
-    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{title in head/foot}%
-      \usebeamerfont{title in head/foot}\insertshorttitle%
-    \end{beamercolorbox}%
-    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,right]{date in head/foot}%
-      \usebeamerfont{date in head/foot}\insertshortdate{}\hspace*{2em}%
-      \insertframenumber{} / \inserttotalframenumber\hspace*{2ex}%
-    \end{beamercolorbox}}%
-  \vskip0pt%
-}
-"""
+ \leavevmode%
+ \hbox{%
+   \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
+     \usebeamerfont{author in head/foot}\insertshortauthor~(\insertshortinstitute)%
+   \end{beamercolorbox}%
+   \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{title in head/foot}%
+     \usebeamerfont{title in head/foot}\insertshorttitle%
+   \end{beamercolorbox}%
+   \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,right]{date in head/foot}%
+     \usebeamerfont{date in head/foot}\insertshortdate{}\hspace*{2em}%
+     \insertframenumber{} / \inserttotalframenumber\hspace*{2ex}%
+   \end{beamercolorbox}}%
+ \vskip0pt%
+}"""
 
-    # Additional settings (static)
+   # Additional settings
     additional_settings = r"""
 % Additional settings
 \setbeamersize{text margin left=5pt,text margin right=5pt}
 \setbeamertemplate{navigation symbols}{}
-\setbeamertemplate{blocks}[rounded][shadow=true]
-"""
+\setbeamertemplate{blocks}[rounded][shadow=true]"""
 
-    # Title setup (variable part)
     title_setup = (
-        "\n% Title setup\n"
-        "\\title{{{0}}}\n"
-        "{1}"
-        "\\author{{{2}}}\n"
-        "\\institute{{\\textcolor{{mygreen}}{{{3}}}}}\n"
-        "\\date{{{4}}}\n"
-        "\n\\begin{{document}}\n"
-    ).format(
-        title,
-        "\\subtitle{{{0}}}\n".format(subtitle) if subtitle else '',
-        author,
-        institution,
-        date
+       "% Title setup\n"
+       "\\title{" + title + "}\n"
+       + ("\\subtitle{" + subtitle + "}\n" if subtitle else "") +
+       "\\author{" + author + "}\n"
+       "\\institute{\\textcolor{mygreen}{" + institution + "}}\n"
+       "\\date{" + date + "}\n"
+       "\\begin{document}\n"
+       "\\maketitle\n"
     )
 
-    # Title page template (variable part)
+    # Title page template
     title_page = (
-        "\n% Title page\n"
-        "\\begin{{frame}}[plain]\n"
-        "    \\begin{{tikzpicture}}[overlay,remember picture]\n"
-        "        % Background gradient\n"
-        "        \\fill[top color=black!90,bottom color=black!70,middle color=myblue!30]\n"
-        "        (current page.south west) rectangle (current page.north east);\n\n"
-        "        % Title with glow effect\n"
-        "        \\node[align=center] at (current page.center) {{\n"
-        "            \\glowtext[glowblue]{{\\Huge\\textbf{{{0}}}}}          \n"
-        "            {1}"
-        "            \\\\[2em]\n"
-        "            \\glowtext[glowgreen]{{\\large {2}}}\n"
-        "            \\\\[0.5em]\n"
-        "            \\textcolor{{white}}{{\\small {3}}}\n"
-        "            \\\\[1em]\n"
-        "            \\textcolor{{white}}{{\\small {4}}}\n"
-        "        }};\n"
-        "    \\end{{tikzpicture}}\n"
-        "\\end{{frame}}"
-    ).format(
-        title,
-        "\\\\[1em]\\glowtext[glowyellow]{\\large " + subtitle + "}\n" if subtitle else '',
-        author,
-        institution,
-        date
+       "% Title page\n"
+       "\\begin{frame}[plain]\n"
+       "   \\begin{tikzpicture}[overlay,remember picture]\n"
+       "       % Background gradient\n"
+       "       \\fill[top color=black!90,bottom color=black!70,middle color=myblue!30]\n"
+       "       (current page.south west) rectangle (current page.north east);\n"
+       "       % Title with glow effect\n"
+       "       \\node[align=center] at (current page.center) {\n"
+       "           \\glowtext[glowblue]{\\Huge\\textbf{" + title + "}}\n"
+       + ("           \\\\[1em]\\glowtext[glowyellow]{\\large " + subtitle + "}\n" if subtitle else "") +
+       "           \\\\[2em]\n"
+       "           \\glowtext[glowgreen]{\\large " + author + "}\n"
+       "           \\\\[0.5em]\n"
+       "           \\textcolor{white}{\\small " + institution + "}\n"
+       "           \\\\[1em]\n"
+       "           \\textcolor{white}{\\small " + date + "}\n"
+       "       };\n"
+       "   \\end{tikzpicture}\n"
+       "\\end{frame}"
     )
 
-    # Combine all parts
+   # Combine all parts
     return "\n".join([
-        core_preamble,
-        frame_setup,
-        inst_setup,
-        footline_template,
-        additional_settings,
-        title_setup,
-        title_page
-    ])
+       core_preamble,
+       frame_setup,
+       inst_setup,
+       footline_template,
+       additional_settings,
+       title_setup,
+       title_page
+   ])
 
 def get_footline_template():
-    """Returns the correct footline template for Beamer"""
-    return (
-        r"% Setup footline template with proper short institute handling" "\n"
-        r"\makeatletter" "\n"
-        r"\defbeamertemplate*{footline}{custom}" "\n"
-        r"{" "\n"
-        r"  \leavevmode%" "\n"
-        r"  \hbox{%" "\n"
-        r"    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%" "\n"
-        r"      \usebeamerfont{author in head/foot}\insertshortauthor~(\usebeamercolor[fg]{author in head/foot}\insertshortinstitute)" "\n"
-        r"    \end{beamercolorbox}%" "\n"
-        r"    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{title in head/foot}%" "\n"
-        r"      \usebeamerfont{title in head/foot}\insertshorttitle" "\n"
-        r"    \end{beamercolorbox}%" "\n"
-        r"    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,right]{date in head/foot}%" "\n"
-        r"      \usebeamerfont{date in head/foot}\insertshortdate{\,}\hspace*{2em}" "\n"
-        r"      \insertframenumber{} / \inserttotalframenumber\hspace*{2ex}" "\n"
-        r"    \end{beamercolorbox}}%" "\n"
-        r"  \vskip0pt%" "\n"
-        r"}" "\n"
-        r"\setbeamertemplate{footline}[custom]" "\n"
-        r"\makeatother"
-    )
-
+    """
+    Returns the correct footline template for Beamer.
+    """
+    return """% Setup footline template with proper short institute handling
+\\makeatletter
+\\defbeamertemplate*{footline}{custom}
+{
+  \\leavevmode%
+  \\hbox{%
+    \\begin{beamercolorbox}[wd=.333333\\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
+      \\usebeamerfont{author in head/foot}\\insertshortauthor~(\\usebeamercolor[fg]{author in head/foot}\\insertshortinstitute)
+    \\end{beamercolorbox}%
+    \\begin{beamercolorbox}[wd=.333333\\paperwidth,ht=2.25ex,dp=1ex,center]{title in head/foot}%
+      \\usebeamerfont{title in head/foot}\\insertshorttitle
+    \\end{beamercolorbox}%
+    \\begin{beamercolorbox}[wd=.333333\\paperwidth,ht=2.25ex,dp=1ex,right]{date in head/foot}%
+      \\usebeamerfont{date in head/foot}\\insertshortdate{\\,}\\hspace*{2em}
+      \\insertframenumber{} / \\inserttotalframenumber\\hspace*{2ex}
+    \\end{beamercolorbox}}%
+  \\vskip0pt%
+}
+\\setbeamertemplate{footline}[custom]
+\\makeatother
+"""
 def format_url_footnote(url):
-    """Format URL footnotes with proper hyperlinks"""
+    """
+    Format URL footnotes with proper hyperlinks.
+    Now used for footnotes instead of tikzpicture sources.
+    """
     try:
         parsed = urlparse(url)
-        base_url = "{0}://{1}".format(parsed.scheme, parsed.netloc)
-
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
         if 'youtube.com' in parsed.netloc or 'youtu.be' in parsed.netloc:
-            return "\\footnote{{YouTube video: \\href{{{0}}}{{\\textcolor{{blue}}{{[Watch Video]}}}} }}".format(url)
+            return f"\\footnote{{YouTube video: \\href{{{url}}}{{\\textcolor{{blue}}{{[Watch Video]}}}} }}"
         elif 'github.com' in parsed.netloc:
-            return "\\footnote{{GitHub: \\href{{{0}}}{{\\textcolor{{blue}}{{[View Repository]}}}} }}".format(url)
+            return f"\\footnote{{GitHub: \\href{{{url}}}{{\\textcolor{{blue}}{{[View Repository]}}}} }}"
         else:
-            if len(url) > 50:
+            if len(url) > 50:  # Threshold for abbreviation
                 display_url = base_url + '/...' + parsed.path[-20:] if len(parsed.path) > 20 else base_url
-                return "\\footnote{{Source: {0} \\href{{{1}}}{{\\textcolor{{blue}}{{[link]}}}} }}".format(
-                    display_url, url
-                )
+                return f"\\footnote{{Source: {display_url} \\href{{{url}}}{{\\textcolor{{blue}}{{[link]}}}} }}"
             else:
-                return "\\footnote{{Source: \\href{{{0}}}{{\\textcolor{{blue}}{{{0}}}}} }}".format(url)
+                return f"\\footnote{{Source: \\href{{{url}}}{{\\textcolor{{blue}}{{{url}}}}} }}"
     except:
-        return "\\footnote{{Source: {0}}}".format(url)
+        return f"\\footnote{{Source: {url}}}"
 
 def create_new_input_file(file_path):
     """
@@ -912,7 +898,6 @@ class MediaConverter:
         except Exception as e:
             print(f"Error converting document: {str(e)}")
             return False
-
 def convert_media(url_or_path: str, output_folder: str = 'media_files') -> tuple:
     """
     High-level function to convert media from URL or local file.
@@ -2111,6 +2096,128 @@ def parse_media_directive(directive_string):
         print(f"Error parsing media directive: {str(e)}")
         return 'none', None, False, directive_string
 
+def generate_special_commands():
+    """Generate special effect commands for LaTeX"""
+    return r"""
+% Special effect commands
+\newcommand{\spotlight}[1]{%
+    \begin{tikzpicture}[baseline]
+        \node[circle, inner sep=1pt,
+              blur shadow={shadow blur steps=15, shadow xshift=0pt,
+              shadow yshift=0pt, shadow blur radius=7pt,
+              shadow opacity=0.3, shadow color=yellow},
+              text=white] {#1};
+    \end{tikzpicture}%
+}
+
+% Box definitions
+\newtcolorbox{alertbox}[1][red]{
+    enhanced,
+    colback=#1!5!white,
+    colframe=#1!75!black,
+    fonttitle=\bfseries,
+    boxrule=0.5pt,
+    rounded corners,
+    drop shadow
+}
+
+\newtcolorbox{infobox}[1][blue]{
+    enhanced,
+    colback=#1!5!white,
+    colframe=#1!75!black,
+    arc=4mm,
+    boxrule=0.5pt,
+    fonttitle=\bfseries,
+    drop shadow
+}
+"""
+def process_content_with_notes(content, notes, frame_title=None):
+    """Process content and notes together"""
+    latex_code = []
+
+    if frame_title:
+        latex_code.append(f"\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}")
+    else:
+        latex_code.append("\\begin{frame}")
+
+    if content:
+        latex_code.append("    \\begin{itemize}")
+        for item in content:
+            if not item.strip().startswith('\\'):
+                latex_code.append(f"        \\item {item}")
+            else:
+                latex_code.append(f"        {item}")
+        latex_code.append("    \\end{itemize}")
+
+    # Add notes after content but before frame end
+    if notes:
+        for note in notes:
+            if note.strip():  # Only add non-empty notes
+                latex_code.append(f"    \\note{{{note.strip()}}}")
+
+    latex_code.append("\\end{frame}")
+    return "\n".join(latex_code)
+
+def process_box_environment(content):
+    """Process box environments correctly"""
+    if not content:
+        return ""
+
+    result = []
+    in_box = False
+    current_box = []
+
+    for line in content:
+        line = line.strip()
+        if line.startswith('\\begin{alertbox}') or line.startswith('\\begin{infobox}'):
+            in_box = True
+            current_box = [line]
+        elif line.startswith('\\end{alertbox}') or line.startswith('\\end{infobox}'):
+            in_box = False
+            if current_box:
+                current_box.append(line)
+                result.append('\n'.join(current_box))
+            current_box = []
+        elif in_box:
+            if line.startswith('-'):
+                current_box.append(line[1:].strip())
+            else:
+                current_box.append(line)
+        else:
+            result.append(line)
+
+    return result
+def update_generate_latex_code(media_info, content, title, notes=None):
+    """Updated LaTeX code generation with proper note handling"""
+    latex_code = []
+
+    # Start frame
+    if title:
+        latex_code.append(f"\\begin{{frame}}{{\\Large\\textbf{{{title}}}}}")
+    else:
+        latex_code.append("\\begin{frame}")
+
+    # Add content
+    if content:
+        processed_content = process_box_environment(content)
+        latex_code.append("    \\begin{itemize}")
+        for item in processed_content:
+            if not item.strip().startswith('\\'):
+                latex_code.append(f"        \\item {item}")
+            else:
+                latex_code.append(f"        {item}")
+        latex_code.append("    \\end{itemize}")
+
+    # Add notes
+    if notes:
+        for note in notes:
+            if note.strip():
+                latex_code.append(f"    \\note{{{note.strip()}}}")
+
+    # Close frame
+    latex_code.append("\\end{frame}")
+
+    return "\n".join(latex_code)
 
 def process_input_file(file_path, output_filename='movie.tex', ide_callback=None):
     """Process input file to convert to TeX format with proper slide navigation"""
@@ -2118,7 +2225,7 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
     errors = []
     processed = 0
     failed = 0
-
+    stored_notes=[]
     try:
         with open(file_path, 'r') as f:
             lines = f.readlines()
@@ -2130,21 +2237,28 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
         with open(output_filename, 'w') as f:
             if has_preamble:
                 f.writelines(preamble_lines)
+                # Add special commands if not already in preamble
+                if '\\newcommand{\\spotlight}' not in ''.join(preamble_lines):
+                    f.write(generate_special_commands())
                 if not has_maketitle:
                     f.write("\\maketitle\n")
                 if not has_titlepage:
                     f.write("\\begin{frame}\n\\titlepage\n\\end{frame}\n\n")
             else:
-                f.write("\\documentclass[12pt]{beamer}\n\\usepackage{graphicx}\n\\usepackage{multimedia}\n\n\\begin{document}\n\n")
+                f.write("\\documentclass[12pt]{beamer}\n")
+                f.write("\\usepackage{graphicx}\n\\usepackage{multimedia}\n")
+                f.write("\\usepackage{tcolorbox}\n")
+                f.write(generate_special_commands())
+                f.write("\\begin{document}\n\n")
 
         i = 0
         title = None
         content = []
         current_url = None
         current_notes = []
-        latex_code = ""
-        current_slide_index = 0
         in_content_block = False
+        in_notes_block = False
+        current_slide_index = 0
 
         # Store initial states
         original_media = None
@@ -2154,25 +2268,18 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
         while i < len(content_lines):
             line = content_lines[i].strip()
 
-            # Important: Process current slide before ending
+            # Process document end
             if line.startswith('\\end{document}'):
-                # If we're in a content block, process the last slide
                 if in_content_block:
                     if ide_callback:
-                        # Update IDE with current slide state
                         ide_callback("show_current_slide", {
                             'index': current_slide_index,
                             'title': title,
                             'media': current_url if current_url else "\\None",
-                            'content': content
-                        })
-                        # Force media update
-                        ide_callback("update_media", {
-                            'index': current_slide_index,
-                            'media': current_url if current_url else "\\None"
+                            'content': content,
+                            'notes': current_notes
                         })
 
-                    # Process the last slide
                     latex_code, new_directive = process_media(
                         current_url if current_url else "\\None",
                         content.copy() if content else None,
@@ -2183,48 +2290,87 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                     )
 
                     if latex_code:
+                        # Insert notes before frame end
+                        frame_end = latex_code.rfind('\\end{frame}')
+                        if frame_end != -1:
+                            notes_text = ""
+                            if current_notes:
+                                for note in current_notes:
+                                    if note.strip():
+                                        notes_text += f"    \\note{{{note.strip()}}}\n"
+                            latex_code = latex_code[:frame_end] + notes_text + latex_code[frame_end:]
+
                         with open(output_filename, 'a') as f:
                             f.write(latex_code)
                         processed += 1
 
-                # Write document end
                 with open(output_filename, 'a') as f:
                     f.write("\\end{document}\n")
                 break
+
             if not line:
                 i += 1
                 continue
-
             if line.startswith("\\title"):
-                # Save original title for IDE update
+                # Process previous slide if it exists
+                if in_content_block:
+                    latex_code, new_directive = process_media(
+                        current_url if current_url else "\\None",
+                        content.copy() if content else None,
+                        title,
+                        False,
+                        slide_index=current_slide_index,
+                        callback=ide_callback
+                    )
+
+                    if latex_code:
+                        # Insert notes before frame end
+                        frame_end = latex_code.rfind('\\end{frame}')
+                        if frame_end != -1:
+                            notes_text = ""
+                            if current_notes:
+                                for note in current_notes:
+                                    if note.strip():
+                                        notes_text += f"    \\note{{{note.strip()}}}\n"
+                            latex_code = latex_code[:frame_end] + notes_text + latex_code[frame_end:]
+
+                        with open(output_filename, 'a') as f:
+                            f.write(latex_code)
+                        processed += 1
+
+                        if new_directive and current_url and new_directive != current_url:
+                            if isinstance(new_directive, tuple):
+                                url_updates[current_url] = new_directive
+                            else:
+                                url_updates[current_url] = (new_directive, new_directive)
+
+                # Start new slide
                 original_title = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else "Slide"
                 title = original_title
                 content = []
                 current_url = None
                 current_notes = []
                 in_content_block = False
+                in_notes_block = False
 
-                # Update IDE with title using callback
                 if ide_callback:
                     ide_callback("update_current_slide", {
                         'index': current_slide_index,
                         'title': title
                     })
-                    # Also focus the slide in IDE's slide list
                     ide_callback("navigate_to_slide", {
                         'index': current_slide_index,
                         'focus': True
                     })
-                i += 1
-                continue
 
-            if line.startswith("\\begin{Content}"):
+            elif line.startswith("\\begin{Content}"):
                 content = []
-                current_notes = []
+                if not in_notes_block:  # Only clear notes if not in notes block
+                    current_notes = []
                 in_content_block = True
                 if len(line) > len("\\begin{Content}"):
                     current_url = line[len("\\begin{Content}"):].strip()
-                    original_media = current_url  # Store original media URL
+                    original_media = current_url
                 else:
                     i += 1
                     if i < len(content_lines):
@@ -2234,23 +2380,26 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                         current_url = None
                         original_media = None
 
-                # Update IDE with media using callback
                 if ide_callback:
                     ide_callback("update_media", {
                         'index': current_slide_index,
                         'media': original_media if original_media != "\\None" else None
                     })
-                i += 1
-                continue
 
-            if line.startswith("\\end{Content}"):
-                original_content = content.copy()  # Store original content
+            elif line.startswith("\\begin{Notes}"):
+                in_notes_block = True
+                print("In Notes Block")
+            elif line.startswith("\\end{Notes}"):
+                in_notes_block = False
+                print("Exiting Notes Block")
+            elif line.startswith("\\end{Content}"):
+                original_content = content.copy()
 
-                # Update IDE with content using callback
                 if ide_callback:
                     ide_callback("update_content", {
                         'index': current_slide_index,
-                        'content': content
+                        'content': content,
+                        'notes': current_notes
                     })
 
                 latex_code, new_directive = process_media(
@@ -2263,17 +2412,14 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                 )
 
                 if latex_code:
-                    # Process frame and notes
                     frame_end = latex_code.rfind('\\end{frame}')
-                    if frame_end != -1:
-                        latex_code = latex_code[:frame_end]
-
-                    if current_notes:
-                        latex_code += "\n    % Presentation notes\n"
-                        for note in current_notes:
-                            latex_code += "    \\note{{{0}}}\n".format(note)
-
-                    latex_code += "\\end{frame}\n\n"
+                    if frame_end != -1  and stored_notes:
+                        # Process notes before frame end
+                        notes_latex = []
+                        for note in stored_notes:
+                            if note.strip():
+                                notes_latex.append(f"    \\note{{\n        {note.strip()}\n    }}")
+                        latex_code = latex_code[:frame_end] + '\n' + '\n'.join(notes_latex) + '\n' + latex_code[frame_end:]
 
                     with open(output_filename, 'a') as f:
                         f.write(latex_code)
@@ -2285,51 +2431,50 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                         else:
                             url_updates[current_url] = (new_directive, new_directive)
 
-                    # Force IDE to display current slide
                     if ide_callback:
                         ide_callback("show_current_slide", {
                             'index': current_slide_index,
                             'title': original_title,
                             'media': original_media,
-                            'content': original_content
+                            'content': original_content,
+                            'notes': current_notes
                         })
                 else:
                     failed += 1
                     if ide_callback:
-                        ide_callback("error", {
-                            'message': "Failed to process slide {0}".format(current_slide_index + 1)
-                        })
+                        ide_callback("error", {'message': f"Failed to process slide {current_slide_index + 1}"})
 
                 # Reset for next slide
                 content = []
-                current_notes = []
+                if not in_notes_block:  # Only clear notes if not in notes block
+                    current_notes = []
                 current_url = None
                 in_content_block = False
-                current_slide_index += 1
-                i += 1
-                continue
 
-            if in_content_block and not line.startswith(("\\begin{Notes}", "\\end{Notes}")):
+            elif in_notes_block:
+                if line.strip():
+                    current_notes.append(line.strip())
+                    stored_notes= current_notes.copy()  # Store notes before processing
+                    #print(stored_notes)
+
+            elif in_content_block and not line.startswith(("\\begin{Notes}", "\\end{Notes}")):
                 content.append(line)
+                current_slide_index += 1
 
             i += 1
 
-        # Write document end
-        with open(output_filename, 'a') as f:
-            f.write("\\end{document}\n")
-
+        # Update input file if needed
         if url_updates:
             update_input_file(output_filename, url_updates, is_tex_file=True)
 
         return processed, failed, errors
 
     except Exception as e:
-        error_msg = "Error processing slide {0}:\n".format(processed + failed)
-        error_msg += "Title: {0}\n".format(title)
+        error_msg = f"Error processing slide {processed + failed}:\n"
+        error_msg += f"Title: {title}\n"
         if content:
-            content_lines = ['  ' + l + '\n' for l in content]
-            error_msg += "Content:\n{0}".format(''.join(content_lines))
-        error_msg += "Error: {0}\n".format(str(e))
+            error_msg += "Content:\n" + ''.join(['  ' + l + '\n' for l in content])
+        error_msg += f"Error: {str(e)}\n"
         errors.append(error_msg)
         if ide_callback:
             ide_callback("error", {'message': error_msg})
