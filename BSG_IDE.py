@@ -392,7 +392,7 @@ def install_bsg_ide(fix_mode=False):
         installer.create_launcher()
 
         # Setup OS integration
-        #installer.setup_os_integration()
+        installer.setup_os_integration()
 
         print(f"\nBSG-IDE {'fix' if fix_mode else 'installation'} completed successfully!")
         print("\nYou can now run BSG-IDE by:")
@@ -4757,13 +4757,26 @@ Created by {self.__author__}
 
 
     def save_current_slide(self):
-        """Save current slide data with proper notes handling"""
-        if self.current_slide_index >= 0:
+        """Save current slide data, preventing empty slide creation"""
+        if not hasattr(self, 'slides'):
+            self.slides = []
+
+        if self.current_slide_index < 0:
+            return
+
+        # Get current content
+        title = self.title_entry.get().strip()
+        media = self.media_entry.get().strip()
+        content = [line for line in self.content_editor.get('1.0', 'end-1c').split('\n') if line.strip()]
+        notes = [line for line in self.notes_editor.get('1.0', 'end-1c').split('\n') if line.strip()]
+
+        # Only save if there is actual content and within valid index
+        if (title or media or content or notes) and self.current_slide_index < len(self.slides):
             self.slides[self.current_slide_index] = {
-                'title': self.title_entry.get(),
-                'media': self.media_entry.get(),
-                'content': [line for line in self.content_editor.get('1.0', 'end-1c').split('\n') if line.strip()],
-                'notes': [line for line in self.notes_editor.get('1.0', 'end-1c').split('\n') if line.strip()]
+                'title': title,
+                'media': media,
+                'content': content,
+                'notes': notes
             }
 
     def clear_editor(self) -> None:
@@ -4846,7 +4859,7 @@ Created by {self.__author__}
                         note = note.lstrip('•- ').strip()
                         content += f"\\item {note}\n"
                 content += "\\end{itemize}\n}\n"
-
+            note=""
             content += "\n"
 
         content += "\\end{document}\n"
@@ -5699,7 +5712,7 @@ def update_installation():
             installed_version = version_file.read_text().strip()
 
         # Compare with current version
-        current_version = getattr(BeamerSlideEditor, '__version__', "1.0.0")
+        current_version = getattr(BeamerSlideEditor, '__version__', "2.4")
 
         # Always update files if versions don't match
         if installed_version != current_version:
@@ -8115,51 +8128,78 @@ except Exception as e:
             else:
                 self.dialog.write(f"! Warning: {filename} not found", "yellow")
 
-    def _setup_os_integration(self):
-        """Setup OS-specific integration with proper icon handling"""
-        try:
-            # First ensure icons directory exists
-            icons_dir = self.install_paths['resources'] / 'icons'
-            icons_dir.mkdir(parents=True, exist_ok=True)
+    def setup_os_integration(self):
+       """Setup OS icons and desktop integration"""
+       icon_sizes = [16, 32, 48, 64, 128, 256]
 
-            # Copy icons from package
-            source_icons = {
-                'airis4d_logo.png': (50, 50),
-                'bsg-ide.png': (256, 256)  # Main application icon
-            }
+       try:
+           # Create icon objects for both logos
+           icons = {}
+           for icon_name in ['bsg-ide.png', 'airis4d_logo.png']:
+               source = self.install_paths['resources'] / icon_name
+               if source.exists():
+                   with Image.open(source) as img:
+                       icons[icon_name] = img.copy()
 
-            for icon_name, size in source_icons.items():
-                # Try multiple source locations
-                source_paths = [
-                    Path(__file__).parent / 'icons' / icon_name,
-                    Path(__file__).parent / icon_name,
-                    self.install_paths['base'] / 'icons' / icon_name
-                ]
+           if self.system == "Linux":
+               # Linux hicolor theme structure
+               for size in icon_sizes:
+                   icon_dir = self.install_paths['icons'] / f"{size}x{size}" / 'apps'
+                   icon_dir.mkdir(parents=True, exist_ok=True)
 
-                icon_found = False
-                for src in source_paths:
-                    if src.exists():
-                        # Copy to resources directory
-                        dest = icons_dir / icon_name
-                        shutil.copy2(src, dest)
+                   for icon_name, img in icons.items():
+                       resized = img.copy()
+                       resized.thumbnail((size, size), Image.Resampling.LANCZOS)
+                       resized.save(icon_dir / icon_name)
 
-                        # For the main application icon, create OS-specific entries
-                        if icon_name == 'bsg-ide.png':
-                            if self.system == "Linux":
-                                self._setup_linux_icons(src)
-                            elif self.system == "Windows":
-                                self._setup_windows_icons(src)
-                            elif self.system == "Darwin":
-                                self._setup_macos_icons(src)
+               subprocess.run(['gtk-update-icon-cache', '--force', '--quiet',
+                             str(self.install_paths['icons'])], check=False)
 
-                        icon_found = True
-                        break
+           elif self.system == "Windows":
+               # Windows ICO format with multiple sizes
+               for icon_name, img in icons.items():
+                   ico_sizes = [(16,16), (32,32), (48,48), (256,256)]
+                   ico_path = self.install_paths['resources'] / f"{icon_name[:-4]}.ico"
 
-                if not icon_found:
-                    self.dialog.write(f"! Warning: Could not find icon {icon_name}", "yellow")
+                   ico_images = []
+                   for size in ico_sizes:
+                       resized = img.copy()
+                       resized.thumbnail(size, Image.Resampling.LANCZOS)
+                       ico_images.append(resized)
 
-        except Exception as e:
-            self.dialog.write(f"! Warning: Error setting up icons: {str(e)}", "yellow")
+                   ico_images[0].save(ico_path, format='ICO', sizes=ico_sizes, append_images=ico_images[1:])
+
+                   # Associate icon with application
+                   import winreg
+                   with winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, "BSG-IDE") as key:
+                       winreg.SetValue(key, "DefaultIcon", winreg.REG_SZ, str(ico_path))
+
+           elif self.system == "Darwin":  # macOS
+               # ICNS format for macOS
+               for icon_name, img in icons.items():
+                   icns_path = self.install_paths['resources'] / f"{icon_name[:-4]}.icns"
+
+                   icns_sizes = [16, 32, 128, 256, 512]
+                   icns_images = []
+
+                   for size in icns_sizes:
+                       resized = img.copy()
+                       resized.thumbnail((size, size), Image.Resampling.LANCZOS)
+                       icns_images.append(resized)
+
+                   icns_images[0].save(icns_path, format='ICNS', append_images=icns_images[1:])
+
+                   # Copy to app bundle
+                   bundle_icons = self.install_paths['base'] / 'Contents' / 'Resources'
+                   bundle_icons.mkdir(parents=True, exist_ok=True)
+                   shutil.copy2(icns_path, bundle_icons)
+
+           print("✓ Icons installed successfully")
+           return True
+
+       except Exception as e:
+           print(f"Error setting up OS integration: {str(e)}")
+           return False
 
     def _setup_linux_icons(self, icon_src):
         """Setup Linux icon themes"""
