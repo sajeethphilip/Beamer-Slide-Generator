@@ -1,4 +1,5 @@
 Latest version 3.0
+
 For the impatient:
 
 1. Create a virtual Python environment in your OS: python -m venv venv
