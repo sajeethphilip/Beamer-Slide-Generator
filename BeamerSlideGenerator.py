@@ -1181,8 +1181,225 @@ def process_latex_content(content_line: str) -> str:
         i += 1
 
     return ''.join(result)
-
+#----------------------------------------------------------------------
 def generate_latex_code(base_name, filename, first_frame_path, content=None, title=None, playable=False, source_url=None, layout=None):
+    """Generate LaTeX code with support for all media layouts."""
+
+    # Process title
+    if title:
+        frame_title = process_latex_content(title)
+    else:
+        base_name_escaped = process_latex_content(base_name if base_name else 'Untitled')
+        frame_title = "Media: " + base_name_escaped
+
+    # Handle no media case first
+    if not filename or filename == "\\None":
+        latex_code = "\\begin{frame}{\\Large\\textbf{" + frame_title + "}}\n"
+        latex_code += "    \\vspace{0.5em}\n"
+        latex_code += "    \\begin{itemize}\n"
+        latex_code += "        " + generate_content_items(content) + "\n"
+        latex_code += "    \\end{itemize}\n"
+        latex_code += "\\end{frame}\n"
+        return latex_code
+
+    # Generate layout based on directive
+    latex_code = ""
+
+    if layout == 'watermark':
+        latex_code = "\\begin{frame}{" + (frame_title if title else '') + "}\n"
+        latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
+        latex_code += "        \\node[opacity=0.15] at (current page.center) {%\n"
+        latex_code += "            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{" + filename + "}%\n"
+        latex_code += "        };\n"
+        latex_code += "    \\end{tikzpicture}\n"
+        latex_code += "    \\begin{itemize}\n"
+        latex_code += "        " + generate_content_items(content) + "\n"
+        latex_code += "    \\end{itemize}"
+
+    elif layout == 'fullframe':
+        latex_code = "\\begin{frame}[plain]\n"
+        latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
+        latex_code += "        \\node at (current page.center) {%\n"
+        latex_code += "            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{" + filename + "}%\n"
+        latex_code += "        };\n"
+        latex_code += "        \\node[text width=0.8\\paperwidth,align=center,text=white] at (current page.center) {\n"
+        latex_code += "            \\Large\\textbf{" + frame_title + "}\\\\[1em]\n"
+        latex_code += "            \\begin{itemize}\n"
+        latex_code += "                " + generate_content_items(content, color='white') + "\n"
+        latex_code += "            \\end{itemize}\n"
+        latex_code += "        };\n"
+        latex_code += "    \\end{tikzpicture}"
+
+    elif layout == 'pip':
+        latex_code = "\\begin{frame}{\\Large\\textbf{" + frame_title + "}}\n"
+        latex_code += "    \\begin{columns}[T]\n"
+        latex_code += "        \\begin{column}{0.7\\textwidth}\n"
+        latex_code += "            \\begin{itemize}\n"
+        latex_code += "                " + generate_content_items(content) + "\n"
+        latex_code += "            \\end{itemize}\n"
+        latex_code += "        \\end{column}\n"
+        latex_code += "        \\begin{column}{0.28\\textwidth}\n"
+        latex_code += "            \\vspace{1em}\n"
+        latex_code += "            \\includegraphics[width=\\textwidth,keepaspectratio]{" + filename + "}\n"
+        latex_code += "        \\end{column}\n"
+        latex_code += "    \\end{columns}"
+
+    elif layout == 'split':
+        latex_code = "\\begin{frame}{\\Large\\textbf{" + frame_title + "}}\n"
+        latex_code += "    \\begin{columns}[T]\n"
+        latex_code += "        \\begin{column}{0.48\\textwidth}\n"
+        latex_code += "            \\includegraphics[width=\\textwidth,keepaspectratio]{" + filename + "}\n"
+        latex_code += "        \\end{column}\n"
+        latex_code += "        \\begin{column}{0.48\\textwidth}\n"
+        latex_code += "            \\begin{itemize}\n"
+        latex_code += "                " + generate_content_items(content) + "\n"
+        latex_code += "            \\end{itemize}\n"
+        latex_code += "        \\end{column}\n"
+        latex_code += "    \\end{columns}"
+
+    elif layout == 'highlight':
+        latex_code = "\\begin{frame}{\\Large\\textbf{" + frame_title + "}}\n"
+        latex_code += "    \\begin{center}\n"
+        latex_code += "        \\includegraphics[width=0.8\\textwidth,height=0.6\\textheight,keepaspectratio]{" + filename + "}\n"
+        latex_code += "    \\end{center}\n"
+        latex_code += "    \\vspace{0.5em}\n"
+        latex_code += "    \\begin{itemize}\n"
+        latex_code += "        " + generate_content_items(content) + "\n"
+        latex_code += "    \\end{itemize}"
+
+    elif layout == 'mosaic':
+        images = [img.strip() for img in filename.split(',')]
+        grid_size = int(math.ceil(math.sqrt(len(images))))
+
+        latex_code = "\\begin{frame}{\\Large\\textbf{" + frame_title + "}}\n"
+        latex_code += "    \\begin{center}\n"  # Center the entire grid
+        latex_code += "    \\vbox{\\vspace{1em}}\n"  # Add some vertical space at top
+
+        # Start a tabular environment for grid layout
+        latex_code += "    \\begin{tabular}{" + "c" * grid_size + "}\n"
+
+        # Calculate image size - use smaller of width/height constraint
+        img_width = "0.25\\textwidth"  # Adjust these values to control image size
+        img_height = "0.2\\textheight"
+
+        # Generate grid row by row
+        for i in range(grid_size):
+            row_images = []
+            for j in range(grid_size):
+                idx = i * grid_size + j
+                if idx < len(images):
+                    # Each image in its own box for consistent spacing
+                    cell = "\\includegraphics[width=" + img_width + ",height=" + img_height + ",keepaspectratio]{" + images[idx] + "}"
+                    row_images.append(cell)
+                else:
+                    row_images.append("")  # Empty cell
+
+            # Join cells with & and end row with \\
+            latex_code += "        " + " & ".join(row_images)
+            if i < grid_size - 1:  # Don't add \\ after last row
+                latex_code += " \\\\\n        \\vspace{0.5em}\\\\\n"  # Add vertical space between rows
+
+        latex_code += "\n    \\end{tabular}\n"
+        latex_code += "    \\end{center}\n"
+
+        if content:
+            latex_code += "    \\vspace{1em}\n"  # Space between grid and content
+            latex_code += "    \\begin{itemize}\n"
+            latex_code += "        " + generate_content_items(content) + "\n"
+            latex_code += "    \\end{itemize}\n"
+
+        latex_code += "    \\end{columns}"
+
+    elif layout == 'background':
+        latex_code = "\\begin{frame}{\\Large\\textbf{" + frame_title + "}}\n"
+        latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
+        latex_code += "        \\node[opacity=0.1] at (current page.center) {%\n"
+        latex_code += "            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{" + filename + "}%\n"
+        latex_code += "        };\n"
+        latex_code += "    \\end{tikzpicture}\n"
+        latex_code += "    \\begin{itemize}\n"
+        latex_code += "        " + generate_content_items(content) + "\n"
+        latex_code += "    \\end{itemize}"
+
+    elif layout == 'topbottom':
+        latex_code = "\\begin{frame}{\\Large\\textbf{" + frame_title + "}}\n"
+        latex_code += "    \\vspace{-0.5em}\n"
+        latex_code += "    \\begin{center}\n"
+        latex_code += "        \\includegraphics[width=0.8\\textwidth,height=0.45\\textheight,keepaspectratio]{" + filename + "}\n"
+        latex_code += "    \\end{center}\n"
+        latex_code += "    \\vspace{0.5em}\n"
+        latex_code += "    \\begin{itemize}\n"
+        latex_code += "        " + generate_content_items(content) + "\n"
+        latex_code += "    \\end{itemize}"
+
+    elif layout == 'overlay':
+        latex_code = "\\begin{frame}{\\Large\\textbf{" + frame_title + "}}\n"
+        latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
+        latex_code += "        \\node[opacity=0.3] at (current page.center) {%\n"
+        latex_code += "            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{" + filename + "}%\n"
+        latex_code += "        };\n"
+        latex_code += "        \\node[text width=0.8\\paperwidth,align=center,text=white] at (current page.center) {\n"
+        latex_code += "            \\begin{itemize}\n"
+        latex_code += "                " + generate_content_items(content, color='white') + "\n"
+        latex_code += "            \\end{itemize}\n"
+        latex_code += "        };\n"
+        latex_code += "    \\end{tikzpicture}"
+
+    elif layout == 'corner':
+        latex_code = "\\begin{frame}{\\Large\\textbf{" + frame_title + "}}\n"
+        latex_code += "    \\begin{itemize}\n"
+        latex_code += "        " + generate_content_items(content) + "\n"
+        latex_code += "    \\end{itemize}\n"
+        latex_code += "    \\begin{tikzpicture}[remember picture,overlay]\n"
+        latex_code += "        \\node[anchor=south east] at (current page.south east) {%\n"
+        latex_code += "            \\includegraphics[width=0.2\\textwidth,keepaspectratio]{" + filename + "}%\n"
+        latex_code += "        };\n"
+        latex_code += "    \\end{tikzpicture}"
+
+    else:
+        # Default side-by-side layout
+        if playable and first_frame_path:
+            latex_code = "\\begin{frame}{\\Large\\textbf{" + frame_title + "}}\n"
+            latex_code += "    \\begin{columns}[T]\n"
+            latex_code += "        \\begin{column}{0.48\\textwidth}\n"
+            latex_code += "            \\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{" + first_frame_path + "}\n"
+            latex_code += "            \\begin{center}\n"
+            latex_code += "                \\vspace{0.3em}\n"
+            latex_code += "                \\footnotesize{Click to play}\\\\\n"
+            latex_code += "                \\movie[externalviewer]{\\textcolor{blue}{\\underline{Play}}}{" + filename + "}\n"
+            latex_code += "            \\end{center}\n"
+            latex_code += "        \\end{column}\n"
+            latex_code += "        \\begin{column}{0.48\\textwidth}\n"
+            latex_code += "            \\begin{itemize}\n"
+            latex_code += "                " + generate_content_items(content) + "\n"
+            latex_code += "            \\end{itemize}"
+
+            if source_url:
+                latex_code = latex_code.rstrip() + format_url_footnote(source_url)
+
+            latex_code += "\n        \\end{column}\n"
+            latex_code += "    \\end{columns}"
+        else:
+            latex_code = "\\begin{frame}{\\Large\\textbf{" + frame_title + "}}\n"
+            latex_code += "    \\begin{columns}[T]\n"
+            latex_code += "        \\begin{column}{0.48\\textwidth}\n"
+            latex_code += "            \\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{" + filename + "}\n"
+            latex_code += "        \\end{column}\n"
+            latex_code += "        \\begin{column}{0.48\\textwidth}\n"
+            latex_code += "            \\begin{itemize}\n"
+            latex_code += "                " + generate_content_items(content) + "\n"
+            latex_code += "            \\end{itemize}"
+
+            if source_url:
+                latex_code = latex_code.rstrip() + format_url_footnote(source_url)
+
+            latex_code += "\n        \\end{column}\n"
+            latex_code += "    \\end{columns}"
+
+    latex_code += "\n\\end{frame}\n"
+    return latex_code
+#----------------------------------------------------------------------
+def generate_latex_code_old(base_name, filename, first_frame_path, content=None, title=None, playable=False, source_url=None, layout=None):
     """Generate LaTeX code with support for all media layouts."""
 
     # Process title

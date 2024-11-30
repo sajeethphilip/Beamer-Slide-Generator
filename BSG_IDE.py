@@ -1175,7 +1175,7 @@ class BeamerSlideEditor(ctk.CTk):
             'labs': '#000000'      # Black for 'LABS'
         }
         # Version and info
-        self.__version__ = "1.0.0"
+        self.__version__ = "3.1"
         self.__author__ = "Ninan Sajeeth Philip"
         self.__license__ = "Creative Commons"
         self.logo_ascii = AIRIS4D_ASCII_LOGO
@@ -3576,7 +3576,7 @@ Created by {self.__author__}
 
 
  #----------------------------------------------------------------------------
-    def set_notes_mode(self, mode: str) -> None:
+    def set_notes_mode_old(self, mode: str) -> None:
         """Set notes mode and update UI"""
         self.notes_mode.set(mode)
         self.update_notes_buttons(mode)
@@ -4681,8 +4681,90 @@ Created by {self.__author__}
             self.write_to_terminal(traceback.format_exc(), "red")
 
         messagebox.showerror("Error", f"Error generating PDF:\n{str(error)}")
+#------------------------------------------------------------------------------------------------------------------
+    def compile_presentation(self, mode: str = "both") -> None:
+        """
+        Compile presentation with specified notes mode.
+        """
+        if not self.current_file:
+            messagebox.showwarning("Warning", "Please save your file first!")
+            return
 
-    def preview_pdf(self) -> None:
+        try:
+            # Save current state
+            self.save_current_slide()
+            self.save_file()
+
+            # Get base filename
+            base_filename = os.path.splitext(self.current_file)[0]
+            tex_file = base_filename + '.tex'
+
+            # Clear terminal
+            self.clear_terminal()
+
+            # Convert to TEX if needed
+            if not os.path.exists(tex_file):
+                self.write("Converting text to TEX...\n", "white")
+                self.convert_to_tex()
+
+            # Compile with specified mode
+            self.write(f"\nCompiling presentation in {mode} mode...\n", "white")
+            try:
+                pdf_file = compile_with_notes_mode(tex_file, mode)
+
+                if os.path.exists(pdf_file):
+                    size = os.path.getsize(pdf_file)
+                    size_str = self.format_file_size(size)
+
+                    self.write(f"\n✓ PDF generated successfully ({size_str})\n", "green")
+
+                    if messagebox.askyesno("Success",
+                        f"PDF generated successfully in {mode} mode!\n"
+                        f"Size: {size_str}\n\n"
+                        "Would you like to view it now?"):
+                        self.preview_pdf(pdf_file)
+                else:
+                    self.write("\n✗ Error: PDF file not found after compilation\n", "red")
+
+            except Exception as e:
+                self.write(f"\n✗ Error in compilation: {str(e)}\n", "red")
+                messagebox.showerror("Error", f"Error compiling PDF:\n{str(e)}")
+
+        except Exception as e:
+            self.write(f"\n✗ Error: {str(e)}\n", "red")
+            messagebox.showerror("Error", f"Error generating PDF:\n{str(e)}")
+
+    def set_notes_mode(self, mode: str) -> None:
+        """Set notes mode and update UI"""
+        self.notes_mode.set(mode)
+        self.update_notes_buttons(mode)
+
+        # Update preview if available
+        if self.current_file:
+            self.compile_presentation(mode)
+
+    def preview_pdf(self, pdf_file: str = None) -> None:
+        """Preview generated PDF using system default PDF viewer"""
+        if not pdf_file:
+            if not self.current_file:
+                messagebox.showwarning("Warning", "Please save and generate PDF first!")
+                return
+
+            # Use default PDF name
+            pdf_file = os.path.splitext(self.current_file)[0] + '.pdf'
+
+        if os.path.exists(pdf_file):
+            if sys.platform.startswith('win'):
+                os.startfile(pdf_file)
+            elif sys.platform.startswith('darwin'):
+                subprocess.run(['open', pdf_file])
+            else:
+                subprocess.run(['xdg-open', pdf_file])
+        else:
+            messagebox.showwarning("Warning", "PDF file not found. Generate it first!")
+
+#------------------------------------------------------------------------------------------------------------------
+    def preview_pdf_old(self) -> None:
         """Preview generated PDF using system default PDF viewer"""
         if not self.current_file:
             messagebox.showwarning("Warning", "Please save and generate PDF first!")
@@ -4699,6 +4781,7 @@ Created by {self.__author__}
         else:
             messagebox.showwarning("Warning", "PDF file not found. Generate it first!")
     # Slide Management
+
     def new_slide(self) -> None:
         """Create new slide"""
         self.save_current_slide()
@@ -5213,7 +5296,99 @@ Created by {self.__author__}
             self.write_to_terminal(f"✗ Error launching presentation: {str(e)}\n", "red")
             messagebox.showerror("Error", f"Error launching presentation:\n{str(e)}")
             traceback.print_exc()
+#-----------------------------------------------Help Functions --------------------------------------------
+def modify_preamble_for_notes_mode(tex_content: str, mode: str) -> str:
+    """
+    Modify preamble based on notes mode while preserving original content.
 
+    Args:
+        tex_content: Original TEX content
+        mode: 'slides', 'notes', or 'both'
+    Returns:
+        Modified TEX content
+    """
+    # First find document begin position
+    doc_pos = tex_content.find("\\begin{document}")
+    if doc_pos == -1:
+        return tex_content
+
+    # Split content into preamble and document
+    preamble = tex_content[:doc_pos]
+    document = tex_content[doc_pos:]
+
+    # Define notes configurations
+    notes_configs = {
+        "slides": "\\setbeameroption{hide notes}",
+        "notes": "\\setbeameroption{show only notes}",
+        "both": "\\setbeameroption{show notes on second screen=right}"
+    }
+
+    # Remove any existing notes configurations
+    preamble = re.sub(r'\\setbeameroption{[^}]*}', '', preamble)
+
+    # Ensure pgfpages package
+    if "\\usepackage{pgfpages}" not in preamble:
+        preamble = preamble.rstrip() + "\n\\usepackage{pgfpages}\n"
+
+    # Add appropriate notes configuration
+    notes_config = notes_configs.get(mode, notes_configs['both'])
+    preamble = preamble.rstrip() + f"\n\n% Notes configuration\n{notes_config}\n"
+
+    # Add template style
+    preamble += "\\setbeamertemplate{note page}{\\pagecolor{yellow!5}\\insertnote}\n"
+
+    return preamble + document
+
+def compile_with_notes_mode(input_file: str, mode: str, keep_temp: bool = False) -> str:
+    """
+    Compile TEX file with specified notes mode.
+
+    Args:
+        input_file: Path to input TEX file
+        mode: 'slides', 'notes', or 'both'
+        keep_temp: Whether to keep temporary files
+    Returns:
+        Path to generated PDF
+    """
+    try:
+        # Create temp directory for compilation
+        temp_dir = tempfile.mkdtemp()
+        base_name = os.path.splitext(os.path.basename(input_file))[0]
+        temp_tex = os.path.join(temp_dir, f"{base_name}_{mode}.tex")
+        output_pdf = os.path.join(temp_dir, f"{base_name}_{mode}.pdf")
+
+        # Read original content
+        with open(input_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Modify content for notes mode
+        modified_content = modify_preamble_for_notes_mode(content, mode)
+
+        # Write modified content to temp file
+        with open(temp_tex, 'w', encoding='utf-8') as f:
+            f.write(modified_content)
+
+        # Copy required media files to temp directory
+        media_dir = os.path.join(os.path.dirname(input_file), 'media_files')
+        if os.path.exists(media_dir):
+            temp_media = os.path.join(temp_dir, 'media_files')
+            shutil.copytree(media_dir, temp_media)
+
+        # Compile document
+        os.chdir(temp_dir)
+        for _ in range(2):  # Two passes for references
+            subprocess.run(['pdflatex', '-interaction=nonstopmode', temp_tex],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        # Move final PDF to original directory
+        final_pdf = os.path.join(os.path.dirname(input_file), f"{base_name}_{mode}.pdf")
+        shutil.copy2(output_pdf, final_pdf)
+
+        return final_pdf
+
+    finally:
+        if not keep_temp:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 #----------------------------------------------Interactive Terminal ------------------------------------
 import customtkinter as ctk
