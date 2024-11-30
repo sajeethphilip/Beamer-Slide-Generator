@@ -2263,7 +2263,7 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
 
                 # Handle document end
                 if line.startswith('\\end{document}'):
-                    if current_frame_content:
+                    if should_process_frame(current_frame_title, current_frame_content, current_media, current_frame_notes):
                         # Process last frame
                         process_frame(outfile, current_frame_title, current_frame_content,
                                    current_frame_notes, current_media)
@@ -2274,7 +2274,7 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                 # Handle new frame
                 if line.startswith('\\title'):
                     # Process previous frame if exists
-                    if current_frame_content:
+                    if should_process_frame(current_frame_title, current_frame_content, current_media, current_frame_notes):
                         process_frame(outfile, current_frame_title, current_frame_content,
                                    current_frame_notes, current_media)
                         processed += 1
@@ -2302,7 +2302,8 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
 
                 # Process content
                 elif in_content_block:
-                    current_frame_content.append(line)
+                    if line.strip():  # Only add non-empty lines
+                        current_frame_content.append(line)
                 # Process notes
                 elif in_notes_block:
                     if line.strip() and not line.startswith('%'):
@@ -2319,12 +2320,22 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
             ide_callback("error", {'message': error_msg})
         return processed, failed, errors
 
+def should_process_frame(title, content, media, notes):
+    """
+    Determine if a frame should be processed based on its components.
+    A frame should be processed if it has any of: title, content, media, or notes.
+    """
+    return (title is not None or
+            media is not None or
+            (content is not None and len(content) > 0) or
+            (notes is not None and len(notes) > 0))
+
 def process_frame(outfile, title, content, notes, media):
     """Process a single frame and write it to the output file"""
     # Generate frame content
     latex_code, directive = process_media(
         media if media else "\\None",
-        content,
+        content if content else [],  # Pass empty list instead of None
         title,
         False  # playable flag
     )
