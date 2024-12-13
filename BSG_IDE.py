@@ -4611,9 +4611,9 @@ Created by {self.__author__}
     def run_pdflatex(self, tex_file: str) -> bool:
         """Run pdflatex with output to terminal"""
         global original_dir
+        # Store original directory
+        original_dir = os.getcwd()
         try:
-            # Store original directory
-            original_dir = os.getcwd()
 
             # Change to tex file directory
             tex_dir = os.path.dirname(tex_file) or '.'
