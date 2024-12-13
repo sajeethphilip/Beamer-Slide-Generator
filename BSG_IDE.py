@@ -18,6 +18,9 @@ import site
 import socket
 from importlib import util
 global working_folder
+working_folder=os.path.expanduser("~")
+global original_dir
+original_dir = os.path.expanduser("~")
 
 def launch_ide():
     """Entry point for command-line launcher"""
@@ -4281,17 +4284,18 @@ Created by {self.__author__}
         }
 
     def open_file(self) -> None:
+        global working_folder
+        global original_dir
         """Open existing presentation"""
         filename = filedialog.askopenfilename(
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
         )
         if filename:
             self.load_file(filename)
-            global working_folder
             # Change to tet file directory
             working_folder= os.path.dirname(filename) or '.'
             os.chdir(working_folder)
-
+            original_dir=working_folder
             # Update working directory in terminal
             self.terminal.set_working_directory(working_folder)
 
@@ -4606,6 +4610,7 @@ Created by {self.__author__}
 
     def run_pdflatex(self, tex_file: str) -> bool:
         """Run pdflatex with output to terminal"""
+        global original_dir
         try:
             # Store original directory
             original_dir = os.getcwd()
@@ -4658,6 +4663,7 @@ Created by {self.__author__}
             return False
 
         finally:
+
             # Restore original directory
             os.chdir(original_dir)
             self.terminal.set_working_directory(original_dir)
