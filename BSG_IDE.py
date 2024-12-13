@@ -2601,8 +2601,7 @@ Created by {self.__author__}
         return dependencies
 
 #-------------------------------------------------------Capture Screen ---------------------------------------
-
-    def capture_screen(self) -> None:
+    def capture_screen(self):
         """Cross-platform screen capture with animation support"""
         try:
             import platform
@@ -2644,8 +2643,8 @@ Created by {self.__author__}
             else:  # Linux
                 overlay.attributes('-type', 'splash')
                 overlay.attributes('-alpha', 0.01)
+                overlay.attributes('-topmost', True)
 
-            overlay.attributes('-topmost', True)
             overlay.overrideredirect(True)
             overlay.geometry(f"{total_width}x{total_height}+{screen_left}+{screen_top}")
 
@@ -2665,13 +2664,11 @@ Created by {self.__author__}
                 overlay.withdraw()
                 root.update()
                 time.sleep(0.2)
-
                 try:
                     if system == "Darwin":
                         try:
                             import Quartz
-                            region = Quartz.CGRectMake(bbox[0], bbox[1],
-                                                     bbox[2]-bbox[0], bbox[3]-bbox[1])
+                            region = Quartz.CGRectMake(bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1])
                             image = Quartz.CGWindowListCreateImage(
                                 region,
                                 Quartz.kCGWindowListOptionOnScreenOnly,
@@ -2702,14 +2699,11 @@ Created by {self.__author__}
                     return
                 if selection.get('current_rect'):
                     canvas.delete(selection['current_rect'])
-
                 selection['current_rect'] = canvas.create_rectangle(
                     selection['start_x'], selection['start_y'],
                     event.x, event.y,
-                    outline='red',
-                    width=2
+                    outline='red', width=2
                 )
-
                 # Show dimensions
                 width = abs(event.x - selection['start_x'])
                 height = abs(event.y - selection['start_y'])
@@ -2725,7 +2719,6 @@ Created by {self.__author__}
             def on_mouse_up(event):
                 if selection['start_x'] is None:
                     return
-
                 try:
                     # Calculate coordinates
                     x1 = min(selection['start_x'], event.x)
@@ -2746,10 +2739,8 @@ Created by {self.__author__}
                         progress = tk.Toplevel(root)
                         progress.title("Capturing Animation")
                         progress.transient(root)
-
                         progress_label = tk.Label(progress, text="Capturing frames...")
                         progress_label.pack(pady=10)
-
                         pbar = ttk.Progressbar(progress, length=200, mode='determinate')
                         pbar.pack(pady=10)
 
@@ -2757,15 +2748,15 @@ Created by {self.__author__}
                             for i in range(self.frame_count.get()):
                                 if selection.get('is_cancelled'):
                                     break
-
                                 progress_label['text'] = f"Capturing frame {i+1}/{self.frame_count.get()}"
                                 pbar['value'] = (i + 1) / self.frame_count.get() * 100
                                 progress.update()
-
                                 frame = capture_area(bbox)
                                 if frame:
                                     frames.append(frame)
-                                time.sleep(self.frame_delay.get())
+                                time.sleep(self.frame_delay.get())  # Use the specified delay
+                                if i == self.frame_count.get() - 1:  # Last frame captured
+                                    break
 
                             if frames and not selection.get('is_cancelled'):
                                 # Save as GIF
@@ -2773,20 +2764,19 @@ Created by {self.__author__}
                                 timestamp = time.strftime("%Y%m%d-%H%M%S")
                                 filename = f"screen_animation_{timestamp}.gif"
                                 filepath = os.path.join('media_files', filename)
-
                                 frames[0].save(
                                     filepath,
                                     save_all=True,
                                     append_images=frames[1:],
-                                    duration=int(self.frame_delay.get() * 1000),
+                                    duration=int(self.frame_delay.get() * 1000),  # Convert to milliseconds
                                     loop=0
                                 )
-
                                 self.media_entry.delete(0, 'end')
                                 self.media_entry.insert(0, f"\\file media_files/{filename}")
                                 messagebox.showinfo("Success", f"Animation saved as:\n{filename}")
                         finally:
                             progress.destroy()
+                            cleanup()  # Automatically clean up after capturing frames
                     else:
                         # Single frame capture
                         screenshot = capture_area(bbox)
@@ -2796,11 +2786,9 @@ Created by {self.__author__}
                             filename = f"screen_capture_{timestamp}.png"
                             filepath = os.path.join('media_files', filename)
                             screenshot.save(filepath)
-
                             self.media_entry.delete(0, 'end')
                             self.media_entry.insert(0, f"\\file media_files/{filename}")
                             messagebox.showinfo("Success", f"Screenshot saved as:\n{filename}")
-
                 except Exception as e:
                     messagebox.showerror("Error", f"Capture failed:\n{str(e)}")
                 finally:
@@ -2835,6 +2823,9 @@ Created by {self.__author__}
                     root.destroy()
                 except:
                     pass
+
+#---------------------------------------------------------------------------------------------------------------------
+
 
  #-------------------------------Get Camera and Set Camera--------------------------------------------
     def open_camera(self) -> None:
