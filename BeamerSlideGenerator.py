@@ -352,6 +352,7 @@ def get_footline_template():
 \\setbeamertemplate{footline}[custom]
 \\makeatother
 """
+
 def format_url_footnote(url):
     """
     Format URL footnotes with proper hyperlinks.
@@ -365,11 +366,7 @@ def format_url_footnote(url):
         elif 'github.com' in parsed.netloc:
             return f"\\footnote{{GitHub: \\href{{{url}}}{{\\textcolor{{blue}}{{[View Repository]}}}} }}"
         else:
-            if len(url) > 50:  # Threshold for abbreviation
-                display_url = base_url + '/...' + parsed.path[-20:] if len(parsed.path) > 20 else base_url
-                return f"\\footnote{{Source: {display_url} \\href{{{url}}}{{\\textcolor{{blue}}{{[link]}}}} }}"
-            else:
-                return f"\\footnote{{Source: \\href{{{url}}}{{\\textcolor{{blue}}{{{url}}}}} }}"
+            return f"\\footnote{{Source: \\href{{{url}}}{{\\textcolor{{blue}}{{[View link]}}}} }}"
     except:
         return f"\\footnote{{Source: {url}}}"
 
@@ -474,9 +471,9 @@ def create_new_input_file(file_path):
         # Add footnote if provided and content exists
         if footnote:
             if footnote.startswith(('http://', 'https://')):
-                footnote = format_url_footnote(footnote)
+                footnote = f"{{\\miniscule{ format_url_footnote(footnote)}}}"
             else:
-                footnote = f"{{\\tiny {footnote}}}"
+                footnote = f"{{\\miniscule {footnote}}}"
 
             if content:  # Only add footnote if there's content
                 last_content_line = slide_content[-1]
@@ -1399,233 +1396,6 @@ def generate_latex_code(base_name, filename, first_frame_path, content=None, tit
     latex_code += "\n\\end{frame}\n"
     return latex_code
 #----------------------------------------------------------------------
-def generate_latex_code_old(base_name, filename, first_frame_path, content=None, title=None, playable=False, source_url=None, layout=None):
-    """Generate LaTeX code with support for all media layouts."""
-
-    # Process title
-    if title:
-        frame_title = process_latex_content(title)
-    else:
-        base_name_escaped = process_latex_content(base_name if base_name else 'Untitled')
-        frame_title = f"Media: {base_name_escaped}"
-
-    # Handle no media case first
-    if not filename or filename == "\\None":
-        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-    \\vspace{{0.5em}}
-    \\begin{{itemize}}
-        {generate_content_items(content)}
-    \\end{{itemize}}
-\\end{{frame}}\n"""
-        return latex_code
-
-    # Generate layout based on directive
-    latex_code = ""
-
-    if layout == 'watermark':
-        latex_code = f"""\\begin{{frame}}{{{frame_title if title else ''}}}
-    \\begin{{tikzpicture}}[remember picture,overlay]
-        \\node[opacity=0.15] at (current page.center) {{%
-            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{filename}}}%
-        }};
-    \\end{{tikzpicture}}
-    \\begin{{itemize}}
-        {generate_content_items(content)}
-    \\end{{itemize}}"""
-
-    elif layout == 'fullframe':
-        latex_code = f"""\\begin{{frame}}[plain]
-    \\begin{{tikzpicture}}[remember picture,overlay]
-        \\node at (current page.center) {{%
-            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{filename}}}%
-        }};
-        \\node[text width=0.8\\paperwidth,align=center,text=white] at (current page.center) {{
-            \\Large\\textbf{{{frame_title}}}\\\\[1em]
-            \\begin{{itemize}}
-                {generate_content_items(content, color='white')}
-            \\end{{itemize}}
-        }};
-    \\end{{tikzpicture}}"""
-
-    elif layout == 'pip':
-        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-    \\begin{{columns}}[T]
-        \\begin{{column}}{{0.7\\textwidth}}
-            \\begin{{itemize}}
-                {generate_content_items(content)}
-            \\end{{itemize}}
-        \\end{{column}}
-        \\begin{{column}}{{0.28\\textwidth}}
-            \\vspace{{1em}}
-            \\includegraphics[width=\\textwidth,keepaspectratio]{{{filename}}}
-        \\end{{column}}
-    \\end{{columns}}"""
-
-    elif layout == 'split':
-        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-    \\begin{{columns}}[T]
-        \\begin{{column}}{{0.48\\textwidth}}
-            \\includegraphics[width=\\textwidth,keepaspectratio]{{{filename}}}
-        \\end{{column}}
-        \\begin{{column}}{{0.48\\textwidth}}
-            \\begin{{itemize}}
-                {generate_content_items(content)}
-            \\end{{itemize}}
-        \\end{{column}}
-    \\end{{columns}}"""
-
-    elif layout == 'highlight':
-        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-    \\begin{{center}}
-        \\includegraphics[width=0.8\\textwidth,height=0.6\\textheight,keepaspectratio]{{{filename}}}
-    \\end{{center}}
-    \\vspace{{0.5em}}
-    \\begin{{itemize}}
-        {generate_content_items(content)}
-    \\end{{itemize}}"""
-
-    elif layout == 'background':
-        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-    \\begin{{tikzpicture}}[remember picture,overlay]
-        \\node[opacity=0.1] at (current page.center) {{%
-            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{filename}}}%
-        }};
-    \\end{{tikzpicture}}
-    \\begin{{itemize}}
-        {generate_content_items(content)}
-    \\end{{itemize}}"""
-
-    elif layout == 'topbottom':
-        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-    \\vspace{{-0.5em}}
-    \\begin{{center}}
-        \\includegraphics[width=0.8\\textwidth,height=0.45\\textheight,keepaspectratio]{{{filename}}}
-    \\end{{center}}
-    \\vspace{{0.5em}}
-    \\begin{{itemize}}
-        {generate_content_items(content)}
-    \\end{{itemize}}"""
-
-    elif layout == 'overlay':
-        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-    \\begin{{tikzpicture}}[remember picture,overlay]
-        \\node[opacity=0.3] at (current page.center) {{%
-            \\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{{{filename}}}%
-        }};
-        \\node[text width=0.8\\paperwidth,align=center,text=white] at (current page.center) {{
-            \\begin{{itemize}}
-                {generate_content_items(content, color='white')}
-            \\end{{itemize}}
-        }};
-    \\end{{tikzpicture}}"""
-
-    elif layout == 'corner':
-        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-    \\begin{{itemize}}
-        {generate_content_items(content)}
-    \\end{{itemize}}
-    \\begin{{tikzpicture}}[remember picture,overlay]
-        \\node[anchor=south east] at (current page.south east) {{%
-            \\includegraphics[width=0.2\\textwidth,keepaspectratio]{{{filename}}}%
-        }};
-    \\end{{tikzpicture}}"""
-
-    elif layout == 'mosaic':
-        images = [img.strip() for img in filename.split(',')]
-        # Calculate grid dimensions based on number of images
-        grid_size = int(math.ceil(math.sqrt(len(images))))  # Square root rounded up
-        rows = grid_size+1
-        cols = grid_size+1
-        print(rows,cols)
-        latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-        \\begin{{center}}
-        \\begin{{tikzpicture}}
-           \\matrix [column sep=0.2cm, row sep=0.2cm] {{"""
-
-        for i in range(rows):
-           for j in range(cols):
-               idx = i * cols + j
-               if idx < len(images):
-                   latex_code += f"""
-               \\node {{ \\includegraphics[width={0.8/grid_size}\\textwidth,height={0.7/grid_size}\\textheight,keepaspectratio]{{{images[idx]}}} }}; """
-                   if j < cols - 1:
-                       latex_code += "&"
-           latex_code += "\\\\"
-
-        latex_code += """
-        };
-    \\end{tikzpicture}
-    \\end{center}"""
-        if content:
-            latex_code += """
-    \\vspace{0.5em}
-    \\begin{itemize}
-        """ + generate_content_items(content) + """
-    \\end{itemize}"""
-
-    else:
-        # Default side-by-side layout for standard media
-        if playable and first_frame_path:
-            latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-    \\begin{{columns}}[T]
-        \\begin{{column}}{{0.48\\textwidth}}
-            \\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{first_frame_path}}}
-            \\begin{{center}}
-                \\vspace{{0.3em}}
-                \\footnotesize{{Click to play}}\\\\
-                \\movie[externalviewer]{{\\textcolor{{blue}}{{\\underline{{Play}}}}}}{{{filename}}}
-            \\end{{center}}
-        \\end{{column}}
-        \\begin{{column}}{{0.48\\textwidth}}
-            \\begin{{itemize}}
-                {generate_content_items(content)}
-            \\end{{itemize}}
-        \\end{{column}}
-    \\end{{columns}}"""
-        else:
-            if playable and first_frame_path:
-                latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-        \\begin{{columns}}[T]
-            \\begin{{column}}{{0.48\\textwidth}}
-                \\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{first_frame_path}}}
-                \\begin{{center}}
-                    \\vspace{{0.3em}}
-                    \\footnotesize{{Click to play}}\\\\
-                    \\movie[externalviewer]{{\\textcolor{{blue}}{{\\underline{{Play}}}}}}{{{filename}}}
-                \\end{{center}}
-            \\end{{column}}
-            \\begin{{column}}{{0.48\\textwidth}}
-                \\begin{{itemize}}
-                    {generate_content_items(content)}
-                \\end{{itemize}}"""
-
-                # Add source citation as footnote if available
-                if source_url:
-                    latex_code = latex_code.rstrip() + format_url_footnote(source_url)
-
-                latex_code += """
-            \\end{column}
-        \\end{columns}"""
-            else:
-                latex_code = f"""\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}
-        \\begin{{columns}}[T]
-            \\begin{{column}}{{0.48\\textwidth}}
-                \\includegraphics[width=\\textwidth,height=0.6\\textheight,keepaspectratio]{{{filename}}}
-            \\end{{column}}
-            \\begin{{column}}{{0.48\\textwidth}}
-                \\begin{{itemize}}
-                    {generate_content_items(content)}
-                \\end{{itemize}}"""
-
-                # Add source citation as footnote if available
-                if source_url:
-                    latex_code = latex_code.rstrip() + format_url_footnote(source_url)
-
-                latex_code += """
-            \\end{column}
-        \\end{columns}"""
-    latex_code += "\n\\end{frame}\n"
-    return latex_code
 
 def generate_source_citation(source_url):
     """Generate LaTeX code for source citation"""
@@ -1674,8 +1444,8 @@ def format_source_citation(url):
             return f"{{\\tiny GitHub: \\href{{{url}}}{{\\textcolor{{blue}}{{[View Repository]}}}}}}"
         else:
             # For general URLs, abbreviate if too long
-            if len(url) > 50:  # Threshold for abbreviation
-                display_url = base_url + '/...' + path[-20:] if len(path) > 20 else base_url
+            if len(url) > 15:  # Threshold for abbreviation
+                display_url = base_url + '/...' + str(split(path,"/")[-1]) if len(path) > 10 else base_url
                 return f"{{\\tiny Source: {display_url} \\href{{{url}}}{{\\textcolor{{blue}}{{[link]}}}}}}"
             else:
                 return f"{{\\tiny Source: \\href{{{url}}}{{\\textcolor{{blue}}{{{url}}}}}}}"
@@ -1722,6 +1492,7 @@ def verify_media_file(filepath):
     print(f"Warning: Media file not found: {filepath}")
     return None
 
+
 def process_media(url, content=None, title=None, playable=False, slide_index=None, callback=None):
     """Process media with graceful handling of missing files and URLs"""
 
@@ -1754,31 +1525,6 @@ def process_media(url, content=None, title=None, playable=False, slide_index=Non
             else:
                 processed_content.append(item)
 
-        # Add URL source citation if applicable - BEFORE any media processing
-        if directive_type == 'url' and media_source and media_source.startswith(('http://', 'https://')):
-            # Format and append the citation directly to the last content item
-            citation = format_url_footnote(media_source)
-            if content:
-                content[-1] = content[-1].rstrip() + citation
-            else:
-                content.append("\\phantom{.}" + citation)  # Add phantom text if no content
-
-        # Now process the media downloading and layout generation
-        if directive_type == 'url' and playable:
-            if media_source.startswith(('http://', 'https://')):
-                if 'youtube.com' in media_source or 'youtu.be' in media_source:
-                    result = download_youtube_video(media_source)
-                    if result:
-                        base_name, filename, filepath = result
-                        first_frame_path = generate_preview_frame(filepath)
-                        return generate_latex_code(
-                            base_name,
-                            f"media_files/{filename}",
-                            first_frame_path,
-                            content,  # Now includes citation
-                            title,
-                            True
-                        ), f"\\play \\file media_files/{filename}"
 
         # Now add all footnotes to the last content item or create a phantom item
         if processed_content:
@@ -1833,7 +1579,7 @@ def process_media(url, content=None, title=None, playable=False, slide_index=Non
                         ), f"\\play \\file media_files/{filename}"
 
         # Handle regular URLs
-        elif directive_type == 'url':
+        elif directive_type == 'url' :
             if media_source.startswith(('http://', 'https://')):
                 base_name, filename, first_frame_path = download_media(media_source)
                 if base_name and filename:
@@ -2084,8 +1830,6 @@ def handle_missing_media_fallback(original_url, content, title, playable):
 terminal_io = None
 
 
-
-
 def download_youtube_video(url, file_path=None):
     """
     Downloads YouTube video and returns file information.
@@ -2099,18 +1843,21 @@ def download_youtube_video(url, file_path=None):
         import yt_dlp
 
     print("\nDownloading YouTube video...")
-
     os.makedirs('media_files', exist_ok=True)
     clean_url = url.replace('\\play', '').strip()
 
-    # First, get the video info without downloading
-    info_opts = {
+    ydl_opts = {
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'quiet': False,
         'no_warnings': False,
+        'extract_flat': False,
+        'writethumbnail': False,
+        'merge_output_format': 'mp4'
     }
 
     try:
-        with yt_dlp.YoutubeDL(info_opts) as ydl:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Get video info
             info = ydl.extract_info(clean_url, download=False)
             if info is None:
                 print("Error: Could not extract video information")
@@ -2121,16 +1868,12 @@ def download_youtube_video(url, file_path=None):
             safe_filename = sanitize_filename(video_title + '.mp4')
             output_path = os.path.join('media_files', safe_filename)
 
-        # Now download with specific options
-        download_opts = {
-            'format': 'best[ext=mp4]/best',
-            'outtmpl': output_path,
-            'quiet': False,
-            'no_warnings': False,
-        }
+            # Update options with output path
+            ydl_opts['outtmpl'] = output_path
 
-        with yt_dlp.YoutubeDL(download_opts) as ydl:
-            ydl.download([clean_url])
+            # Download with updated options
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([clean_url])
 
             if os.path.exists(output_path):
                 base_name = os.path.splitext(safe_filename)[0]
@@ -2142,7 +1885,21 @@ def download_youtube_video(url, file_path=None):
 
     except Exception as e:
         print(f"Error downloading YouTube video: {str(e)}")
+        # Fallback to simpler format if initial attempt fails
+        try:
+            fallback_opts = ydl_opts.copy()
+            fallback_opts['format'] = 'best'
+            with yt_dlp.YoutubeDL(fallback_opts) as ydl:
+                ydl.download([clean_url])
+                if os.path.exists(output_path):
+                    base_name = os.path.splitext(safe_filename)[0]
+                    print(f"Video downloaded successfully to: {output_path}")
+                    return base_name, safe_filename, output_path
+        except Exception as fallback_error:
+            print(f"Fallback download failed: {str(fallback_error)}")
         return None
+
+
 
 def update_input_file(file_path, url_updates, is_tex_file=False):
     """Update input file only when explicitly needed"""
