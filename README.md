@@ -1,4 +1,4 @@
-Latest version 3.0
+Latest version 4.0
 
 For the impatient:
 
