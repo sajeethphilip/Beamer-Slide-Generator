@@ -1178,7 +1178,7 @@ class BeamerSlideEditor(ctk.CTk):
             'labs': '#000000'      # Black for 'LABS'
         }
         # Version and info
-        self.__version__ = "3.1"
+        self.__version__ = "4.0"
         self.__author__ = "Ninan Sajeeth Philip"
         self.__license__ = "Creative Commons"
         self.logo_ascii = AIRIS4D_ASCII_LOGO
@@ -3570,16 +3570,7 @@ Created by {self.__author__}
 
 
  #----------------------------------------------------------------------------
-    def set_notes_mode_old(self, mode: str) -> None:
-        """Set notes mode and update UI"""
-        self.notes_mode.set(mode)
-        self.update_notes_buttons(mode)
 
-        # Update notes editor state
-        if mode == "slides":
-            self.notes_editor.configure(state="disabled")
-        else:
-            self.notes_editor.configure(state="normal")
 
     def update_notes_buttons(self, active_mode: str) -> None:
         """Update button colors based on active mode"""
@@ -4761,22 +4752,7 @@ Created by {self.__author__}
             messagebox.showwarning("Warning", "PDF file not found. Generate it first!")
 
 #------------------------------------------------------------------------------------------------------------------
-    def preview_pdf_old(self) -> None:
-        """Preview generated PDF using system default PDF viewer"""
-        if not self.current_file:
-            messagebox.showwarning("Warning", "Please save and generate PDF first!")
-            return
 
-        pdf_file = os.path.splitext(self.current_file)[0] + '.pdf'
-        if os.path.exists(pdf_file):
-            if sys.platform.startswith('win'):
-                os.startfile(pdf_file)
-            elif sys.platform.startswith('darwin'):
-                subprocess.run(['open', pdf_file])
-            else:
-                subprocess.run(['xdg-open', pdf_file])
-        else:
-            messagebox.showwarning("Warning", "PDF file not found. Generate it first!")
     # Slide Management
 
     def new_slide(self) -> None:
@@ -7884,7 +7860,7 @@ except Exception as e:
 
             # Create desktop entry
             desktop_entry_content = f"""[Desktop Entry]
-Version=1.0
+Version=4.0
 Type=Application
 Name=BSG-IDE
 Comment=Beamer Slide Generator IDE
@@ -8194,71 +8170,7 @@ except Exception as e:
                 print(f"✗ Error creating directory structure: {str(e)}")
             return False
 
-    def _get_install_paths_old(self):
-        """Get installation paths based on platform and permissions"""
-        paths = {}
 
-        # Get user's home directory
-        home_dir = Path.home()
-
-        if self.is_admin:
-            # System-wide installation paths
-            if self.system == "Linux":
-                paths.update({
-                    'base': Path('/usr/local/lib/bsg-ide'),
-                    'bin': Path('/usr/local/bin'),
-                    'share': Path('/usr/local/share/bsg-ide'),
-                    'resources': Path('/usr/local/share/bsg-ide/resources'),
-                    'applications': Path('/usr/share/applications'),
-                    'icons': Path('/usr/share/icons/hicolor'),
-                    'python_site': Path(site.getsitepackages()[0]) / 'bsg_ide'
-                })
-            elif self.system == "Windows":
-                program_files = Path(os.environ.get('PROGRAMFILES', 'C:\\Program Files'))
-                paths.update({
-                    'base': program_files / 'BSG-IDE',
-                    'bin': program_files / 'BSG-IDE' / 'bin',
-                    'resources': program_files / 'BSG-IDE' / 'resources',
-                    'start_menu': Path(os.environ['PROGRAMDATA']) / 'Microsoft/Windows/Start Menu/Programs',
-                    'python_site': Path(site.getsitepackages()[0]) / 'bsg_ide'
-                })
-            else:  # macOS
-                paths.update({
-                    'base': Path('/Applications/BSG-IDE.app/Contents'),
-                    'resources': Path('/Applications/BSG-IDE.app/Contents/Resources'),
-                    'bin': Path('/usr/local/bin'),
-                    'python_site': Path(site.getsitepackages()[0]) / 'bsg_ide'
-                })
-        else:
-            # User-specific installation paths
-            if self.system == "Linux":
-                paths.update({
-                    'base': home_dir / '.local/lib/bsg-ide',
-                    'bin': home_dir / '.local/bin',
-                    'share': home_dir / '.local/share/bsg-ide',
-                    'resources': home_dir / '.local/share/bsg-ide/resources',
-                    'applications': home_dir / '.local/share/applications',
-                    'icons': home_dir / '.local/share/icons/hicolor',
-                    'python_site': Path(site.getusersitepackages()) / 'bsg_ide'
-                })
-            elif self.system == "Windows":
-                appdata = Path(os.environ['APPDATA'])
-                paths.update({
-                    'base': appdata / 'BSG-IDE',
-                    'bin': appdata / 'BSG-IDE' / 'bin',
-                    'resources': appdata / 'BSG-IDE' / 'resources',
-                    'start_menu': appdata / 'Microsoft/Windows/Start Menu/Programs',
-                    'python_site': Path(site.getusersitepackages()) / 'bsg_ide'
-                })
-            else:  # macOS
-                paths.update({
-                    'base': home_dir / 'Applications/BSG-IDE.app/Contents',
-                    'resources': home_dir / 'Applications/BSG-IDE.app/Contents/Resources',
-                    'bin': home_dir / '.local/bin',
-                    'python_site': Path(site.getusersitepackages()) / 'bsg_ide'
-                })
-
-        return paths
 
     def _verify_python_env(self):
         """Verify Python environment and dependencies"""
