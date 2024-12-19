@@ -7,7 +7,7 @@ For the impatient:
 3. pip install bsg-ide
 4. bsg-ide --fix
 
-Your file menu should now show the bsg-ide icon under the ofie menu.
+Your file menu should now show the bsg-ide icon under the office menu.
 
 OR
 
