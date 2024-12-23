@@ -116,7 +116,7 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 \usepackage{xstring}
 \usepackage{animate}
 \usepackage{multimedia}
-
+\usepackage{xifthen}
 % Extended packages with fallbacks
 \IfFileExists{tcolorbox.sty}{\usepackage{tcolorbox}}{}
 \IfFileExists{fontawesome5.sty}{\usepackage{fontawesome5}}{}
@@ -146,30 +146,32 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 }
 
 % Conditional definitions based on package availability
-\IfFileExists{tcolorbox.sty}{
-   \newtcolorbox{alertbox}[1][red]{
-       colback=#1!5!white,
-       colframe=#1!75!black,
-       fonttitle=\bfseries,
-       boxrule=0.5pt,
-       rounded corners,
-       shadow={2mm}{-1mm}{0mm}{black!50}
-   }
+\IfFileExists{tcolorbox.sty}{%
+    \newtcolorbox{alertbox}[1][red]{%
+        colback=#1!5!white,
+        colframe=#1!75!black,
+        fonttitle=\bfseries,
+        boxrule=0.5pt,
+        rounded corners,
+        shadow={2mm}{-1mm}{0mm}{black!50}
+    }
 
-   \newtcolorbox{infobox}[1][blue]{
-       enhanced,
-       colback=#1!5!white,
-       colframe=#1!75!black,
-       arc=4mm,
-       boxrule=0.5pt,
-       fonttitle=\bfseries,
-       attach boxed title to top center={yshift=-3mm,yshifttext=-1mm},
-       boxed title style={size=small,colback=#1!75!black},
-       shadow={2mm}{-1mm}{0mm}{black!50}
-   }
+    \newtcolorbox{infobox}[1][blue]{%
+        enhanced,
+        colback=#1!5!white,
+        colframe=#1!75!black,
+        arc=4mm,
+        boxrule=0.5pt,
+        fonttitle=\bfseries,
+        attach boxed title to top center={yshift=-3mm,yshifttext=-1mm},
+        boxed title style={size=small,colback=#1!75!black},
+        shadow={2mm}{-1mm}{0mm}{black!50}
+    }
 }{}
 
+
 % Define colors
+
 \definecolor{myred}{RGB}{255,50,50}
 \definecolor{myblue}{RGB}{0,130,255}
 \definecolor{mygreen}{RGB}{0,200,100}
@@ -213,8 +215,25 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 \usepackage{pgfpages}
 \setbeameroption{show notes on second screen=right}
 \setbeamertemplate{note page}{\pagecolor{yellow!5}\insertnote}
-"""
 
+
+% Animated background support
+\newcommand{\anbg}[2][0.2]{%
+    \ifx\@empty#2\@empty
+        % Clear background if empty argument
+        \setbeamertemplate{background}{}
+    \else
+        % Set animated background
+        \setbeamertemplate{background}{%
+            \begin{tikzpicture}[remember picture,overlay]
+                \node[opacity=#1] at (current page.center) {%
+                    \animategraphics[autoplay,loop,width=\paperwidth]{12}{#2}{}{}
+                };
+            \end{tikzpicture}%
+        }
+    \fi
+}
+"""
    # Progress bar template
     frame_setup = r"""
 % Progress bar setup
@@ -1509,10 +1528,24 @@ def process_media(url, content=None, title=None, playable=False, slide_index=Non
         # Create a list to store footnotes
         footnotes = []
 
+
         # First collect any existing footnotes from content
         processed_content = []
         for item in content:
-            if '\\footnote{' in item:
+            if '\\anbg' in item:
+                    # Extract image name from \anbg command
+                    match = re.search(r'\\anbg\{(.*?)\}', item)
+                    if match:
+                        image_name = match.group(1)
+                        if image_name:
+                            # Add background command before frame
+                           processed_content.append(f"\\anbg{{{image_name}}}")
+                        else:
+                            # Clear background if empty
+                            processed_content.append("\\anbg{}")
+                    # Remove \anbg line from content
+                    content.pop(i)
+            elif '\\footnote{' in item:
                 # Extract footnote text
                 footnote_start = item.index('\\footnote{') + len('\\footnote{')
                 footnote_end = item.rindex('}')
@@ -2084,26 +2117,6 @@ def generate_special_commands():
     \end{tikzpicture}%
 }
 
-% Box definitions
-\newtcolorbox{alertbox}[1][red]{
-    enhanced,
-    colback=#1!5!white,
-    colframe=#1!75!black,
-    fonttitle=\bfseries,
-    boxrule=0.5pt,
-    rounded corners,
-    drop shadow
-}
-
-\newtcolorbox{infobox}[1][blue]{
-    enhanced,
-    colback=#1!5!white,
-    colframe=#1!75!black,
-    arc=4mm,
-    boxrule=0.5pt,
-    fonttitle=\bfseries,
-    drop shadow
-}
 """
 def process_content_with_notes(content, notes, frame_title=None):
     """Process content and notes together"""
