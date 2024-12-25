@@ -1435,6 +1435,27 @@ def generate_content_items(content, color=None):
     for item in content:
         if item.strip():
             item = str(item).strip()
+            if item.startswith(('\\pause','\\item')):
+                items.append(item)
+                continue
+            # Preserve original item format if it starts with special characters
+            if item.startswith(('\\', '•')):
+                processed_item = process_latex_content(item)
+            else:
+                # Remove any leading hyphen before processing
+                clean_item = item.lstrip('- ')
+                processed_item = process_latex_content(clean_item)
+            # Handle environment directives
+            if item == '\\begin{enumerate}':
+                in_enumerate = True
+                items.append(item)
+                continue
+            elif item == '\\end{enumerate}':
+                in_enumerate = False
+                items.append(item)
+                continue
+            elif item in ['\\begin{itemize}', '\\end{itemize}']:
+                continue
             if item.startswith('-'):
                 item = item[1:].strip()
             processed_item = process_latex_content(item)
@@ -1470,20 +1491,6 @@ def format_source_citation(url):
                 return f"{{\\tiny Source: \\href{{{url}}}{{\\textcolor{{blue}}{{{url}}}}}}}"
     except:
         return f"{{\\tiny Source: {url}}}"
-
-def process_content_items(content_items):
-    """Process content items with proper None handling"""
-    processed_items = []
-    if content_items:
-        for item in content_items:
-            if item:  # Check if item is not None and not empty
-                # Ensure item starts with bullet point if needed
-                if not str(item).strip().startswith('-'):
-                    item = f"- {str(item).strip()}"
-                # Process the content
-                processed_item = process_latex_content(item)
-                processed_items.append(processed_item)
-    return processed_items
 
 
 

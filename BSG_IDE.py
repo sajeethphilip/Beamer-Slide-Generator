@@ -1699,8 +1699,8 @@ class BeamerSlideEditor(ctk.CTk):
             # Update content
             for item in slide.get('content', []):
                 if item and item.strip():
-                    if not item.startswith('-'):
-                        item = f"- {item}"
+                    #if not item.startswith('-'):
+                     #   item = f"- {item}"
                     self.content_editor.insert('end', f"{item}\n")
 
             # Update notes - only if present and non-empty
@@ -2300,8 +2300,8 @@ Created by {self.__author__}
                         content_line = content_line.replace('\\&', '&')
                         content_line = re.sub(r'\\textcolor{[^}]*}{([^}]*)}', r'\1', content_line)
                         content_line = re.sub(r'\\[a-zA-Z]+{([^}]*)}', r'\1', content_line)
-                        if not content_line.startswith('-'):
-                            content_line = f"- {content_line}"
+                        #if not content_line.startswith('-'):
+                        #    content_line = f"- {content_line}"
                         content_lines.append(content_line)
 
             # Only add non-empty slides
@@ -4321,8 +4321,8 @@ Created by {self.__author__}
                 for item in slide['content']:
                     if item.strip():
                         # Ensure proper bullet point format
-                        if not item.startswith('-'):
-                            item = f"- {item}"
+                       # if not item.startswith('-'):
+                        #    item = f"- {item}"
                         content += f"{item}\n"
 
                 content += "\\end{Content}\n\n"
