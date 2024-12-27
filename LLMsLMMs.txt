@@ -1,0 +1,585 @@
+
+\documentclass[aspectratio=169]{beamer}
+
+% Essential packages (core)
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{xstring}
+\usepackage{animate}
+\usepackage{multimedia}
+\usepackage{xifthen}
+% Extended packages with fallbacks
+\IfFileExists{tcolorbox.sty}{\usepackage{tcolorbox}}{}
+\IfFileExists{fontawesome5.sty}{\usepackage{fontawesome5}}{}
+\IfFileExists{pifont.sty}{\usepackage{pifont}}{}
+\IfFileExists{soul.sty}{\usepackage{soul}}{}
+
+% Package configurations
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{shadows.blur, shapes.geometric, positioning, arrows.meta, backgrounds, fit}
+
+% Original text effects
+\newcommand{\shadowtext}[2][2pt]{%
+   \begin{tikzpicture}[baseline]
+       \node[blur shadow={shadow blur steps=5,shadow xshift=0pt,shadow yshift=-#1,
+             shadow opacity=0.75}, text=white] {#2};
+   \end{tikzpicture}%
+}
+
+\newcommand{\glowtext}[2][myblue]{%
+   \begin{tikzpicture}[baseline]
+       \node[circle, inner sep=1pt,
+             blur shadow={shadow blur steps=10,shadow xshift=0pt,
+             shadow yshift=0pt,shadow blur radius=5pt,
+             shadow opacity=0.5,shadow color=#1},
+             text=white] {#2};
+   \end{tikzpicture}%
+}
+
+% Conditional definitions based on package availability
+\IfFileExists{tcolorbox.sty}{%
+    \newtcolorbox{alertbox}[1][red]{%
+        colback=#1!5!white,
+        colframe=#1!75!black,
+        fonttitle=\bfseries,
+        boxrule=0.5pt,
+        rounded corners,
+        shadow={2mm}{-1mm}{0mm}{black!50}
+    }
+
+    \newtcolorbox{infobox}[1][blue]{%
+        enhanced,
+        colback=#1!5!white,
+        colframe=#1!75!black,
+        arc=4mm,
+        boxrule=0.5pt,
+        fonttitle=\bfseries,
+        attach boxed title to top center={yshift=-3mm,yshifttext=-1mm},
+        boxed title style={size=small,colback=#1!75!black},
+        shadow={2mm}{-1mm}{0mm}{black!50}
+    }
+}{}
+
+
+% Define colors
+
+\definecolor{myred}{RGB}{255,50,50}
+\definecolor{myblue}{RGB}{0,130,255}
+\definecolor{mygreen}{RGB}{0,200,100}
+\definecolor{myyellow}{RGB}{255,210,0}
+\definecolor{myorange}{RGB}{255,130,0}
+\definecolor{mypurple}{RGB}{147,112,219}
+\definecolor{mypink}{RGB}{255,105,180}
+\definecolor{myteal}{RGB}{0,128,128}
+
+% Glow colors
+\definecolor{glowblue}{RGB}{0,150,255}
+\definecolor{glowyellow}{RGB}{255,223,0}
+\definecolor{glowgreen}{RGB}{0,255,128}
+\definecolor{glowpink}{RGB}{255,182,193}
+
+% Special effect support
+\usetikzlibrary{shadows.blur}
+\usetikzlibrary{decorations.text}
+\usetikzlibrary{fadings}
+
+% Basic highlighting commands
+\newcommand{\hlbias}[1]{\textcolor{myblue}{\textbf{#1}}}
+\newcommand{\hlvariance}[1]{\textcolor{mypink}{\textbf{#1}}}
+\newcommand{\hltotal}[1]{\textcolor{myyellow}{\textbf{#1}}}
+\newcommand{\hlkey}[1]{\colorbox{myblue!20}{\textcolor{white}{\textbf{#1}}}}
+\newcommand{\hlnote}[1]{\colorbox{mygreen!20}{\textcolor{white}{\textbf{#1}}}}
+
+% Basic theme setup
+\usetheme{Madrid}
+\usecolortheme{owl}
+
+% Color settings
+\setbeamercolor{normal text}{fg=white}
+\setbeamercolor{structure}{fg=myyellow}
+\setbeamercolor{alerted text}{fg=myorange}
+\setbeamercolor{example text}{fg=mygreen}
+\setbeamercolor{background canvas}{bg=black}
+\setbeamercolor{frametitle}{fg=white,bg=black}
+
+% Notes support
+\usepackage{pgfpages}
+\setbeameroption{show notes on second screen=right}
+\setbeamertemplate{note page}{\pagecolor{yellow!5}\insertnote}
+
+
+% Animated background support
+\newcommand{\anbg}[2][0.2]{%
+    \ifx\@empty#2\@empty
+        % Clear background if empty argument
+        \setbeamertemplate{background}{}
+    \else
+        % Set animated background
+        \setbeamertemplate{background}{%
+            \begin{tikzpicture}[remember picture,overlay]
+                \node[opacity=#1] at (current page.center) {%
+                    \animategraphics[autoplay,loop,width=\paperwidth]{12}{#2}{}{}
+                };
+            \end{tikzpicture}%
+        }
+    \fi
+}
+
+
+% Progress bar setup
+\makeatletter
+\def\progressbar@progressbar{}
+\newcount\progressbar@tmpcounta
+\newcount\progressbar@tmpcountb
+\newdimen\progressbar@pbht
+\newdimen\progressbar@pbwd
+\newdimen\progressbar@tmpdim
+
+\progressbar@pbwd=\paperwidth
+\progressbar@pbht=1pt
+
+\def\progressbar@progressbar{%
+   \begin{tikzpicture}[very thin]
+       \shade[top color=myblue!50,bottom color=myblue]
+           (0pt, 0pt) rectangle (\insertframenumber\progressbar@pbwd/\inserttotalframenumber, \progressbar@pbht);
+   \end{tikzpicture}%
+}
+
+% Modified frame title template
+\setbeamertemplate{frametitle}{
+   \nointerlineskip
+   \vskip1ex
+   \begin{beamercolorbox}[wd=\paperwidth,ht=4ex,dp=2ex]{frametitle}
+       \begin{minipage}[t]{\dimexpr\paperwidth-4em}
+           \centering
+           \vspace{2pt}
+           \insertframetitle
+           \vspace{2pt}
+       \end{minipage}
+   \end{beamercolorbox}
+   \vskip.5ex
+   \progressbar@progressbar
+}
+\makeatother
+\makeatletter
+\def\insertshortinstitute{airis4D}
+\makeatother
+
+% Footline template
+\setbeamertemplate{footline}{%
+ \leavevmode%
+ \hbox{%
+   \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
+     \usebeamerfont{author in head/foot}\insertshortauthor~(\insertshortinstitute)%
+   \end{beamercolorbox}%
+   \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,center]{title in head/foot}%
+     \usebeamerfont{title in head/foot}\insertshorttitle%
+   \end{beamercolorbox}%
+   \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1ex,right]{date in head/foot}%
+     \usebeamerfont{date in head/foot}\insertshortdate{}\hspace*{2em}%
+     \insertframenumber{} / \inserttotalframenumber\hspace*{2ex}%
+   \end{beamercolorbox}}%
+ \vskip0pt%
+}
+
+% Additional settings
+\setbeamersize{text margin left=5pt,text margin right=5pt}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{blocks}[rounded][shadow=true]
+% Title setup
+\title{LLMs SLMs and LMMs}
+\subtitle{ The Power of Attention}
+\author{Ninan Sajeeth Philip}
+\institute{\textcolor{mygreen}{Artificial Intelligence Research and Intelligent Systems (airis4D)}}
+\date{\today}
+\begin{document}
+\maketitle
+
+% Title page
+\begin{frame}[plain]
+   \begin{tikzpicture}[overlay,remember picture]
+       % Background gradient
+       \fill[top color=black!90,bottom color=black!70,middle color=myblue!30]
+       (current page.south west) rectangle (current page.north east);
+       % Title with glow effect
+       \node[align=center] at (current page.center) {
+           \glowtext[glowblue]{\Huge\textbf{LLMs SLMs and LMMs}}
+           \\[1em]\glowtext[glowyellow]{\large  The Power of Attention}
+           \\[2em]
+           \glowtext[glowgreen]{\large Ninan Sajeeth Philip}
+           \\[0.5em]
+           \textcolor{white}{\small Artificial Intelligence Research and Intelligent Systems (airis4D)}
+           \\[1em]
+           \textcolor{white}{\small \today}
+       };
+   \end{tikzpicture}
+\end{frame}
+
+\title Language as Data
+\begin{Content} \None
+- Corpus (Internet of Texts !!)
+- Books
+- Chapters
+- Paragraphs
+- Sentences
+- Words
+- Grammar
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title Enoding and Embedding
+\begin{Content} \url https://miro.medium.com/v2/resize:fit:837/1*d5-PQyRRjvzBZjI5f7X3hA.png
+\begin{enumerate}[<+->]
+- \textcolor{myyellow}{One Hot Encoding} every category is represented by a new binary column.
+- \textcolor{mygreen}{Simple and Interpretable} but not scalable
+- \textcolor{myyellow}{Bag of Words} Words are ranked based on their frequency of occurrence
+- \textcolor{myblue}{Word Embeddings}
+\end{enumerate}
+\end{Content}
+
+\begin{Notes}
+Computers need everything as numbers. Hence, categorical data (text or image) has to be converted to numeric values. Both encodings and Ebeddings do it, but there is a difference.
+\end{Notes}
+
+
+\title One-hot Encoding
+\begin{Content} \url https://miro.medium.com/v2/resize:fit:837/1*d5-PQyRRjvzBZjI5f7X3hA.png
+  \begin{enumerate}[<+->]
+   Treats each category as \textcolor{myblue}{independent and orthogonal}.
+    Encoded vectors are easily \textcolor{mygreen}{interpretable}.
+    \textcolor{mygreen}{Does not require any learning}.
+    \textcolor{myyellow}{ Increases the data dimensionality} by creating a new binary column for each category.
+     \textcolor{myred}{Inefficient and sparse} when dealing with large number of categorical features.
+   \end{enumerate}
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title Embedding
+\begin{Content} \None
+\begin{enumerate}[<+->]
+ \textcolor{myblue}{Embedding}: reduces the dimensionality by representing each category as a dense vector of lower dimensionality (e.g., 8, 16, 32 dimensions).
+  \textcolor{myblue}{Embedding} Captures semantic relationships and similarities between categories by placing similar categories closer together in the embedding space.
+  \textcolor{myblue}{Embeddings} are scalable and efficient for high-cardinality features.
+  \textcolor{myblue}{Embeddings}  are adjusted during training to capture the relationships between categories, making them data-driven and context-aware.
+ \end{enumerate}
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title Word Embeddings
+\begin{Content} \url https://miro.medium.com/v2/resize:fit:2000/1*SYiW1MUZul1NvL1kc1RxwQ.png
+\begin{enumerate}[<+->]
+ \textcolor{mygreen}{Word Embeddings} encapsulates the word meaning in different contexts.
+ A PCA on the Embeddings demonstrates how \textcolor{mygreen}{similar entities are clustered together} in the embedded space.
+ Higher dimension makes them \textcolor{myred}{non-interpretable} but are \textcolor{mygreen}{scalable}.
+ {Example: GloVe and Word2Vec}
+\end{enumerate}
+\end{Content}
+
+\begin{Notes}
+\begin{enumerate}
+\item How a person behaves in different situations can be given as scores on his personality traits as numbers. Word embeddings are like that. It is a set of numbers (vector or tensor) that encapsulates the contextual behaviour of the token so that it can be used to create the appropriate context vector based on a given context.
+\end{enumerate}
+\end{Notes}
+
+
+\title Pre Tranformer Models - RNN, LSTM and GRU
+\begin{Content} \url https://media.licdn.com/dms/image/C5612AQH5Im8XrvLmYQ/article-cover_image-shrink_600_2000/0/1564974698831?e=2147483647&v=beta&t=mVx-N8AfjAS5L-ktV6vmi_5LxR1madQ16yT1fRu__Jk
+-  Recurrent Neural Networks (RNN)
+-  Long Short-Term Memory (LSTM)
+-  Gated Recurrent Units (GRU)
+\end{Content}
+
+\begin{Notes}
+\textbf{\textcolor{myred}{All of them use word embeddings on the input tokens.}}
+\end{Notes}
+
+
+\title Recurrent Neural Network
+\begin{Content} \url https://pabloinsente.github.io/assets/post-9/simple-rnn.png
+\begin{enumerate}
+ $z_t=W_{hz}h_t+b_z$
+ $h_z=\sigma(W_{hh}h_{t-1}+W_{xh}x_t+b_h)$
+\pause
+\small{\textcolor{myred}{Issues}:  Vanishing and Exploding Gradients  as \textcolor{myyellow}{ the gradient of the error are backpropagated in time} causing it to vanish if $\ll 1.0$ or explode if $\gg 1.0$}
+\end{enumerate}
+\end{Content}
+
+\begin{Notes}
+\begin{enumerate}
+\item At each time step, t, the RNN takes an input vector, $x_t$, and updates its hidden state, $h_t$, using the equation: $h_t = \sigma_k (W_{xh}x_i +W_{hh}h_i + b_k)$ where $W_{xh}$ is the weight matrix between input and hidden layer, $W_{hh}$ is the weight matrix for the recurrent connection, $b_h$ is the bias vector and $\sigma_k$ is the activation function (hyperbolic tanh function or RELU)
+\item The calculation of gradients encounters terms involving the product of many Jacobian matrices. If the eigenvalues of $J_k$ are less than 1, the product of these matrices will tend to zero as n increases, leading to vanishing gradients. Conversely, if the eigenvalues of $J_k$ are greater than 1, the gradients can grow exponentially
+\end{enumerate}
+\end{Notes}
+
+
+\title Long Short-Term Memory Networks (LSTM)
+\begin{Content} \url https://miro.medium.com/v2/resize:fit:1039/1*QiLYco0hB8EterWYTyyv4g.png
+- LSTM use \textcolor{myyellow}{gating mechanisms} (input, forget,output) to  \textcolor{myyellow}{control the flow of information through the network} over a longer period  through the \textcolor{myred}{cell state $C_t$} to prevent vanishing gradient problem.
+- $C_t$ transfers relevant information across different time steps.
+\end{Content}
+
+\begin{Notes}
+These gates determine how much of the input to consider, how much of the previous state to forget, and how much of the cell state to output.
+\end{Notes}
+
+
+\title Encoder-Decoder Architecture
+\begin{Content} \url https://api.wandb.ai/files/ayush-thakur/images/projects/103390/4fc355be.png
+- What if the number of inputs differs from the number of outputs? For example, translation from one language to another?
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title One2One to Many2Many Architectures
+\begin{Content} \url https://api.wandb.ai/files/ayush-thakur/images/projects/103390/4fc355be.png
+- One to One: Simple, vanilla model
+- One to many: image to text conversion
+- Many to One: Text to Image Generation
+- Many to Many: Text translation
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title Sequence to Sequence Paper (2014)
+\begin{Content} \file media_files/screen_capture_20241224-082412.png
+-     \textcolor{myyellow}{Encoder}: The Encoder processes each token in the input sequence to construct the fixed-length context vector.
+-     \textcolor{myyellow}{Context vector}: A vector encoded with all the information in the input sequence.
+-     \textcolor{myyellow}{Decoder}:  Converts context vector to predict the target-sequence token by token.
+\end{Content}
+
+\begin{Notes}
+For further information on how this encoder-decoder architecture works in seq2seq learning, Please refer to this paper.
+\end{Notes}
+
+
+\title Sequence to Sequence
+\begin{Content} \url https://miro.medium.com/v2/resize:fit:1100/format:webp/1*B5pqh5hTgTaNiuUQhtxBQA.png
+\begin{enumerate}
+\small{LSTM generates fixed length context vector}.
+\pause
+ The Decoder predicts a set of tokens that goes to a softmax function to predict the most probable token.
+\pause
+ The most probable token found is now applied to the context vector to find the next token.
+ \pause
+ \textcolor{myred}{Challenge}: The fixed length context vector should have the complete information in the input sequence - \textcolor{myred}{ What if the information content is large?}
+\end{enumerate}
+\end{Content}
+
+\begin{Notes}
+\textcolor{myred}{Challenge}: The context vector should be able to hold the complete information in the input sequence - which is a challenge if the information content is large.
+\end{Notes}
+
+
+\title Sequence to Sequence - Captures Context
+\begin{Content} \file media_files/screen_capture_20241224-083039.png
+\begin{enumerate}
+The most significant feature of seq2seq learning is that it can capture the context efficiently and cluster context vectors in terms of their meaning.
+\pause
+ \textcolor{myyellow}{Word Embeddings} cluster words depending on their possible contextual meanings.
+ \textcolor{myyellow}{Seq2Seq Learning} cluster sequences based on their information content.
+\end{enumerate}
+\end{Content}
+
+\begin{Notes}
+The most significant feature of seq2seq learning is that it could capture the context efficiently and cluster context vectors in terms of their meaning unheard of in \textcolor{myred}{one-hot encoding or bag of words}
+unlike in \textcolor{myred}{one-hot encoding or bag of words} where there is no link between the code and the content it represents,  the embedding layer, in this case, encapsulates the contextual behaviour of the word.
+To give an \textcolor{myred}{example for how word2Vec} works, it is like the scores one may have describing their behaviour in different circumstances.
+\end{Notes}
+
+
+\title Attention Mechanism (2015)
+\begin{Content} \file media_files/screen_capture_20241224-081932.png
+\begin{enumerate}
+\item Introduced the first \textcolor{mygreen}{attention mechanism} for neural machine translation
+\pause
+ \item   No need to encode all the information in a sentence and its context into a single vector.
+\pause
+\item The model automatically \textcolor{mygreen}{search for relevant parts of a sentence} for predicting a target word, instead of explicitly depending on a single Context Vector.
+\end{enumerate}
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title Attention Mechanism Key Concepts
+\begin{Content} \file media_files/screen_capture_20241224-123524.png
+\begin{enumerate}
+ Each \textcolor{myred}{annotation} is created by concatenating forward and backward bidirectional RNN states.
+\pause
+  $h_i$ contains information about the whole input sequence with a strong focus on the parts surrounding the $i^{th}$ word of the sequence.
+\pause
+  The model dynamically updates the context vector $C_i$ for each target word using a \textcolor{myyellow}{weighted sum} of annotations.
+\pause
+  \small{The training for both models is done simulataniously using backpropagation.}
+\end{enumerate}
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title Attention Mechanism Challenges
+\begin{Content} \file media_files/screen_capture_20241224-123524.png
+\begin{itemize}
+Attention mechanism has efficiently handled the problem with long sequences and the exploding/vanishing gradient problems.
+\pause
+\textcolor{myred}{Bottleneck} Although the long sequence problem is now addressed by the attention mechanism, still the sequence is submitted with time stamps $X_1, X_2...X_t$, which means sequentially (one after another). This means the model is not scalable to be trained on large amounts of data.
+\end{itemize}
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title Attention Recap
+\begin{Content} \None
+\includegraphics[ width=0.8 \textwidth]{media_files/screen_capture_20241226-230401.png}
+\end{Content}
+
+\begin{Notes}
+Also, the input word embedded vectors are fixed for each word, which means, there is no scope for any new learning and the output would be purely dependent on what was learned during the creation of the embedded vectors. But in LLMs, we want the machine to learn new contexts and meanings as it comes across huge volumes of new data.
+\end{Notes}
+
+
+\title From Sequential to Parallel Processing (2017)
+\begin{Content} \file media_files/screen_capture_20241223-094908.png
+- Attention is all you need
+- BERT, GPT
+\end{Content}
+
+\begin{Notes}
+Get rid of LSTM or RNN and use Self-attention that can handle all words at once with the positional encoding mechanism.
+It also uses Contextual Embeddings
+\end{Notes}
+
+
+\title Transformer AI Revolution
+\begin{Content} \file media_files/screen_capture_20241223-094908.png
+- Transformer is a Deep Learning Architecture using Attention Mechanism to \textcolor{myyellow}{handle sequential data in parallel} and \textcolor{mygreen}{pay Attention to the connecting dots in the content and context it captures.} (\textit{personal definition})
+\end{Content}
+
+\begin{Notes}
+\begin{enumerate}
+\item Over 70 \% of the literature on AI nowadays uses a transformer architecture.
+\item The name Transformer was coined by Jacob Iskariot, the 4th author in the paper by the Google team, who voted against the earlier name Attention Net as a catchy name.
+\item In contrast to earlier models like RNN or LSTM or similar sequential learning models that had several disadvantages like exploding gradients and sequence lengths etc.,, Transformers, through its ability to process in parallel, is scalable to any amount of data making the revolution in AI possible.
+\end{enumerate}
+\end{Notes}
+
+
+\title Self Attention
+\begin{Content} \file media_files/screen_capture_20241227-195132.png
+-$Query, \textcolor{myred}{q} =W_q . x_i$
+-$Key, \textcolor{myred}{k} =W_k  . x_i$
+-$Value, \textcolor{myred}{v} =W_v . x_i$\footnote{\href{https://www.youtube.com/watch?v=0PjHri8tc1c&t=2s}{Video  Source}}
+\pause
+\tiny{
+- \textcolor{myyellow}{x is word embedding of dimension [1xN]}
+- \textcolor{myyellow}{W is  Weight Matrix of dimension [NxM]}
+ - \textcolor{myyellow}{q,k,v are thus having dimension [1xM]} }
+\pause
+- \textcolor{myred}{$A(q_j,K,V) =\sum^T_{i=1}\frac{e^{q_j.k^T_i}}{\sum_j e^{q_j.k^T_j}}v_i$}
+- \textcolor{myyellow}{dot product gives a scalar and multiplying by the Value vector $v$  gives us a [1xM] dimension vector}
+\end{Content}
+
+\begin{Notes}
+The most important point here is that (a) The network can now learn new contexts, (b) The whole process can now be done in parallel,
+\end{Notes}
+
+
+\title Attention vs Self Attention
+\begin{Content} \None
+\includegraphics[ width=0.45 \textwidth]{media_files/screen_capture_20241226-230401.png}\includegraphics[ width=0.45 \textwidth]{ media_files/screen_capture_20241227-195132.png}
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title Self Attention
+\begin{Content} \file media_files/screen_capture_20241227-225528.png
+- Since the computation can be done in parallel, the Attention for the whole A(Q,K,V) can be computed by treating Q as the vector of dimension L x N where L is the sequence Length. {\tiny\textcolor{myred}{$(Q,K,V) \rightarrow \mathbb{R}^{LxM}$ }}
+ \pause
+- Reulting A will be a matrix of dimension \textcolor{myred}{LxL} and to prevent it from growing too large than the gradients, we scale it down by \textcolor{myred}{$\sqrt{M}$}.
+\pause
+-  {\tiny Thus A(Q,K,V) =\textcolor{mygreen}{$softmax(\frac{QK^T}{\sqrt M})V$}}
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title Multi-head Attention
+\begin{Content} \file media_files/screen_capture_20241227-233938.png
+- Just like multiple channels use different kernels in CNNs to capture different details of the image, Multiple self-attentions with different weight matrices capture different information from the sequence!
+\pause
+- To have the same dimension for the output from the multi head Attention as that of the self-attention, the dimension of the Weight matrix is kept as \textcolor{myred}{$\frac{M}{h}$} where $h$ is the number of heads and concatenation will ensure that the resulting dimension is LxM.
+\end{Content}
+
+\begin{Notes}
+\includegraphics[width=0.95 \textwidth]{media_files/screen_capture_20241226-094347.png}
+https://www.youtube.com/watch?v=-tCKPl_8Xb8
+\end{Notes}
+
+
+\title .
+\begin{Content} \ff \file media_files/screen_capture_20241228-000355.png
+\end{Content}
+
+\begin{Notes}
+\begin{enumerate}
+\item The left is the Encoder, and the Right is the Decoder.
+\item Generates one word at a time. (input English, output German)
+\item skip connections
+\item Masked Multihead attention - mask elements used for training- achieved by setting softmax values for them to $- \infty $
+\item Softmax at output gives probabilities for the words in the dictionary
+\item Positional Encoding - Sinusoidal positional encoding  (skipping)
+\end{enumerate}
+\end{Notes}
+
+
+\title Attention Values
+\begin{Content} \ff \file media_files/screen_capture_20241228-003302.png
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title Self Supervised Learning
+\begin{Content} \play \url https://www.youtube.com/watch?v=iFhYwEi03Ew
+Taking a corpus and creating labels by itself by masking or structure analysis of the sequence. (Q&A)
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+\end{document}
