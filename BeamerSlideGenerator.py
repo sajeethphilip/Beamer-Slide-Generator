@@ -1439,7 +1439,7 @@ def generate_content_items(content, color=None):
                 items.append(item)
                 continue
             # Preserve original item format if it starts with special characters
-            if item.startswith(('\\', '•')):
+            if item.startswith(('\\pause', '•')):
                 processed_item = process_latex_content(item)
             else:
                 # Remove any leading hyphen before processing
@@ -2125,32 +2125,6 @@ def generate_special_commands():
 }
 
 """
-def process_content_with_notes(content, notes, frame_title=None):
-    """Process content and notes together"""
-    latex_code = []
-
-    if frame_title:
-        latex_code.append(f"\\begin{{frame}}{{\\Large\\textbf{{{frame_title}}}}}")
-    else:
-        latex_code.append("\\begin{frame}")
-
-    if content:
-        latex_code.append("    \\begin{itemize}")
-        for item in content:
-            if not item.strip().startswith('\\'):
-                latex_code.append(f"        \\item {item}")
-            else:
-                latex_code.append(f"        {item}")
-        latex_code.append("    \\end{itemize}")
-
-    # Add notes after content but before frame end
-    if notes:
-        for note in notes:
-            if note.strip():  # Only add non-empty notes
-                latex_code.append(f"    \\note{{{note.strip()}}}")
-
-    latex_code.append("\\end{frame}")
-    return "\n".join(latex_code)
 
 def process_box_environment(content):
     """Process box environments correctly"""
@@ -2181,37 +2155,17 @@ def process_box_environment(content):
             result.append(line)
 
     return result
-def update_generate_latex_code(media_info, content, title, notes=None):
-    """Updated LaTeX code generation with proper note handling"""
-    latex_code = []
 
-    # Start frame
-    if title:
-        latex_code.append(f"\\begin{{frame}}{{\\Large\\textbf{{{title}}}}}")
+#-----------------------------------------------------
+def format_url_note(url):
+    """Format URL as a clickable note with proper LaTeX hyperref formatting"""
+    if 'youtube.com' in url or 'youtu.be' in url:
+        return "\\textcolor{blue}{[Watch Video]: %s}" %(url)
+    elif 'github.com' in url:
+        return "\\textcolor{blue}{[View Repository]: %s}}" %(url)
     else:
-        latex_code.append("\\begin{frame}")
+        return "\\textcolor{blue}{[%s]}" %(url)
 
-    # Add content
-    if content:
-        processed_content = process_box_environment(content)
-        latex_code.append("    \\begin{itemize}")
-        for item in processed_content:
-            if not item.strip().startswith('\\'):
-                latex_code.append(f"        \\item {item}")
-            else:
-                latex_code.append(f"        {item}")
-        latex_code.append("    \\end{itemize}")
-
-    # Add notes
-    if notes:
-        for note in notes:
-            if note.strip():
-                latex_code.append(f"    \\note{{{note.strip()}}}")
-
-    # Close frame
-    latex_code.append("\\end{frame}")
-
-    return "\n".join(latex_code)
 
 #------------------------------------------------------
 def process_input_file(file_path, output_filename='movie.tex', ide_callback=None):
@@ -2301,7 +2255,12 @@ def process_input_file(file_path, output_filename='movie.tex', ide_callback=None
                 # Process notes
                 elif in_notes_block:
                     if line.strip() and not line.startswith('%'):
-                        current_frame_notes.append(line.strip())
+                        if line.startswith(('http://', 'https://','www')):
+                            current_frame_notes.append('\\begin{itemize}')
+                            current_frame_notes.append(format_url_note(line.strip()))
+                            current_frame_notes.append('\\end{itemize}')
+                        else:
+                            current_frame_notes.append(line.strip())
 
                 i += 1
 
