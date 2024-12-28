@@ -1443,20 +1443,27 @@ def generate_content_items(content, color=None):
     """Generate formatted content items with optional color"""
     if not content:
         return ""
-
+    cnt=1
     items = []
+    pause_set=False
+    for itemx in content:
+        if itemx.startswith(('\\pause')):
+            pause_set=True
     for item in content:
-        cnt=1
+
         if item.strip():
             item = str(item).strip()
+            if pause_set and not item.startswith(('\\pause','\\begin','\\end','\\item')):
+                item=f'\item<{cnt}| alert@1>'+item
+            elif pause_set and item.startswith(('\\item')):
+                item = re.sub('item',f'item<{cnt}| alert@1>',item)
+            elif pause_set and item.startswith(('\\pause')):
+                cnt=cnt+1
             if item.startswith(('\\pause','\\item')):
-
                 items.append(item)
                 continue
             # Preserve original item format if it starts with special characters
             if item.startswith(('\\pause', '•')):
-                item=f"\item<{cnt}| alert@1>"+item
-                cnt=cnt+1
                 processed_item = process_latex_content(item)
             else:
                 # Remove any leading hyphen before processing
