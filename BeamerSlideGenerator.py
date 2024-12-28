@@ -117,6 +117,19 @@ def get_beamer_preamble(title, subtitle, author, institution, short_institute, d
 \usepackage{animate}
 \usepackage{multimedia}
 \usepackage{xifthen}
+\usepackage{xcolor}
+% Define the style for covered text
+\setbeamercovered{dynamic} % This should enable progressive transparency
+\setbeamerfont{item projected}{size=\small}
+%------------------Chenge these options as required for fg text colour in \pause directives--------------------
+%\setbeamercolor{alerted text}{fg=blue}        % Standard blue
+%\setbeamercolor{alerted text}{fg=darkblue}    % Darker blue
+%\setbeamercolor{alerted text}{fg=violet}      % Violet
+%\setbeamercolor{alerted text}{fg=purple}      % Purple
+%\setbeamercolor{alerted text}{fg=olive}       % Olive green
+%\setbeamercolor{alerted text}{fg=teal}        % Teal
+\setbeamercolor{alerted text}{fg=white}        % white
+#----------------------------------
 % Extended packages with fallbacks
 \IfFileExists{tcolorbox.sty}{\usepackage{tcolorbox}}{}
 \IfFileExists{fontawesome5.sty}{\usepackage{fontawesome5}}{}
@@ -1433,13 +1446,17 @@ def generate_content_items(content, color=None):
 
     items = []
     for item in content:
+        cnt=1
         if item.strip():
             item = str(item).strip()
             if item.startswith(('\\pause','\\item')):
+
                 items.append(item)
                 continue
             # Preserve original item format if it starts with special characters
             if item.startswith(('\\pause', '•')):
+                item=f"\item<{cnt}| alert@1>"+item
+                cnt=cnt+1
                 processed_item = process_latex_content(item)
             else:
                 # Remove any leading hyphen before processing
@@ -2327,6 +2344,7 @@ def main():
                     f.write("""\\documentclass{beamer}
 \\usepackage{graphicx}
 \\usepackage{multimedia}
+\\usepackage{xcolor}
 
 \\begin{document}
 
