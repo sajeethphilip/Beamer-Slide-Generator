@@ -11,6 +11,19 @@
 \usepackage{animate}
 \usepackage{multimedia}
 \usepackage{xifthen}
+\usepackage{xcolor}
+% Define the style for covered text
+\setbeamercovered{dynamic} % This should enable progressive transparency
+\setbeamerfont{item projected}{size=\small}
+%------------------Chenge these options as required for fg text colour in \pause directives--------------------
+%\setbeamercolor{alerted text}{fg=blue}        % Standard blue
+%\setbeamercolor{alerted text}{fg=darkblue}    % Darker blue
+%\setbeamercolor{alerted text}{fg=violet}      % Violet
+%\setbeamercolor{alerted text}{fg=purple}      % Purple
+%\setbeamercolor{alerted text}{fg=olive}       % Olive green
+%\setbeamercolor{alerted text}{fg=teal}        % Teal
+\setbeamercolor{alerted text}{fg=white}        % white
+#----------------------------------
 % Extended packages with fallbacks
 \IfFileExists{tcolorbox.sty}{\usepackage{tcolorbox}}{}
 \IfFileExists{fontawesome5.sty}{\usepackage{fontawesome5}}{}
@@ -226,33 +239,24 @@
 - Paragraphs
 - Sentences
 - Words
-- Grammar
+- \textcolor{blue}{Grammar}
 \end{Content}
 
 \begin{Notes}
-% No notes for this slide
-\end{Notes}
-
-
-\title Enoding and Embedding
-\begin{Content} \url https://miro.medium.com/v2/resize:fit:837/1*d5-PQyRRjvzBZjI5f7X3hA.png
-\begin{enumerate}[<+->]
-- \textcolor{myyellow}{One Hot Encoding} every category is represented by a new binary column.
-- \textcolor{mygreen}{Simple and Interpretable} but not scalable
-- \textcolor{myyellow}{Bag of Words} Words are ranked based on their frequency of occurrence
-- \textcolor{myblue}{Word Embeddings}
-\end{enumerate}
-\end{Content}
-
-\begin{Notes}
-Computers need everything as numbers. Hence, categorical data (text or image) has to be converted to numeric values. Both encodings and Ebeddings do it, but there is a difference.
+Though the title of the talk speaks of three domains, the talk will mainly be dedicated to LLMs and especially the concept of Attention mechanism.
+\item  The internet is full of documents of different kinds in terms of language and context.
+\item I have the notion that, the whole human knowledge is \textcolor{red}{{\large captured, shared, stored, retrived and learned}} in the form of languages. \textcolor{blue}{{\large Can you experience any knowledge without articulating them in your favourit languag?}}
+\item \textcolor{red}{\large Like we have laws that govern physical phenomena, language is also governed by strict rules. }
+\item This makes language a very \textcolor{blue}{\large good platform to test, evaluate and undertand} deep learning neural networks.
+\item So what do we have?
 \end{Notes}
 
 
 \title One-hot Encoding
 \begin{Content} \url https://miro.medium.com/v2/resize:fit:837/1*d5-PQyRRjvzBZjI5f7X3hA.png
   \begin{enumerate}[<+->]
-   Treats each category as \textcolor{myblue}{independent and orthogonal}.
+   It uses an array of binary columns to represent each entity by a unique bit set to 1 while all others are 0.
+   Treats each entity as \textcolor{myblue}{independent and orthogonal}.
     Encoded vectors are easily \textcolor{mygreen}{interpretable}.
     \textcolor{mygreen}{Does not require any learning}.
     \textcolor{myyellow}{ Increases the data dimensionality} by creating a new binary column for each category.
@@ -261,38 +265,49 @@ Computers need everything as numbers. Hence, categorical data (text or image) ha
 \end{Content}
 
 \begin{Notes}
-% No notes for this slide
+\item Computers are not made for text processing.
+\item They are compute devices and require everything as numerical quantities.
+\item So the first task is to convert Text into Numbers, and this is what Encoding does.
+\item There are different types of encodings, and one popular form is called one-hot Encoding.
 \end{Notes}
 
 
 \title Embedding
 \begin{Content} \None
-\begin{enumerate}[<+->]
- \textcolor{myblue}{Embedding}: reduces the dimensionality by representing each category as a dense vector of lower dimensionality (e.g., 8, 16, 32 dimensions).
-  \textcolor{myblue}{Embedding} Captures semantic relationships and similarities between categories by placing similar categories closer together in the embedding space.
-  \textcolor{myblue}{Embeddings} are scalable and efficient for high-cardinality features.
-  \textcolor{myblue}{Embeddings}  are adjusted during training to capture the relationships between categories, making them data-driven and context-aware.
- \end{enumerate}
+\begin{itemize}
+\textcolor{myblue}{Embedding}: reduces the dimensionality by representing each category as a dense vector of lower dimensionality (e.g., 8, 16, 32 dimensions).
+\pause
+\textcolor{myblue}{Embedding} Captures \textcolor{green}{semantic relationships and similarities} between categories by placing similar categories closer together in the embedding space.
+\pause
+\textcolor{myblue}{Embeddings} are scalable and efficient for high-cardinality features.
+\pause
+\textcolor{myblue}{Embeddings}  are \textcolor{red}{generated during training}  to capture the relationships between categories, making them data-driven and context-aware.
+ \end{itemize}
 \end{Content}
 
 \begin{Notes}
-% No notes for this slide
+\item Embeddings offer several advantages over Encoding.
+\item Like binary number system allows \textcolor{blue}{$2^8 =256$ }numbers to be represented by 8 bits, embeddings will allow a similar number of words to be represented by a limited number of bits.
+\item Like binary number representations have nearest numbers close to each other (\textcolor{blue}{distance is the difference}), in embeddings, words with nearest semantic relations and similarities are close to one another in the vector space (\textcolor{blue}{distance is the dot product}).
 \end{Notes}
 
 
 \title Word Embeddings
 \begin{Content} \url https://miro.medium.com/v2/resize:fit:2000/1*SYiW1MUZul1NvL1kc1RxwQ.png
-\begin{enumerate}[<+->]
- \textcolor{mygreen}{Word Embeddings} encapsulates the word meaning in different contexts.
- A PCA on the Embeddings demonstrates how \textcolor{mygreen}{similar entities are clustered together} in the embedded space.
- Higher dimension makes them \textcolor{myred}{non-interpretable} but are \textcolor{mygreen}{scalable}.
- {Example: GloVe and Word2Vec}
+\begin{enumerate}
+\textcolor{mygreen}{Word Embeddings} encapsulates the word meaning in different contexts.
+\pause
+PCA on the Embeddings demonstrates how \textcolor{mygreen}{similar entities are clustered together} in the embedded space.
+\pause
+{Example: GloVe and Word2Vec}
 \end{enumerate}
 \end{Content}
 
 \begin{Notes}
 \begin{enumerate}
-\item How a person behaves in different situations can be given as scores on his personality traits as numbers. Word embeddings are like that. It is a set of numbers (vector or tensor) that encapsulates the contextual behaviour of the token so that it can be used to create the appropriate context vector based on a given context.
+\item Just like we have N-dimensional \textcolor{red}{\Large vector space}, the numerical representation of words also can be represented as vectors in the vector space.
+\item  The \textcolor{red}{\Large dot product} of two embedding vectors can give the distance between them.
+\item Here is a simple example. \textcolor{blue}{Human Behaviour} can be given as scores on how they behave in different contexts by numerical personality traits. Word embeddings are like that. It is a set of numbers (vector or tensor) that encapsulates the contextual behaviour of the token so that it can be used to create the appropriate context vector based on a given context.
 \end{enumerate}
 \end{Notes}
 
@@ -305,18 +320,23 @@ Computers need everything as numbers. Hence, categorical data (text or image) ha
 \end{Content}
 
 \begin{Notes}
-\textbf{\textcolor{myred}{All of them use word embeddings on the input tokens.}}
+\item The state of the art in modern LLMs is called Transformers.
+\item But looking at some previous language models, rather sequential processing models is helpful.
+\item \textbf{\textcolor{myred}{All use word embeddings on the input tokens.}}
+\item Each one of them is a modification to overcome some of the challenges in the sequential learning processes.
 \end{Notes}
 
 
 \title Recurrent Neural Network
 \begin{Content} \url https://pabloinsente.github.io/assets/post-9/simple-rnn.png
-\begin{enumerate}
- $z_t=W_{hz}h_t+b_z$
- $h_z=\sigma(W_{hh}h_{t-1}+W_{xh}x_t+b_h)$
+\begin{itemize}
 \pause
-\small{\textcolor{myred}{Issues}:  Vanishing and Exploding Gradients  as \textcolor{myyellow}{ the gradient of the error are backpropagated in time} causing it to vanish if $\ll 1.0$ or explode if $\gg 1.0$}
-\end{enumerate}
+\textcolor{white}{If $x_i$ is input, $h_t$ is hidden state at time $t$ and $W_{-,-}$ are connection weights},
+$h_z=\sigma(W_{hh} h_{t-1}+W_{xh} x_t+b_h)$
+$z_t=W_{hz}h_t+b_z$
+\pause
+\small{\textcolor{myred}{Issues}:  Vanishing and Exploding Gradients  as \textcolor{myyellow}{ the gradient of the error are backpropagated in time} causing it to vanish if it is $\ll 1.0$ or explode if $\gg 1.0$}
+\end{itemize}
 \end{Content}
 
 \begin{Notes}
@@ -338,26 +358,26 @@ These gates determine how much of the input to consider, how much of the previou
 \end{Notes}
 
 
-\title Encoder-Decoder Architecture
-\begin{Content} \url https://api.wandb.ai/files/ayush-thakur/images/projects/103390/4fc355be.png
-- What if the number of inputs differs from the number of outputs? For example, translation from one language to another?
-\end{Content}
-
-\begin{Notes}
-% No notes for this slide
-\end{Notes}
-
-
 \title One2One to Many2Many Architectures
 \begin{Content} \url https://api.wandb.ai/files/ayush-thakur/images/projects/103390/4fc355be.png
 - One to One: Simple, vanilla model
-- One to many: image to text conversion
+- One to many: image-to-text conversion
 - Many to One: Text to Image Generation
 - Many to Many: Text translation
 \end{Content}
 
 \begin{Notes}
-% No notes for this slide
+RNNs and LSTM find application in different combinations of inputs and outputs.
+\end{Notes}
+
+
+\title Encoder-Decoder Architecture
+\begin{Content} \url https://api.wandb.ai/files/ayush-thakur/images/projects/103390/4fc355be.png
+- What if the number of inputs differs from the number of outputs? For example, \textcolor{blue}{translation from one language to another}?
+\end{Content}
+
+\begin{Notes}
+Language translation is one example where the number of inputs may differ from the number of outputs in a sequence-to-sequence analysis.
 \end{Notes}
 
 
@@ -369,11 +389,11 @@ These gates determine how much of the input to consider, how much of the previou
 \end{Content}
 
 \begin{Notes}
-For further information on how this encoder-decoder architecture works in seq2seq learning, Please refer to this paper.
+The 2014 paper on seq2seq learning {\Large\textcolor{blue}{introduced the concept of a context vector}} for capturing and encoding context information in a sequence for the Decoder to translate it at once.
 \end{Notes}
 
 
-\title Sequence to Sequence
+\title Sequence to Sequence Learning
 \begin{Content} \url https://miro.medium.com/v2/resize:fit:1100/format:webp/1*B5pqh5hTgTaNiuUQhtxBQA.png
 \begin{enumerate}
 \small{LSTM generates fixed length context vector}.
@@ -387,6 +407,11 @@ For further information on how this encoder-decoder architecture works in seq2se
 \end{Content}
 
 \begin{Notes}
+\item Consider translation from \textcolor{red}{English to French }
+\item The English text uses word Embeddings to encode the context and meanings
+\item The LSTM capture their contextual meaning and creates the Context Vector
+\item The Decoder takes the context vector to create the first word.
+\item The Decoder uses the context vector and the first word it created to generate the second word.
 \textcolor{myred}{Challenge}: The context vector should be able to hold the complete information in the input sequence - which is a challenge if the information content is large.
 \end{Notes}
 
@@ -394,7 +419,7 @@ For further information on how this encoder-decoder architecture works in seq2se
 \title Sequence to Sequence - Captures Context
 \begin{Content} \file media_files/screen_capture_20241224-083039.png
 \begin{enumerate}
-The most significant feature of seq2seq learning is that it can capture the context efficiently and cluster context vectors in terms of their meaning.
+The most significant feature of seq2seq learning is that it can efficiently capture the context and cluster context vectors in terms of meaning.
 \pause
  \textcolor{myyellow}{Word Embeddings} cluster words depending on their possible contextual meanings.
  \textcolor{myyellow}{Seq2Seq Learning} cluster sequences based on their information content.
@@ -402,9 +427,9 @@ The most significant feature of seq2seq learning is that it can capture the cont
 \end{Content}
 
 \begin{Notes}
-The most significant feature of seq2seq learning is that it could capture the context efficiently and cluster context vectors in terms of their meaning unheard of in \textcolor{myred}{one-hot encoding or bag of words}
-unlike in \textcolor{myred}{one-hot encoding or bag of words} where there is no link between the code and the content it represents,  the embedding layer, in this case, encapsulates the contextual behaviour of the word.
-To give an \textcolor{myred}{example for how word2Vec} works, it is like the scores one may have describing their behaviour in different circumstances.
+\item The most significant feature of seq2seq learning is that it could capture the context efficiently and cluster context vectors in terms of their meaning unheard of in \textcolor{myred}{one-hot Encoding or bag of words}
+\item unlike in \textcolor{myred}{one-hot Encoding or bag of words} where there is no link between the code and the content it represents,  the embedding layer, in this case, encapsulates the contextual behaviour of the word.
+\item To give an \textcolor{myred}{example for how word2Vec} works, it is like the scores one may have for describing their behaviour in different circumstances.
 \end{Notes}
 
 
@@ -413,18 +438,18 @@ To give an \textcolor{myred}{example for how word2Vec} works, it is like the sco
 \begin{enumerate}
 \item Introduced the first \textcolor{mygreen}{attention mechanism} for neural machine translation
 \pause
- \item   No need to encode all the information in a sentence and its context into a single vector.
+ \item   No need to encode all the information in a sequence and its context into a single vector.
 \pause
-\item The model automatically \textcolor{mygreen}{search for relevant parts of a sentence} for predicting a target word, instead of explicitly depending on a single Context Vector.
+\item Instead of explicitly depending on a single Context Vector, the model \textcolor{mygreen}{searches for relevant parts of the sequence } to get additional information for accurately predicting the target word.
 \end{enumerate}
 \end{Content}
 
 \begin{Notes}
-% No notes for this slide
+In their 2015 paper Neural Machine Translation,  {\Huge Dzmitry et al.}., introduced the Attention Mechanism as an alternative to enhance the limited capacity of the Context vectors.
 \end{Notes}
 
 
-\title Attention Mechanism Key Concepts
+\title Attention Mechanism, the Key Concepts
 \begin{Content} \file media_files/screen_capture_20241224-123524.png
 \begin{enumerate}
  Each \textcolor{myred}{annotation} is created by concatenating forward and backward bidirectional RNN states.
@@ -433,7 +458,7 @@ To give an \textcolor{myred}{example for how word2Vec} works, it is like the sco
 \pause
   The model dynamically updates the context vector $C_i$ for each target word using a \textcolor{myyellow}{weighted sum} of annotations.
 \pause
-  \small{The training for both models is done simulataniously using backpropagation.}
+  \small{The training for both models is done simultaneously using backpropagation.}
 \end{enumerate}
 \end{Content}
 
@@ -445,7 +470,7 @@ To give an \textcolor{myred}{example for how word2Vec} works, it is like the sco
 \title Attention Mechanism Challenges
 \begin{Content} \file media_files/screen_capture_20241224-123524.png
 \begin{itemize}
-Attention mechanism has efficiently handled the problem with long sequences and the exploding/vanishing gradient problems.
+The attention mechanism has efficiently handled the problem with long sequences and the exploding/vanishing gradient problems.
 \pause
 \textcolor{myred}{Bottleneck} Although the long sequence problem is now addressed by the attention mechanism, still the sequence is submitted with time stamps $X_1, X_2...X_t$, which means sequentially (one after another). This means the model is not scalable to be trained on large amounts of data.
 \end{itemize}
@@ -462,7 +487,7 @@ Attention mechanism has efficiently handled the problem with long sequences and 
 \end{Content}
 
 \begin{Notes}
-Also, the input word embedded vectors are fixed for each word, which means, there is no scope for any new learning and the output would be purely dependent on what was learned during the creation of the embedded vectors. But in LLMs, we want the machine to learn new contexts and meanings as it comes across huge volumes of new data.
+Also, the input word embedded vectors are fixed for each word, which means there is no scope for any new learning, and the output would be purely dependent on what was learned during the creation of the embedded vectors. But in LLMs, we want the machine to learn new contexts and meanings as it comes across huge volumes of new data.
 \end{Notes}
 
 
@@ -473,7 +498,7 @@ Also, the input word embedded vectors are fixed for each word, which means, ther
 \end{Content}
 
 \begin{Notes}
-Get rid of LSTM or RNN and use Self-attention that can handle all words at once with the positional encoding mechanism.
+Get rid of LSTM or RNN and use self-attention, which can handle all words at once with the positional encoding mechanism.
 It also uses Contextual Embeddings
 \end{Notes}
 
@@ -498,13 +523,12 @@ It also uses Contextual Embeddings
 -$Key, \textcolor{myred}{k} =W_k  . x_i$
 -$Value, \textcolor{myred}{v} =W_v . x_i$\footnote{\href{https://www.youtube.com/watch?v=0PjHri8tc1c&t=2s}{Video  Source}}
 \pause
-\tiny{
-- \textcolor{myyellow}{x is word embedding of dimension [1xN]}
-- \textcolor{myyellow}{W is  Weight Matrix of dimension [NxM]}
- - \textcolor{myyellow}{q,k,v are thus having dimension [1xM]} }
+- \textcolor{myyellow}{x is word embedding of dimension} [1xN]
+- \textcolor{myyellow}{W is  Weight Matrix of dimension} [NxM]
+ - \textcolor{myyellow}{q,k,v are thus having dimension} [1xM]
 \pause
-- \textcolor{myred}{$A(q_j,K,V) =\sum^T_{i=1}\frac{e^{q_j.k^T_i}}{\sum_j e^{q_j.k^T_j}}v_i$}
-- \textcolor{myyellow}{dot product gives a scalar and multiplying by the Value vector $v$  gives us a [1xM] dimension vector}
+- \textcolor{myred}{$A(q_j,K,V) =\sum^T_{i=1}\frac{e^{\textcolor{myyellow}{q_j.k^T_i}}}{\sum_j e^{q_j.k^T_j}}v_i$}
+- \textcolor{myyellow}{dot product gives a scalar} and multiplying by the \textcolor{myred}{Value vector $v_i$}  gives a [1xM] dimension vector.
 \end{Content}
 
 \begin{Notes}
@@ -524,9 +548,9 @@ The most important point here is that (a) The network can now learn new contexts
 
 \title Self Attention
 \begin{Content} \file media_files/screen_capture_20241227-225528.png
-- Since the computation can be done in parallel, the Attention for the whole A(Q,K,V) can be computed by treating Q as the vector of dimension L x N where L is the sequence Length. {\tiny\textcolor{myred}{$(Q,K,V) \rightarrow \mathbb{R}^{LxM}$ }}
+- Since the computation can be done in parallel, the Attention for the whole A(Q, K, V) can be computed by treating Q as the vector of dimension L x N where L is the sequence Length. {\tiny\textcolor{myred}{$(Q,K,V) \rightarrow \mathbb{R}^{LxM}$ }}
  \pause
-- Reulting A will be a matrix of dimension \textcolor{myred}{LxL} and to prevent it from growing too large than the gradients, we scale it down by \textcolor{myred}{$\sqrt{M}$}.
+- Resulting A will be a matrix of dimension \textcolor{myred}{LxL} and to prevent it from growing too large than the gradients, we scale it down by \textcolor{myred}{$\sqrt{M}$}.
 \pause
 -  {\tiny Thus A(Q,K,V) =\textcolor{mygreen}{$softmax(\frac{QK^T}{\sqrt M})V$}}
 \end{Content}
@@ -540,7 +564,7 @@ The most important point here is that (a) The network can now learn new contexts
 \begin{Content} \file media_files/screen_capture_20241227-233938.png
 - Just like multiple channels use different kernels in CNNs to capture different details of the image, Multiple self-attentions with different weight matrices capture different information from the sequence!
 \pause
-- To have the same dimension for the output from the multi head Attention as that of the self-attention, the dimension of the Weight matrix is kept as \textcolor{myred}{$\frac{M}{h}$} where $h$ is the number of heads and concatenation will ensure that the resulting dimension is LxM.
+- To have the same dimension for the output from the multi-head Attention as that of the self-attention, the dimension of the Weight matrix is kept as \textcolor{myred}{$\frac{M}{h}$} where $h$ is the number of heads and  \textcolor{blue}{concatenation} will ensure that the resulting dimension is LxM.
 \end{Content}
 
 \begin{Notes}
@@ -560,7 +584,7 @@ https://www.youtube.com/watch?v=-tCKPl_8Xb8
 \item skip connections
 \item Masked Multihead attention - mask elements used for training- achieved by setting softmax values for them to $- \infty $
 \item Softmax at output gives probabilities for the words in the dictionary
-\item Positional Encoding - Sinusoidal positional encoding  (skipping)
+\item Positional Encoding - Sinusoidal positional Encoding (skipping)
 \end{enumerate}
 \end{Notes}
 
@@ -574,9 +598,115 @@ https://www.youtube.com/watch?v=-tCKPl_8Xb8
 \end{Notes}
 
 
-\title Self Supervised Learning
-\begin{Content} \play \url https://www.youtube.com/watch?v=iFhYwEi03Ew
-Taking a corpus and creating labels by itself by masking or structure analysis of the sequence. (Q&A)
+\title Large Language Models
+\begin{Content} \None
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title Self-Supervised Learning (SSL)
+\begin{Content} \url https://i0.wp.com/neptune.ai/wp-content/uploads/2022/10/Self-Supervised-Learning-and-Its-Applications_9.png
+Taking a corpus and creating labels by masking or structure analysis of the sequence. (Q&A)
+\pause
+It empowers the model to learn underlying semantic features without introducing label bias.
+\pause
+Generic AI: The self-supervised learning framework is one step closer to embedding human cognition in machines.
+\end{Content}
+
+\begin{Notes}
+\item In natural language processing, if we have a few words, using self-supervised learning, we can complete the rest of the sentence.
+\item Similarly, in a video, we can predict past or future frames based on available video data.
+\item Self-supervised learning uses the structure of the data to make use of a variety of supervisory signals across large data sets – all without relying on labels.
+\item Unsupervised learning can be considered as the superset of self-supervised learning as it does not have any feedback loops.
+\item On the contrary, self-supervised learning has a lot of supervisory signals that act as feedback in the training process.
+\end{Notes}
+
+
+\title Self Supervised Learning  - Next Sentence Prediction (NSP)
+\begin{Content} \file media_files/screen_capture_20250104-021106.png
+- Pick two simultaneous sentences from a document and a random sentence from the same or a different document, say sentence A, sentence B, and sentence C.
+- Ask the model the relative position of sentence A with respect to sentence B?’ – and the model outputs either IsNextSentence or IsNotNextSentence.
+\end{Content}
+
+\begin{Notes}
+\item This 2019 paper introduced BERT, which can predict whether a given statement matches the context of the previous one.
+\item It has become a gold standard for NLP tasks such as Natural Language Inference (MNLI), Question Answering (SQuAD), and more.
+\end{Notes}
+
+
+\title GPT (Generative Pre-trained Transformer)
+\begin{Content} \file media_files/screen_capture_20250104-023115.png
+LLMs like GPT use Auto-regressive Language Modelling
+Predict the next word, having read all the previous ones.
+\pause
+A mask is used on top of the full sentence so that the attention heads can only see what was before in the text and not what is after. \footnote{\href{https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf}{The Paper}}
+\end{Content}
+
+\begin{Notes}
+The GPT paper does not come with a publication date
+\end{Notes}
+
+
+\title Large Multimodal Models (LMMs)
+\begin{Content} \url https://huyenchip.com/assets/pics/multimodal/12-flamingo-chatbots.png
+Process multiple data types, including text, images, audio, and video
+Generate content across different modalities
+Integrate and interpret information from diverse sources simultaneously
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title Self Supervised Learning  - Patch Localisation
+\begin{Content} \url https://i0.wp.com/neptune.ai/wp-content/uploads/2022/10/Self-Supervised-Learning-and-Its-Applications_21.png
+\includegraphics[width=0.7\textwidth]{media_files/screen_capture_20250104-015552.png}\\{\tiny \url{https://arxiv.org/pdf/1505.05192}}
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title Contrastive Language-Image Pre-training (CLIP)
+\begin{Content} \file media_files/screen_capture_20250104-030806.png
+\includegraphics[width=0.7\textwidth]{media_files/screen_capture_20250104-030605.png}\\ \footnote{\href{https://arxiv.org/pdf/2103.00020}{CLIP paper link}}
+\end{Content}
+
+\begin{Notes}
+2021 CLIP paper from OpenAI
+\end{Notes}
+
+
+\title Human Cognition
+\begin{Content} \url https://cdn.thecollector.com/wp-content/uploads/2022/10/what-does-i-think-therefore-i-am-means.jpg
+\includegraphics[width=0.7\textwidth]{media_files/screen_capture_20250106-072806.png}
+Rene Descartes  most famous dictums: "Cogito, Ergo Sum”.
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title LLMs and Human Cognition
+\begin{Content} \file media_files/screen_capture_20250106-071441.png
+\includegraphics[width=0.5\textwidth]{media_files/screen_capture_20250106-071631.png}\\ \foornote{\href{https://airis4d.com/Journal/airis4DJournal_3.1.html}{airis4D Jornal Link}}
+\end{Content}
+
+\begin{Notes}
+% No notes for this slide
+\end{Notes}
+
+
+\title Questions
+\begin{Content} \None
+\pause
+{\Huge \textcolor{blue}{Thank You}}
 \end{Content}
 
 \begin{Notes}
