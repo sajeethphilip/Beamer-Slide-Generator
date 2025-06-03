@@ -10,6 +10,7 @@ import os,re
 import sys
 import tempfile
 import subprocess
+import pyspellchecker
 #------------------------------------------------------------------------------------------------------
 import venv
 import platform
