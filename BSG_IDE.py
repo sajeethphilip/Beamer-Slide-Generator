@@ -21,6 +21,19 @@ global working_folder
 working_folder=os.path.expanduser("~")
 global original_dir
 original_dir = os.path.expanduser("~")
+def generate_default_requirements():
+    default_requirements = """customtkinter==5.2.2
+Pillow
+tk
+requests
+yt_dlp
+opencv-python
+screeninfo
+numpy
+PyMuPDF==1.23.7
+pyautogui
+pyspellchecker  # Add spell checking dependency
+"""
 
 def launch_ide():
     """Entry point for command-line launcher"""
@@ -1159,6 +1172,9 @@ class BeamerSyntaxHighlighter:
     def after_paste(self) -> None:
         """Handle highlighting after paste operation"""
         self.text.after(10, self.highlight)
+        # Also trigger spell checking
+        if hasattr(self.ctk_text.master, 'spell_checking_enabled') and self.ctk_text.master.spell_checking_enabled:
+            self.ctk_text.master.check_spelling()
 
 
 class BeamerSlideEditor(ctk.CTk):
@@ -1377,6 +1393,186 @@ class BeamerSlideEditor(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
 #-------------------------------------------------------------------------------------
+        # Initialize spell checking
+        self.setup_spellchecking()
+
+
+        # Add binding to close context menu
+        self.bind("<Button-1>", self.hide_spelling_menu)
+
+    def setup_spellchecking(self):
+        """Initialize spell checking components"""
+        try:
+            from spellchecker import SpellChecker
+            self.spell_checker = SpellChecker()
+            self.spell_checking_enabled = True
+
+            # Configure misspelled word appearance
+            for widget in [self.content_editor._textbox, self.notes_editor._textbox]:
+                widget.tag_configure("misspelled", underline=True, underlinefg="red")
+                widget.tag_configure("misspelled_highlight", background="#2F3542")
+
+                # Bind right-click event
+                widget.bind("<Button-3>", self.show_spelling_suggestions)
+
+            print("✓ Spell checking enabled")
+        except ImportError:
+            self.spell_checking_enabled = False
+            print("Spell checking disabled: pyspellchecker not installed")
+
+        # Create spelling suggestion menu
+        self.spelling_menu = tk.Menu(self, tearoff=0)
+        self.spelling_menu.add_command(label="Add to Dictionary", command=self.add_to_dictionary)
+        self.spelling_menu.add_separator()
+
+    def check_spelling(self, event=None):
+        """Check spelling in real-time"""
+        if not self.spell_checking_enabled:
+            return
+
+        # Get the widget that triggered the event
+        widget = event.widget if event else self.content_editor._textbox
+
+        # Skip spell checking in special contexts
+        skip_tags = ['comment', 'command', 'media', 'bullet', 'url',
+                    'bracket', 'rgb', 'textcolor']
+
+        # Process both editors
+        for editor in [self.content_editor._textbox, self.notes_editor._textbox]:
+            # Remove previous markings
+            editor.tag_remove("misspelled", "1.0", "end")
+
+            # Get all text
+            content = editor.get("1.0", "end")
+
+            # Find all words longer than 3 characters
+            words = re.findall(r'\b\w{4,}\b', content)
+
+            # Get positions of all words
+            word_positions = []
+            for word in words:
+                start_index = "1.0"
+                while True:
+                    start_index = editor.search(rf"\y{word}\y", start_index,
+                                              stopindex="end", regexp=True)
+                    if not start_index:
+                        break
+                    end_index = f"{start_index}+{len(word)}c"
+                    word_positions.append((word, start_index, end_index))
+                    start_index = end_index
+
+            # Check each word
+            for word, start, end in word_positions:
+                # Skip words in special syntax
+                skip = False
+                for tag in skip_tags:
+                    if editor.tag_names(start):
+                        for t in editor.tag_names(start):
+                            if t in skip_tags:
+                                skip = True
+                                break
+                    if skip:
+                        break
+
+                if skip:
+                    continue
+
+                # Check spelling
+                if word.lower() not in self.spell_checker:
+                    editor.tag_add("misspelled", start, end)
+
+    def show_spelling_suggestions(self, event):
+        """Show spelling suggestions on right-click"""
+        if not self.spell_checking_enabled:
+            return
+
+        widget = event.widget
+        # Get the word under the cursor
+        index = widget.index(f"@{event.x},{event.y}")
+        word_start = widget.index(f"{index} wordstart")
+        word_end = widget.index(f"{index} wordend")
+        word = widget.get(word_start, word_end)
+
+        # Skip if word is too short
+        if len(word) < 4:
+            return
+
+        # Check if the word is misspelled
+        if word.lower() in self.spell_checker:
+            return
+
+        # Highlight the word temporarily
+        widget.tag_add("misspelled_highlight", word_start, word_end)
+
+        # Get spelling suggestions
+        try:
+            suggestions = list(self.spell_checker.candidates(word))[:5]
+            if not suggestions:
+                # Fall back to correction method
+                correction = self.spell_checker.correction(word)
+                if correction:
+                    suggestions = [correction]
+        except Exception:
+            suggestions = []
+
+        # Clear existing suggestions
+        for i in range(self.spelling_menu.index('end'), 1, -1):
+            if i > 2:  # Keep "Add to Dictionary" and separator
+                self.spelling_menu.delete(i)
+
+        # Add suggestions to menu
+        if suggestions:
+            for suggestion in suggestions:
+                self.spelling_menu.add_command(
+                    label=suggestion,
+                    command=lambda s=suggestion, ws=word_start, we=word_end:
+                        self.replace_word(widget, ws, we, s)
+                )
+        else:
+            self.spelling_menu.add_command(label="No suggestions", state="disabled")
+
+        # Store word position for dictionary addition
+        self.current_word = word
+        self.current_word_start = word_start
+        self.current_word_end = word_end
+        self.current_widget = widget
+
+        # Show the menu
+        try:
+            self.spelling_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            # Make sure to release the grab (Tkinter quirk)
+            self.spelling_menu.grab_release()
+
+    def replace_word(self, widget, start, end, replacement):
+        """Replace a word with the selected suggestion"""
+        widget.delete(start, end)
+        widget.insert(start, replacement)
+        # Remove highlight
+        widget.tag_remove("misspelled_highlight", start, end)
+        # Re-check spelling after replacement
+        self.check_spelling()
+
+    def add_to_dictionary(self):
+        """Add current word to custom dictionary"""
+        if hasattr(self, 'current_word') and self.current_word:
+            self.spell_checker.word_frequency.add(self.current_word)
+            # Remove misspelled tag
+            self.current_widget.tag_remove("misspelled", self.current_word_start, self.current_word_end)
+            # Remove highlight
+            self.current_widget.tag_remove("misspelled_highlight", self.current_word_start, self.current_word_end)
+            self.write(f"✓ Added '{self.current_word}' to dictionary\n", "green")
+
+    def hide_spelling_menu(self, event):
+        """Hide spelling menu when clicking elsewhere"""
+        try:
+            self.spelling_menu.unpost()
+        except:
+            pass
+        # Remove highlight
+        for widget in [self.content_editor._textbox, self.notes_editor._textbox]:
+            widget.tag_remove("misspelled_highlight", "1.0", "end")
+
 
 #-------------------------------------------------------------------------------------
     def setup_logo(self):
@@ -4230,6 +4426,14 @@ Created by {self.__author__}
     def toggle_highlighting(self) -> None:
         """Toggle syntax highlighting"""
         self.syntax_highlighter.toggle()
+        # Also toggle spell checking if enabled
+        if self.spell_checking_enabled:
+            if self.syntax_highlighter.active:
+                self.check_spelling(None)
+            else:
+                # Clear all misspelled tags if highlighting is disabled
+                for widget in [self.content_editor._textbox, self.notes_editor._textbox]:
+                    widget.tag_remove("misspelled", "1.0", "end")
 
     def show_context_menu(self, event) -> None:
         """Show context menu at mouse position"""
