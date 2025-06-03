@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="bsg_ide",
-    version="4.9.3",
+    version="4.9.5",
     packages=find_packages(),
     install_requires=[
         "customtkinter==5.2.2",
