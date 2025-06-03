@@ -6,6 +6,7 @@ setup(
     packages=find_packages(),
     install_requires=[
         "customtkinter==5.2.2",
+        'pyspellchecker',
         "Pillow",
         "tk",
         "requests",
