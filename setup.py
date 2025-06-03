@@ -1,45 +1,13 @@
-from setuptools import setup
-import os
-import glob
-
-# Get long description from README
-with open("README.md", "r", encoding="utf-8") as fh:
-    long_description = fh.read()
-
-# Get version from a variable (no external file needed)
-version = "2.8"
+from setuptools import setup, find_packages
 
 setup(
-    name="bsg_ide",
-    version=version,
-    author="Ninan Sajeeth Philip",
-    author_email="nsp@airis4d.com",
-    description="Beamer Slide Generator IDE",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
-    url="https://github.com/sajeethphilip/Beamer-Slide-Generator",
-    classifiers=[
-        "Programming Language :: Python :: 3",
-        "Operating System :: OS Independent",
-        "License :: OSI Approved :: MIT License",
-    ],
-    license="MIT",
-    python_requires='>=3.7',
-
-    # Explicitly list modules
-    py_modules=["BSG_IDE", "BeamerSlideGenerator"],
-
-    # Entry point
-    entry_points={
-        'console_scripts': [
-            'bsg-ide=BSG_IDE:main',
-        ],
-    },
-
-    # Dependencies
+    name="bsg-ide",
+    version="2.4.4",
+    packages=find_packages(),
     install_requires=[
         "customtkinter==5.2.2",
         "Pillow",
+        "tk",
         "requests",
         "yt_dlp",
         "opencv-python",
@@ -47,24 +15,32 @@ setup(
         "numpy",
         "PyMuPDF==1.23.7"
     ],
-
-    # Include data files
-    include_package_data=True,
-    package_data={
-        '': [
-            'LICENSE',
-            'README.md',
-            'requirements.txt',
-            'icons/*.png',
-            'resources/*.png',
-            '*.png'
+    entry_points={
+        'console_scripts': [
+            'bsg-ide=bsg_ide.BSG_IDE:main',
         ],
     },
-
-    # Ensure data files are included in sdist
-    data_files=[
-        ('', ['LICENSE', 'README.md', 'requirements.txt']),
-        ('icons', glob.glob('icons/*.png')),
-        ('resources', glob.glob('resources/*.png')),
-    ]
+    package_data={
+        'bsg_ide': [
+            'icons/*.png',
+            'resources/*.png',
+            '*.png',
+            'requirements.txt',
+            'BeamerSlideGenerator.py',
+            'BSG_IDE.py'
+        ],
+    },
+    include_package_data=True,  # Add this line
+    author="Ninan Sajeeth Philip",
+    author_email="nsp@airis4d.com",
+    description="Beamer Slide Generator IDE",
+    long_description=open('README.md').read(),
+    long_description_content_type="text/markdown",
+    url="https://github.com/sajeethphilip/Beamer-Slide-Generator",
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: CC0 1.0 Universal (CC0 1.0) Public Domain Dedication",
+        "Operating System :: OS Independent",
+    ],
+    python_requires='>=3.7',
 )
