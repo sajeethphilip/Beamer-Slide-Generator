@@ -1,15 +1,13 @@
 from setuptools import setup
-import setuptools
 import os
+import glob
 
 # Get long description from README
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-# Get version from a dedicated file
-version_path = os.path.join(os.path.dirname(__file__), "VERSION")
-with open(version_path, "r", encoding="utf-8") as f:
-    version = f.read().strip()
+# Get version from a variable (no external file needed)
+version = "2.8"
 
 setup(
     name="bsg_ide",
@@ -57,10 +55,16 @@ setup(
             'LICENSE',
             'README.md',
             'requirements.txt',
-            'VERSION',
             'icons/*.png',
             'resources/*.png',
             '*.png'
         ],
     },
+
+    # Ensure data files are included in sdist
+    data_files=[
+        ('', ['LICENSE', 'README.md', 'requirements.txt']),
+        ('icons', glob.glob('icons/*.png')),
+        ('resources', glob.glob('resources/*.png')),
+    ]
 )
