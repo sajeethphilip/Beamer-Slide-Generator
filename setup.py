@@ -1,13 +1,4 @@
 from setuptools import setup, find_packages
-import os
-
-# Read README file safely
-def read_readme():
-    try:
-        with open('README.md', 'r', encoding='utf-8') as f:
-            return f.read()
-    except FileNotFoundError:
-        return "Beamer Slide Generator IDE"
 
 setup(
     name="bsg-ide",
@@ -39,11 +30,11 @@ setup(
             'BSG_IDE.py'
         ],
     },
-    include_package_data=True,
+    include_package_data=True,  # Add this line
     author="Ninan Sajeeth Philip",
     author_email="nsp@airis4d.com",
     description="Beamer Slide Generator IDE",
-    long_description=read_readme(),
+    long_description=open('README.md').read(),
     long_description_content_type="text/markdown",
     url="https://github.com/sajeethphilip/Beamer-Slide-Generator",
     classifiers=[
@@ -52,6 +43,4 @@ setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.7',
-    # Explicitly specify metadata version
-    metadata_version='2.1',
 )
